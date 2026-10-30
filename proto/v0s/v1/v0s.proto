@@ -1,0 +1,370 @@
+syntax = "proto3";
+
+package v0s.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/nais/v0s/api/v0s/v1;v0sv1";
+
+// Vulnerabilities exposes mechanical facts about vulnerabilities in running images.
+// Nothing here is a judgement: no priority, no risk score.
+service VulnerabilityService {
+  // ListWorkloads lists running workloads, their images and SBOM/scan coverage.
+  rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
+  // ListFindings lists findings for images matching the filter.
+  rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse);
+  // CountFindings counts findings matching the filter, grouped by one dimension.
+  rpc CountFindings(CountFindingsRequest) returns (CountFindingsResponse);
+  // GetVulnerability returns the vulnerability record for an ID or alias.
+  rpc GetVulnerability(GetVulnerabilityRequest) returns (GetVulnerabilityResponse);
+  // SearchComponents finds packages in SBOMs of running images, whether or not they have findings.
+  rpc SearchComponents(SearchComponentsRequest) returns (SearchComponentsResponse);
+  // ListFindingEvents lists findings appearing and resolving over time.
+  rpc ListFindingEvents(ListFindingEventsRequest) returns (ListFindingEventsResponse);
+}
+
+// Suppressions manages human assessments of findings.
+service SuppressionService {
+  // CreateSuppressions creates suppressions atomically. With dry_run, nothing is written,
+  // but the response still reports what each suppression would match.
+  rpc CreateSuppressions(CreateSuppressionsRequest) returns (CreateSuppressionsResponse);
+  // RevokeSuppressions revokes active suppressions atomically.
+  rpc RevokeSuppressions(RevokeSuppressionsRequest) returns (RevokeSuppressionsResponse);
+  // ListSuppressions lists suppressions, including revoked and expired ones when asked.
+  rpc ListSuppressions(ListSuppressionsRequest) returns (ListSuppressionsResponse);
+}
+
+enum Severity {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_UNKNOWN = 1;
+  SEVERITY_LOW = 2;
+  SEVERITY_MEDIUM = 3;
+  SEVERITY_HIGH = 4;
+  SEVERITY_CRITICAL = 5;
+}
+
+enum SBOMState {
+  SBOM_STATE_UNSPECIFIED = 0;
+  // Not fetched yet.
+  SBOM_STATE_PENDING = 1;
+  SBOM_STATE_FETCHED = 2;
+  // No attestation found for the image.
+  SBOM_STATE_MISSING = 3;
+  // Fetching or verifying failed.
+  SBOM_STATE_FAILED = 4;
+}
+
+enum SuppressionState {
+  SUPPRESSION_STATE_UNSPECIFIED = 0;
+  SUPPRESSION_STATE_NOT_AFFECTED = 1;
+  SUPPRESSION_STATE_FALSE_POSITIVE = 2;
+  SUPPRESSION_STATE_ACCEPTED_RISK = 3;
+}
+
+// Justification follows the CycloneDX/VEX vocabulary. Required for NOT_AFFECTED only.
+enum Justification {
+  JUSTIFICATION_UNSPECIFIED = 0;
+  JUSTIFICATION_CODE_NOT_PRESENT = 1;
+  JUSTIFICATION_CODE_NOT_REACHABLE = 2;
+  JUSTIFICATION_REQUIRES_CONFIGURATION = 3;
+  JUSTIFICATION_REQUIRES_DEPENDENCY = 4;
+  JUSTIFICATION_REQUIRES_ENVIRONMENT = 5;
+  JUSTIFICATION_PROTECTED_BY_COMPILER = 6;
+  JUSTIFICATION_PROTECTED_AT_RUNTIME = 7;
+  JUSTIFICATION_PROTECTED_AT_PERIMETER = 8;
+  JUSTIFICATION_PROTECTED_BY_MITIGATING_CONTROL = 9;
+}
+
+message Image {
+  string name = 1;
+  string digest = 2;
+  SBOMState sbom_state = 3;
+  // Set when sbom_state is MISSING or FAILED.
+  string sbom_error = 4;
+  google.protobuf.Timestamp scanned_at = 5;
+  // UpdatedAt of the vulnerability DB used for the last scan.
+  google.protobuf.Timestamp scanned_db_version = 6;
+  string scan_error = 7;
+}
+
+message Workload {
+  string cluster = 1;
+  string namespace = 2;
+  string name = 3;
+  // Kind of the pods' controlling owner, e.g. ReplicaSet or Job.
+  string owner_kind = 4;
+  repeated WorkloadContainer containers = 5;
+}
+
+message WorkloadContainer {
+  string name = 1;
+  Image image = 2;
+}
+
+// FindingFilter narrows findings. Empty fields do not filter. Repeated fields match any value.
+message FindingFilter {
+  repeated string namespaces = 1;
+  string cluster = 2;
+  string workload = 3;
+  string image_name = 4;
+  string image_digest = 5;
+  // Vulnerability ID or alias.
+  string vulnerability_id = 6;
+  // Package key or full purl. A full purl matches only that version.
+  string package = 7;
+  repeated Severity severities = 8;
+  // Only findings with a known fixed version.
+  bool has_fix = 9;
+  // Only findings for vulnerabilities in CISA KEV.
+  bool kev = 10;
+  SuppressedFilter suppressed = 11;
+}
+
+enum SuppressedFilter {
+  // Defaults to EXCLUDE.
+  SUPPRESSED_FILTER_UNSPECIFIED = 0;
+  SUPPRESSED_FILTER_EXCLUDE = 1;
+  SUPPRESSED_FILTER_INCLUDE = 2;
+  SUPPRESSED_FILTER_ONLY = 3;
+}
+
+message Finding {
+  Image image = 1;
+  string vulnerability_id = 2;
+  string purl = 3;
+  string package_key = 4;
+  string installed_version = 5;
+  string fixed_version = 6;
+  // Trivy fix status: affected, fixed, will_not_fix, fix_deferred, end_of_life, under_investigation, unknown.
+  string status = 7;
+  Severity severity = 8;
+  string severity_source = 9;
+  string data_source = 10;
+  string title = 11;
+  // Highest CVSS v3 base score across sources, 0 if none.
+  double cvss_score = 12;
+  Epss epss = 13;
+  Kev kev = 14;
+  google.protobuf.Timestamp first_seen_at = 15;
+  // The active suppression covering this finding, if any.
+  Suppression suppression = 16;
+}
+
+message Epss {
+  double score = 1;
+  double percentile = 2;
+  string date = 3;
+}
+
+message Kev {
+  string date_added = 1;
+  string due_date = 2;
+  bool known_ransomware_campaign = 3;
+}
+
+message ListWorkloadsRequest {
+  repeated string namespaces = 1;
+  string cluster = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListWorkloadsResponse {
+  repeated Workload workloads = 1;
+  string next_page_token = 2;
+}
+
+message ListFindingsRequest {
+  FindingFilter filter = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+}
+
+message ListFindingsResponse {
+  repeated Finding findings = 1;
+  string next_page_token = 2;
+}
+
+message CountFindingsRequest {
+  FindingFilter filter = 1;
+  GroupBy group_by = 2;
+
+  enum GroupBy {
+    GROUP_BY_UNSPECIFIED = 0;
+    GROUP_BY_SEVERITY = 1;
+    GROUP_BY_NAMESPACE = 2;
+    GROUP_BY_WORKLOAD = 3;
+    GROUP_BY_IMAGE = 4;
+    GROUP_BY_VULNERABILITY = 5;
+  }
+}
+
+message CountFindingsResponse {
+  repeated Bucket buckets = 1;
+
+  message Bucket {
+    // Value of the grouped dimension. For WORKLOAD: "cluster/namespace/name". For IMAGE: "name@digest".
+    string key = 1;
+    int64 count = 2;
+  }
+}
+
+message GetVulnerabilityRequest {
+  string id = 1;
+}
+
+message GetVulnerabilityResponse {
+  Vulnerability vulnerability = 1;
+}
+
+message Vulnerability {
+  string id = 1;
+  repeated string aliases = 2;
+  string title = 3;
+  string description = 4;
+  // Severity per source, e.g. "nvd" -> HIGH.
+  map<string, Severity> severities = 5;
+  repeated Cvss cvss = 6;
+  repeated string references = 7;
+  google.protobuf.Timestamp published_at = 8;
+  google.protobuf.Timestamp modified_at = 9;
+  Epss epss = 10;
+  Kev kev = 11;
+}
+
+message Cvss {
+  string source = 1;
+  string v3_vector = 2;
+  double v3_score = 3;
+  string v40_vector = 4;
+  double v40_score = 5;
+}
+
+message SearchComponentsRequest {
+  // Package key, full purl, or name prefix (case-insensitive) when it does not start with "pkg:".
+  string query = 1;
+  repeated string namespaces = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message SearchComponentsResponse {
+  repeated ComponentMatch matches = 1;
+  string next_page_token = 2;
+}
+
+message ComponentMatch {
+  string purl = 1;
+  string name = 2;
+  string version = 3;
+  Image image = 4;
+  // Workloads currently running the image, limited to the requested namespaces.
+  repeated WorkloadRef workloads = 5;
+}
+
+message WorkloadRef {
+  string cluster = 1;
+  string namespace = 2;
+  string name = 3;
+}
+
+message ListFindingEventsRequest {
+  // Image name, digest, vulnerability and namespace filters apply. Severity, fix and suppression filters are ignored.
+  FindingFilter filter = 1;
+  google.protobuf.Timestamp since = 2;
+  int32 page_size = 3;
+  string page_token = 4;
+}
+
+message ListFindingEventsResponse {
+  repeated FindingEvent events = 1;
+  string next_page_token = 2;
+}
+
+message FindingEvent {
+  string image_name = 1;
+  string image_digest = 2;
+  string vulnerability_id = 3;
+  string purl = 4;
+  Kind kind = 5;
+  google.protobuf.Timestamp db_version = 6;
+  google.protobuf.Timestamp created_at = 7;
+
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_APPEARED = 1;
+    KIND_RESOLVED = 2;
+  }
+}
+
+message Suppression {
+  int64 id = 1;
+  string image_name = 2;
+  string package_key = 3;
+  string vulnerability_id = 4;
+  SuppressionState state = 5;
+  Justification justification = 6;
+  string detail = 7;
+  string created_by = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+  google.protobuf.Timestamp revoked_at = 11;
+  string revoked_by = 12;
+  string revoke_reason = 13;
+}
+
+message NewSuppression {
+  string image_name = 1;
+  // Package key or full purl. Version, qualifiers and subpath are dropped.
+  string package = 2;
+  // Vulnerability ID or alias. Must resolve to exactly one vulnerability.
+  string vulnerability_id = 3;
+  SuppressionState state = 4;
+  Justification justification = 5;
+  string detail = 6;
+  google.protobuf.Timestamp expires_at = 7;
+}
+
+message CreateSuppressionsRequest {
+  repeated NewSuppression suppressions = 1;
+  // Identity of the human the caller acts for. The caller is trusted to have authorized them.
+  string actor = 2;
+  bool dry_run = 3;
+}
+
+message CreateSuppressionsResponse {
+  repeated CreatedSuppression results = 1;
+
+  message CreatedSuppression {
+    // Empty id on dry run.
+    Suppression suppression = 1;
+    // Number of current findings the suppression matches.
+    int64 matched_findings = 2;
+    // Active suppression that this one replaces, if any.
+    int64 replaces_id = 3;
+  }
+}
+
+message RevokeSuppressionsRequest {
+  repeated int64 ids = 1;
+  string actor = 2;
+  string reason = 3;
+}
+
+message RevokeSuppressionsResponse {
+  repeated Suppression revoked = 1;
+}
+
+message ListSuppressionsRequest {
+  string image_name = 1;
+  string vulnerability_id = 2;
+  // Include revoked and expired suppressions.
+  bool include_inactive = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListSuppressionsResponse {
+  repeated Suppression suppressions = 1;
+  string next_page_token = 2;
+}
