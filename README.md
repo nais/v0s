@@ -1,16 +1,16 @@
 # v0s
 
-v0s reports which known vulnerabilities affect the container images in pods
-present in a Nais tenant, including completed job pods. It reports mechanical
-facts and no judgements.
+v0s reports which known vulnerabilities affect the container images of the Nais
+workloads (applications and jobs) in a tenant. It reports mechanical facts and no
+judgements.
 
 It replaces v13s together with Dependency-Track. The motivation is recorded in
 the session notes (`~/ws/sessions/v13s-veien-videre`).
 
 ## What it does
 
-1. Watches the pods present in the tenant's clusters, including completed job
-   pods, and records which image digests they use where.
+1. Reads the tenant's workloads and their images from Nais API, and records which
+   image digests they use where. Tags are resolved against the registry.
 2. Fetches the attested CycloneDX SBOM for each digest and verifies its signature.
    The image itself is never pulled.
 3. Matches the SBOM against the Trivy vulnerability database, in-process, using a

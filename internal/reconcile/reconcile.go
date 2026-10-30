@@ -7,8 +7,11 @@ package reconcile
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -21,7 +24,7 @@ import (
 )
 
 const (
-	syncInterval    = 30 * time.Second
+	syncInterval    = time.Minute
 	fetchInterval   = 10 * time.Second
 	scanInterval    = 10 * time.Second
 	dbInterval      = time.Hour
@@ -35,10 +38,10 @@ const (
 	retryLoop       = 5 * time.Minute
 )
 
-// Snapshotter reports the workload images observed in each cluster.
-type Snapshotter interface {
-	Clusters() []string
-	Snapshot(cluster string) ([]v0s.WorkloadImage, bool)
+// Inventory reports the workload images in each environment.
+type Inventory interface {
+	// Snapshot returns the complete set of workload images of each environment it knows.
+	Snapshot(ctx context.Context) (map[string][]v0s.WorkloadImage, error)
 }
 
 // Fetcher returns the verified SBOM for an image reference.
@@ -56,13 +59,13 @@ type Scanner interface {
 
 // Reconciler runs the loops. All fields are required.
 type Reconciler struct {
-	DB      *database.DB
-	Watcher Snapshotter
-	Fetcher Fetcher
-	Scanner Scanner
-	HTTP    *http.Client
-	Log     *slog.Logger
-	Metrics *Metrics
+	DB        *database.DB
+	Inventory Inventory
+	Fetcher   Fetcher
+	Scanner   Scanner
+	HTTP      *http.Client
+	Log       *slog.Logger
+	Metrics   *Metrics
 }
 
 // Run runs every loop until ctx is done.
@@ -103,16 +106,16 @@ func every(ctx context.Context, interval time.Duration, log *slog.Logger, fn fun
 	}
 }
 
-// sync writes each synced cluster's snapshot. Unsynced clusters are skipped:
-// an empty cache must not erase the cluster's workloads.
+// sync writes each environment's snapshot. Environments missing from the snapshot keep their
+// stored workloads, as do all environments if the snapshot fails.
 func (r *Reconciler) sync(ctx context.Context) error {
+	envs, err := r.Inventory.Snapshot(ctx)
+	if err != nil {
+		return fmt.Errorf("reading workloads: %w", err)
+	}
 	var errs []error
-	for _, c := range r.Watcher.Clusters() {
-		ws, ok := r.Watcher.Snapshot(c)
-		if !ok {
-			continue
-		}
-		if err := r.DB.SyncWorkloadImages(ctx, c, ws); err != nil {
+	for _, env := range slices.Sorted(maps.Keys(envs)) {
+		if err := r.DB.SyncWorkloadImages(ctx, env, envs[env]); err != nil {
 			errs = append(errs, err)
 		}
 	}

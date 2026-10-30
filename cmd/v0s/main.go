@@ -14,6 +14,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/authn/github"
+	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -26,7 +29,7 @@ import (
 	"github.com/nais/v0s/internal/auth"
 	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/grpcapi"
-	"github.com/nais/v0s/internal/kube"
+	"github.com/nais/v0s/internal/naisapi"
 	"github.com/nais/v0s/internal/reconcile"
 	"github.com/nais/v0s/internal/scan"
 )
@@ -35,9 +38,8 @@ type config struct {
 	listenAddr      string
 	probeAddr       string
 	databaseURL     string
-	tenant          string
-	clusters        []string
-	selfCluster     string
+	naisAPIURL      string
+	naisAPIToken    string
 	githubOrgs      []string
 	authAudience    string
 	serviceAccounts []string
@@ -50,9 +52,8 @@ func loadConfig() (config, error) {
 		listenAddr:      env("LISTEN_ADDR", ":50051"),
 		probeAddr:       env("PROBE_ADDR", ":8080"),
 		databaseURL:     env("DATABASE_URL", ""),
-		tenant:          env("TENANT", ""),
-		clusters:        list(env("CLUSTERS", "")),
-		selfCluster:     env("SELF_CLUSTER", ""),
+		naisAPIURL:      env("NAIS_API_URL", ""),
+		naisAPIToken:    env("NAIS_API_TOKEN", ""),
 		githubOrgs:      list(env("GITHUB_ORGANIZATIONS", "")),
 		authAudience:    env("AUTH_AUDIENCE", ""),
 		serviceAccounts: list(env("AUTHORIZED_SERVICE_ACCOUNTS", "")),
@@ -62,8 +63,8 @@ func loadConfig() (config, error) {
 	var missing []string
 	for name, v := range map[string]bool{
 		"DATABASE_URL":                c.databaseURL != "",
-		"CLUSTERS or SELF_CLUSTER":    len(c.clusters) > 0 || c.selfCluster != "",
-		"TENANT":                      c.tenant != "" || len(c.clusters) == 0,
+		"NAIS_API_URL":                c.naisAPIURL != "",
+		"NAIS_API_TOKEN":              c.naisAPIToken != "",
 		"GITHUB_ORGANIZATIONS":        len(c.githubOrgs) > 0,
 		"AUTH_AUDIENCE":               c.authAudience != "",
 		"AUTHORIZED_SERVICE_ACCOUNTS": len(c.serviceAccounts) > 0,
@@ -127,14 +128,8 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("creating attestation fetcher: %w", err)
 	}
-	restConfigs, err := kube.ClusterConfigs(cfg.tenant, cfg.clusters, cfg.selfCluster)
-	if err != nil {
-		return fmt.Errorf("configuring clusters: %w", err)
-	}
-	watcher, err := kube.NewWatcher(restConfigs, log)
-	if err != nil {
-		return fmt.Errorf("creating watcher: %w", err)
-	}
+	inventory := naisapi.New(cfg.naisAPIURL, cfg.naisAPIToken, &http.Client{Timeout: time.Minute},
+		naisapi.RegistryResolver{Keychain: authn.NewMultiKeychain(authn.DefaultKeychain, google.Keychain, github.Keychain)}, log)
 
 	lis, err := net.Listen("tcp", cfg.listenAddr)
 	if err != nil {
@@ -147,24 +142,23 @@ func run(log *slog.Logger) error {
 	probes := &http.Server{Addr: cfg.probeAddr, Handler: newProbeHandler(db, reg, log), ReadHeaderTimeout: 5 * time.Second}
 
 	r := &reconcile.Reconciler{
-		DB:      db,
-		Watcher: watcher,
-		Fetcher: fetcher,
-		Scanner: scanner,
-		HTTP:    &http.Client{Timeout: 2 * time.Minute},
-		Log:     log,
-		Metrics: reconcile.NewMetrics(reg, db, scanner),
+		DB:        db,
+		Inventory: inventory,
+		Fetcher:   fetcher,
+		Scanner:   scanner,
+		HTTP:      &http.Client{Timeout: 2 * time.Minute},
+		Log:       log,
+		Metrics:   reconcile.NewMetrics(reg, db, scanner),
 	}
 
-	errc := make(chan error, 4)
-	go func() { errc <- watcher.Run(ctx) }()
+	errc := make(chan error, 3)
 	go func() { r.Run(ctx); errc <- nil }()
 	go func() { errc <- srv.Serve(lis) }()
 	go func() { errc <- probes.ListenAndServe() }()
-	log.Info("started", "addr", cfg.listenAddr, "clusters", watcher.Clusters())
+	log.Info("started", "addr", cfg.listenAddr)
 
 	// Stop on a signal or when any part exits, then wait for the rest.
-	pending := 4
+	pending := 3
 	select {
 	case <-ctx.Done():
 	case err = <-errc:

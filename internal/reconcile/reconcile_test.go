@@ -18,17 +18,15 @@ import (
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
 
-type fakeWatcher map[string][]v0s.WorkloadImage // nil value: not synced
+// fakeInventory is a snapshot; a nil inventory fails.
+type fakeInventory map[string][]v0s.WorkloadImage
 
-func (w fakeWatcher) Clusters() []string {
-	var cs []string
-	for c := range w {
-		cs = append(cs, c)
+func (inv fakeInventory) Snapshot(context.Context) (map[string][]v0s.WorkloadImage, error) {
+	if inv == nil {
+		return nil, errors.New("Nais API unavailable")
 	}
-	return cs
+	return inv, nil
 }
-
-func (w fakeWatcher) Snapshot(c string) ([]v0s.WorkloadImage, bool) { return w[c], w[c] != nil }
 
 type fakeFetcher map[string][]byte // missing ref: not found; nil SBOM: transient error
 
@@ -76,9 +74,9 @@ func TestPipeline(t *testing.T) {
 	}
 	r := &Reconciler{
 		DB: db,
-		Watcher: fakeWatcher{
-			"dev":  {workload("scanned", "sha256:a"), workload("unsigned", "sha256:b"), workload("flaky", "sha256:c"), workload("garbage", "sha256:d")},
-			"prod": nil, // not synced: its stored workloads must be kept
+		Inventory: fakeInventory{
+			// prod is missing: its stored workloads must be kept
+			"dev": {workload("scanned", "sha256:a"), workload("unsigned", "sha256:b"), workload("flaky", "sha256:c"), workload("garbage", "sha256:d")},
 		},
 		Fetcher: fakeFetcher{
 			"registry/scanned@sha256:a": []byte("sbom"),
@@ -108,7 +106,7 @@ func TestPipeline(t *testing.T) {
 		}
 	}
 	if got := clusters["stored"]; got != "prod" {
-		t.Errorf("workload stored in unsynced cluster prod: cluster %q, want it kept", got)
+		t.Errorf("workload stored in environment prod missing from the snapshot: cluster %q, want it kept", got)
 	}
 	wantState := map[string]v0s.SBOMState{"scanned": v0s.SBOMFetched, "unsigned": v0s.SBOMMissing, "flaky": v0s.SBOMFailed, "garbage": v0s.SBOMFetched}
 	for app, want := range wantState {
@@ -134,6 +132,28 @@ func TestPipeline(t *testing.T) {
 	}
 }
 
+// TestFailedSnapshotKeepsWorkloads checks that an unavailable inventory is not taken to mean
+// that nothing runs.
+func TestFailedSnapshotKeepsWorkloads(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	w := v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: "app", Container: "app", ImageName: "registry/app", Digest: "sha256:a"}
+	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
+		t.Fatal(err)
+	}
+	r := &Reconciler{DB: db, Inventory: fakeInventory(nil), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if err := r.sync(ctx); err == nil {
+		t.Error("sync with an unavailable inventory succeeded, want an error")
+	}
+	workloads, _, err := db.ListWorkloads(ctx, database.WorkloadFilter{}, database.Page{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workloads) != 1 {
+		t.Errorf("%d workloads after a failed snapshot, want the stored one kept", len(workloads))
+	}
+}
+
 // staleScanner fails every scan with the DB version it had before an update.
 type staleScanner struct {
 	fakeScanner
@@ -154,11 +174,11 @@ func TestScanFailureRecordsUsedVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Reconciler{
-		DB:      db,
-		Watcher: fakeWatcher{},
-		Fetcher: fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
-		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
+		DB:        db,
+		Inventory: fakeInventory{},
+		Fetcher:   fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Metrics:   NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	if err := r.fetch(ctx); err != nil {
 		t.Fatal(err)
@@ -198,12 +218,12 @@ func TestRejectedResultIsNotRetried(t *testing.T) {
 	}
 	version := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
 	r := &Reconciler{
-		DB:      db,
-		Watcher: fakeWatcher{},
-		Fetcher: fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
-		Scanner: nulScanner{fakeScanner{version: version}},
-		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
+		DB:        db,
+		Inventory: fakeInventory{},
+		Fetcher:   fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
+		Scanner:   nulScanner{fakeScanner{version: version}},
+		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Metrics:   NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	if err := r.fetch(ctx); err != nil {
 		t.Fatal(err)

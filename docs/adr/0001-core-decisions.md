@@ -24,16 +24,29 @@ separate queue:
 - scan: images in use whose `scanned_db_version` differs from the loaded DB, unless a scan with that DB already failed
 - enrich: EPSS and KEV once a day, behind an advisory lock
 - vulndb: check the registry for a newer DB every hour
-- watch: pod informers keep `workload_images` current
+- sync: every minute, the workloads from Nais API replace `workload_images`
 
 A crash loses nothing. On restart, the loops see the same desired state.
 
-## Pods, not Deployments
+## Workloads from Nais API, not from the clusters
 
-What runs is what we report. Pod `status.containerStatuses[].imageID` gives the
-digest without resolving tags against a registry. The workload name comes from
-the `app` label and the team from the namespace. Pods without an `app` label are
-ignored.
+Nais API already watches every cluster of the tenant, including on-prem ones,
+and serves applications and jobs with their effective image. v0s reads them with
+one GraphQL query per sync, authenticated with a Nais API service account token.
+It needs no access to the clusters: no RBAC, no cluster credentials, and no
+watch streams through the API server proxies.
+
+This replaced watching Pods across clusters. The Pod watches cost cluster access
+and RBAC per cluster, and broke every 60 seconds on the HAProxy in front of the
+API servers. Reporting the deployed image instead of the running one is what
+teams can act on: a workload scaled to zero still has its image.
+
+About three quarters of nav's workloads carry a digest from deploy. For the rest
+v0s resolves the tag with a registry `HEAD` and reuses the digest for an hour,
+or longer while the registry fails. A workload whose tag has never been resolved
+is left out until it is. Nais API serves only once its caches are synced, and
+v0s skips a sync on any error, so a partial answer is never taken for an empty
+tenant.
 
 ## Suppressions are owned here, keyed on package key
 

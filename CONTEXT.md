@@ -5,9 +5,9 @@
 crosses tenants.
 
 **Workload**
-: A named thing running in a cluster. A workload is identified by
-`(cluster, namespace, name)`, where the name comes from the pod label `app`.
-The namespace is the team.
+: A Nais application or job. A workload is identified by
+`(environment, namespace, name)`, as Nais API reports it. The namespace is the
+team. The `cluster` column holds the environment name.
 
 **Image**
 : A container image identified by repository name plus manifest digest, for
@@ -15,10 +15,11 @@ example `europe-north1-docker.pkg.dev/nais-io/nais/images/foo@sha256:…`. The t
 is not part of the identity.
 
 **Workload image**
-: The fact that a container in a pod present in the cluster uses a given image,
-including completed job pods, so the images of naisjobs stay visible between
-runs. This is observed from pod status (`imageID`), not from the spec. Running
-init containers, such as native sidecars, count as containers.
+: The fact that a workload is deployed with a given image, whether or not it runs
+right now: apps scaled to zero and jobs between runs keep their image. Taken
+from the workload's effective image in Nais API; a tag is resolved to its digest
+in the registry, and re-resolved hourly so that a moved tag is noticed.
+Platform sidecars (texas, wonderwall, Cloud SQL proxy) are not part of it.
 
 **SBOM**
 : The CycloneDX document attested to an image with cosign, signed by the

@@ -61,10 +61,13 @@ spec:
                 secretKeyRef:
                   name: v0s-db-app
                   key: uri
-            - name: TENANT
-              value: dev-nais
-            - name: CLUSTERS
-              value: dev
+            - name: NAIS_API_URL
+              value: http://nais-api/graphql
+            - name: NAIS_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: v0s-nais-api
+                  key: token
             - name: GITHUB_ORGANIZATIONS
               value: nais,navikt
             - name: AUTH_AUDIENCE
@@ -154,6 +157,13 @@ spec:
               cnpg.io/cluster: v0s-db
       ports:
         - port: 5432
+    # Nais API, the inventory of workloads; its Service maps port 80 to 3000.
+    - to:
+        - podSelector:
+            matchLabels:
+              app: nais-api
+      ports:
+        - port: 3000
     - to:
         - ipBlock:
             cidr: 169.254.169.254/32
@@ -178,12 +188,11 @@ spec:
           protocol: TCP
       to:
         - fqdns:
-            - apiserver.dev.dev-nais.cloud.nais.io
             - europe-north1-docker.pkg.dev
             - ghcr.io
             - pkg-containers.githubusercontent.com
-            # Registries of other images in the dev cluster: v0s looks up their
-            # attestations, and records them as missing only if it gets an answer.
+            # Registries of other workload images: v0s resolves their tags and looks up
+            # their attestations, and records them as missing only if it gets an answer.
             - index.docker.io
             - registry-1.docker.io
             - auth.docker.io
