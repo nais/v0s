@@ -4,8 +4,9 @@ Date: 2026-10-30. Status: accepted.
 
 ## Trivy as a Go library, not a subprocess or server
 
-Scanning calls `github.com/aquasecurity/trivy/pkg/scan/local` in-process against
-a local trivy-db. We get typed results, no binary to keep in sync with the
+Scanning calls Trivy's OS and language package scanners
+(`github.com/aquasecurity/trivy/pkg/scan/ospkg` and `.../langpkg`) and its
+vulnerability `FillInfo` in-process against a local trivy-db. We get typed results, no binary to keep in sync with the
 image, and no shared Trivy server to isolate per tenant (it has no tenant
 isolation). The cost is a large module graph and Trivy's unstable internal API.
 Only `internal/scan` imports Trivy, so an upgrade touches one package.

@@ -3,7 +3,8 @@
   "specVersion": "1.5",
   "version": 1,
   "metadata": {
-    "component": {"bom-ref": "image", "type": "container", "name": "example"}
+    "component": {"bom-ref": "image", "type": "container", "name": "example",
+                  "purl": "pkg:oci/example@sha256%3A0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef?repository_url=registry.example%2Fexample"}
   },
   "components": [
     {"bom-ref": "os", "type": "operating-system", "name": "alpine", "version": "3.19.1"},

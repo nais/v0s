@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,14 +28,13 @@ const (
 	tmpPrefix = "tmp-"
 )
 
-// New loads the newest valid DB in dir if one is present, and removes other DBs
-// and unfinished downloads. repos are OCI refs for trivy-db, tried in order, e.g.
+// New loads the newest DB in dir that opens, and removes the other DBs and unfinished
+// downloads. repos are OCI refs for trivy-db, tried in order, e.g.
 // "mirror.gcr.io/aquasec/trivy-db:2", "ghcr.io/aquasecurity/trivy-db:2".
 //
-// Trivy logs only through slog.Default, so New makes log the default logger.
+// Trivy logs through slog.Default, and until slog.SetDefault is called its default
+// handler buffers every record in memory. Call slog.SetDefault before using a Scanner.
 func New(dir string, repos []string, log *slog.Logger) (*Scanner, error) {
-	slog.SetDefault(log)
-
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating DB directory: %w", err)
 	}
@@ -44,8 +44,11 @@ func New(dir string, repos []string, log *slog.Logger) (*Scanner, error) {
 	}
 
 	s := &Scanner{dir: dir, repos: repos, log: log}
-	var best string
-	var bestMeta metadata.Metadata
+	type candidate struct {
+		path string
+		meta metadata.Metadata
+	}
+	var candidates []candidate
 	for _, e := range entries {
 		path := filepath.Join(dir, e.Name())
 		switch {
@@ -58,28 +61,25 @@ func New(dir string, repos []string, log *slog.Logger) (*Scanner, error) {
 				s.remove(path)
 				continue
 			}
-			if best != "" && !meta.UpdatedAt.After(bestMeta.UpdatedAt) {
-				s.remove(path)
-				continue
-			}
-			if best != "" {
-				s.remove(best)
-			}
-			best, bestMeta = path, meta
+			candidates = append(candidates, candidate{path, meta})
 		}
 	}
-	if best == "" {
-		return s, nil
+	// Newest first. Older DBs are only removed once a newer one has opened.
+	slices.SortFunc(candidates, func(a, b candidate) int { return b.meta.UpdatedAt.Compare(a.meta.UpdatedAt) })
+	for i, c := range candidates {
+		if err := db.Init(c.path); err != nil {
+			log.With("path", c.path, "err", err).Warn("removing vulnerability DB that fails to open")
+			s.remove(c.path)
+			continue
+		}
+		for _, older := range candidates[i+1:] {
+			s.remove(older.path)
+		}
+		s.current, s.version = c.path, c.meta.UpdatedAt
+		s.digest = strings.Replace(strings.TrimPrefix(filepath.Base(c.path), dbPrefix), "-", ":", 1)
+		log.With("db_version", s.version).Info("loaded vulnerability DB")
+		break
 	}
-
-	if err := db.Init(best); err != nil {
-		log.With("path", best, "err", err).Warn("removing vulnerability DB that fails to open")
-		s.remove(best)
-		return s, nil
-	}
-	s.current, s.version = best, bestMeta.UpdatedAt
-	s.digest = strings.Replace(strings.TrimPrefix(filepath.Base(best), dbPrefix), "-", ":", 1)
-	log.With("db_version", s.version).Info("loaded vulnerability DB")
 	return s, nil
 }
 
@@ -129,11 +129,11 @@ func (s *Scanner) updateFrom(ctx context.Context, repo string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("validating download: %w", err)
 	}
-	s.digest = digest
 
 	log := s.log.With("repo", repo, "digest", digest, "db_version", meta.UpdatedAt)
 	if !meta.UpdatedAt.After(s.DBVersion()) {
 		log.Info("registry vulnerability DB is not newer than the loaded one")
+		s.digest = digest
 		return false, nil
 	}
 
@@ -145,6 +145,7 @@ func (s *Scanner) updateFrom(ctx context.Context, repo string) (bool, error) {
 		s.remove(dst)
 		return false, err
 	}
+	s.digest = digest
 	log.Info("swapped in new vulnerability DB")
 	return true, nil
 }

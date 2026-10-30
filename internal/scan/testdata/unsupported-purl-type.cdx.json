@@ -1,0 +1,9 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "components": [
+    {"bom-ref": "libfoo", "type": "library", "name": "libfoo", "version": "1.2",
+     "purl": "pkg:generic/acme/libfoo@1.2"}
+  ]
+}
