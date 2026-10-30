@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,29 +12,8 @@ import (
 	"github.com/nais/v0s"
 )
 
-// imageColumns are the images columns scanned by scanImage, qualified with the alias i.
+// imageColumns are the images columns scanned by imageScan, qualified with the alias i.
 const imageColumns = `i.id, i.name, i.digest, i.sbom_state, i.sbom_error, i.scanned_at, i.scanned_db_version, i.scan_error`
-
-// scanImage scans imageColumns, followed by extra destinations.
-func scanImage(row pgx.Row, extra ...any) (v0s.Image, error) {
-	var (
-		img                         v0s.Image
-		state                       string
-		scannedAt, scannedDBVersion *time.Time
-	)
-	dest := append([]any{&img.ID, &img.Name, &img.Digest, &state, &img.SBOMError, &scannedAt, &scannedDBVersion, &img.ScanError}, extra...)
-	if err := row.Scan(dest...); err != nil {
-		return v0s.Image{}, err
-	}
-	img.SBOMState = v0s.SBOMState(state)
-	if scannedAt != nil {
-		img.ScannedAt = *scannedAt
-	}
-	if scannedDBVersion != nil {
-		img.ScannedDBVersion = *scannedDBVersion
-	}
-	return img, nil
-}
 
 // ClaimSBOMFetches returns up to limit images that are in use (referenced by workload_images),
 // not fetched, and due (sbom_next_attempt_at <= now()). It leases them by moving
@@ -56,14 +36,20 @@ func (db *DB) ClaimSBOMFetches(ctx context.Context, limit int, lease time.Durati
 	if err != nil {
 		return nil, fmt.Errorf("claiming sbom fetches: %w", err)
 	}
-	images, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (v0s.Image, error) { return scanImage(row) })
+	images, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (v0s.Image, error) {
+		var img imageScan
+		err := row.Scan(img.dest()...)
+		return img.image(), err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("claiming sbom fetches: %w", err)
 	}
 	return images, nil
 }
 
-// StoreSBOM stores the verified SBOM (gzip-compressed) and marks the image fetched.
+// StoreSBOM stores the verified SBOM (gzip-compressed) and marks the image fetched. It is
+// write-once: if the image's SBOM is already fetched, the stored document is kept, since findings
+// and components were derived from it.
 func (db *DB) StoreSBOM(ctx context.Context, imageID int64, document []byte) error {
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
@@ -75,22 +61,25 @@ func (db *DB) StoreSBOM(ctx context.Context, imageID int64, document []byte) err
 	}
 
 	return pgx.BeginFunc(ctx, db.pool, func(tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `
+		var state v0s.SBOMState
+		err := tx.QueryRow(ctx, `SELECT sbom_state FROM images WHERE id = $1 FOR UPDATE`, imageID).Scan(&state)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("storing sbom: image %d not found", imageID)
+		}
+		if err != nil {
+			return fmt.Errorf("locking image %d: %w", imageID, err)
+		}
+		if state == v0s.SBOMFetched {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `
 			UPDATE images SET sbom_state = 'fetched', sbom_error = '', sbom_fetched_at = now()
 			WHERE id = $1`,
 			imageID,
-		)
-		if err != nil {
+		); err != nil {
 			return fmt.Errorf("marking sbom fetched: %w", err)
 		}
-		if tag.RowsAffected() == 0 {
-			return fmt.Errorf("storing sbom: image %d not found", imageID)
-		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO sboms (image_id, document) VALUES ($1, $2)
-			ON CONFLICT (image_id) DO UPDATE SET document = excluded.document`,
-			imageID, buf.Bytes(),
-		); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO sboms (image_id, document) VALUES ($1, $2)`, imageID, buf.Bytes()); err != nil {
 			return fmt.Errorf("storing sbom: %w", err)
 		}
 		return nil

@@ -34,23 +34,15 @@ func (db *DB) ReplaceKEV(ctx context.Context, entries []v0s.KEV) error {
 	return nil
 }
 
-// replaceTable replaces the contents of table with rows in one transaction. Rows are copied into
-// a temporary table first, so readers see the old contents until commit. table must be a
-// constant table name.
+// replaceTable replaces the contents of table with rows in one transaction. Readers see the old
+// contents until commit. table must be a constant table name.
 func (db *DB) replaceTable(ctx context.Context, table string, columns []string, rows [][]any) error {
-	staging := "new_" + table
 	return pgx.BeginFunc(ctx, db.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, fmt.Sprintf(`CREATE TEMP TABLE %s (LIKE %s INCLUDING ALL) ON COMMIT DROP`, staging, table)); err != nil {
-			return fmt.Errorf("creating staging table: %w", err)
-		}
-		if _, err := tx.CopyFrom(ctx, pgx.Identifier{staging}, columns, pgx.CopyFromRows(rows)); err != nil {
-			return fmt.Errorf("copying rows: %w", err)
-		}
-		if _, err := tx.Exec(ctx, fmt.Sprintf(`DELETE FROM %s`, table)); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM `+table); err != nil {
 			return fmt.Errorf("deleting rows: %w", err)
 		}
-		if _, err := tx.Exec(ctx, fmt.Sprintf(`INSERT INTO %s SELECT * FROM %s`, table, staging)); err != nil {
-			return fmt.Errorf("inserting rows: %w", err)
+		if _, err := tx.CopyFrom(ctx, pgx.Identifier{table}, columns, pgx.CopyFromRows(rows)); err != nil {
+			return fmt.Errorf("copying rows: %w", err)
 		}
 		return nil
 	})

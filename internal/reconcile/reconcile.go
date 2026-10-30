@@ -26,7 +26,6 @@ const (
 	enrichInterval  = 24 * time.Hour
 	gcInterval      = time.Hour
 	fetchBatch      = 16
-	scanBatch       = 16
 	lease           = 5 * time.Minute
 	retryMissing    = 6 * time.Hour
 	retryFailed     = 30 * time.Minute
@@ -45,7 +44,8 @@ type Fetcher interface {
 	Fetch(ctx context.Context, ref string) ([]byte, error)
 }
 
-// Scanner matches SBOMs and keeps its vulnerability DB current.
+// Scanner matches SBOMs and keeps its vulnerability DB current. Scan returns the DB version it
+// used, also with an error; the version is zero if no DB was loaded.
 type Scanner interface {
 	Update(ctx context.Context) (bool, error)
 	DBVersion() time.Time
@@ -158,14 +158,13 @@ func (r *Reconciler) scan(ctx context.Context) error {
 	if version.IsZero() {
 		return nil
 	}
+	// One claim at a time, so that no claimed job waits behind others while its lease runs out.
 	for ctx.Err() == nil {
-		jobs, err := r.DB.ClaimScans(ctx, version, scanBatch, lease)
-		if err != nil || len(jobs) == 0 {
+		job, ok, err := r.DB.ClaimScan(ctx, version, lease)
+		if err != nil || !ok {
 			return err
 		}
-		for _, j := range jobs {
-			r.scanOne(ctx, j)
-		}
+		r.scanOne(ctx, job)
 	}
 	return nil
 }
@@ -176,11 +175,14 @@ func (r *Reconciler) scanOne(ctx context.Context, j database.ScanJob) {
 	if ctx.Err() != nil {
 		return
 	}
-	if err != nil {
-		log.Warn("scanning", "error", err)
-		version = r.Scanner.DBVersion()
+	switch {
+	case err != nil && version.IsZero():
+		log.Warn("scanning without a vulnerability DB", "error", err)
+		return // the lease expires and another attempt follows
+	case err != nil:
+		log.Warn("scanning", "error", err, "db_version", version)
 		err = r.DB.RecordScanFailure(ctx, j.Image.ID, version, err.Error())
-	} else {
+	default:
 		err = r.DB.StoreScan(ctx, j.Image.ID, version, res)
 	}
 	if err != nil {

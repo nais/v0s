@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -14,50 +15,51 @@ import (
 	"github.com/nais/v0s"
 )
 
+// maxSBOMSize is the largest decompressed SBOM ClaimScan returns.
+const maxSBOMSize = 256 << 20
+
 // ScanJob is a claimed image and its SBOM.
 type ScanJob struct {
 	Image v0s.Image
 	SBOM  []byte // decompressed
 }
 
-// ClaimScans returns up to limit in-use, fetched images whose scanned_db_version is null or older
-// than dbVersion, and whose scan lease has expired. Leases them for lease.
-func (db *DB) ClaimScans(ctx context.Context, dbVersion time.Time, limit int, lease time.Duration) ([]ScanJob, error) {
-	rows, err := db.pool.Query(ctx, `
-		UPDATE images i SET scan_lease_until = now() + make_interval(secs => $3)
+// ClaimScan claims one in-use, fetched image whose scan lease has expired and that has neither
+// been scanned nor failed to scan with dbVersion or newer. It leases the image for lease and
+// returns it with its SBOM. ok is false if no image needs scanning.
+func (db *DB) ClaimScan(ctx context.Context, dbVersion time.Time, lease time.Duration) (job ScanJob, ok bool, err error) {
+	var (
+		img        imageScan
+		compressed []byte
+	)
+	err = db.pool.QueryRow(ctx, `
+		UPDATE images i SET scan_lease_until = now() + make_interval(secs => $2)
 		FROM sboms s
 		WHERE s.image_id = i.id AND i.id IN (
 			SELECT id FROM images
 			WHERE sbom_state = 'fetched'
 				AND (scanned_db_version IS NULL OR scanned_db_version < $1)
+				AND (scan_failed_db_version IS NULL OR scan_failed_db_version < $1)
 				AND (scan_lease_until IS NULL OR scan_lease_until <= now())
 				AND EXISTS (SELECT 1 FROM workload_images w WHERE w.image_id = images.id)
 			ORDER BY scanned_db_version NULLS FIRST, id
-			LIMIT $2
+			LIMIT 1
 			FOR UPDATE SKIP LOCKED
 		)
 		RETURNING `+imageColumns+`, s.document`,
-		dbVersion, limit, lease.Seconds(),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("claiming scans: %w", err)
+		dbVersion, lease.Seconds(),
+	).Scan(append(img.dest(), &compressed)...)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ScanJob{}, false, nil
 	}
-	jobs, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ScanJob, error) {
-		var compressed []byte
-		img, err := scanImage(row, &compressed)
-		if err != nil {
-			return ScanJob{}, err
-		}
-		sbom, err := gunzip(compressed)
-		if err != nil {
-			return ScanJob{}, fmt.Errorf("decompressing sbom of image %d: %w", img.ID, err)
-		}
-		return ScanJob{Image: img, SBOM: sbom}, nil
-	})
 	if err != nil {
-		return nil, fmt.Errorf("claiming scans: %w", err)
+		return ScanJob{}, false, fmt.Errorf("claiming scan: %w", err)
 	}
-	return jobs, nil
+	sbom, err := gunzip(compressed)
+	if err != nil {
+		return ScanJob{}, false, fmt.Errorf("decompressing sbom of image %d: %w", img.img.ID, err)
+	}
+	return ScanJob{Image: img.image(), SBOM: sbom}, true, nil
 }
 
 func gunzip(b []byte) ([]byte, error) {
@@ -66,16 +68,25 @@ func gunzip(b []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer zr.Close()
-	return io.ReadAll(zr)
+	out, err := io.ReadAll(io.LimitReader(zr, maxSBOMSize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(out) > maxSBOMSize {
+		return nil, fmt.Errorf("larger than %d bytes", maxSBOMSize)
+	}
+	return out, nil
 }
 
-// RecordScanFailure sets scan_error and scanned_db_version = dbVersion, so the same DB is not
-// retried in a hot loop, and clears the lease. An image already scanned with dbVersion or newer
-// is left alone.
+// RecordScanFailure records that scanning with dbVersion failed, and clears the lease. The image
+// keeps its findings and scanned_db_version, and is not claimed again until a newer DB is loaded.
+// An image already scanned with dbVersion or newer, or failed with a newer DB, is left alone.
 func (db *DB) RecordScanFailure(ctx context.Context, imageID int64, dbVersion time.Time, msg string) error {
 	if _, err := db.pool.Exec(ctx, `
-		UPDATE images SET scan_error = $3, scanned_db_version = $2, scan_lease_until = NULL
-		WHERE id = $1 AND (scanned_db_version IS NULL OR scanned_db_version < $2)`,
+		UPDATE images SET scan_error = $3, scan_failed_db_version = $2, scan_lease_until = NULL
+		WHERE id = $1
+			AND (scanned_db_version IS NULL OR scanned_db_version < $2)
+			AND (scan_failed_db_version IS NULL OR scan_failed_db_version <= $2)`,
 		imageID, dbVersion, msg,
 	); err != nil {
 		return fmt.Errorf("recording scan failure: %w", err)
@@ -89,7 +100,8 @@ type findingKey struct{ vulnerabilityID, purl string }
 // a no-op. Otherwise, in one transaction, it upserts vulnerabilities and their aliases, writes
 // finding events (appeared for new (vulnerability, purl) pairs, resolved for vanished ones),
 // replaces findings while preserving first_seen_at for findings that persist, inserts components
-// if the image has none (SBOMs are immutable), and marks the image scanned.
+// if the image has none (SBOMs are immutable), and marks the image scanned, clearing any recorded
+// scan failure. Vulnerability rows from a newer DB than dbVersion are kept.
 //
 // Duplicate findings (same vulnerability and purl) and components (same purl) keep the first.
 func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time, r v0s.ScanResult) error {
@@ -109,7 +121,7 @@ func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time,
 			return nil
 		}
 
-		if err := upsertVulnerabilities(ctx, tx, r.Vulnerabilities); err != nil {
+		if err := upsertVulnerabilities(ctx, tx, dbVersion, r.Vulnerabilities); err != nil {
 			return err
 		}
 		if err := replaceFindings(ctx, tx, imageID, name, digest, dbVersion, now, r.Findings); err != nil {
@@ -121,7 +133,8 @@ func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time,
 
 		if _, err := tx.Exec(ctx, `
 			UPDATE images
-			SET scanned_db_version = $2, scanned_at = now(), scan_error = '', scan_lease_until = NULL
+			SET scanned_db_version = $2, scanned_at = now(), scan_error = '', scan_failed_db_version = NULL,
+				scan_lease_until = NULL
 			WHERE id = $1`,
 			imageID, dbVersion,
 		); err != nil {
@@ -131,9 +144,10 @@ func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time,
 	})
 }
 
-// upsertVulnerabilities inserts or updates vulnerabilities and adds missing aliases. Rows are
-// written in ID order so that concurrent scans lock shared rows in the same order.
-func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, vulns []v0s.Vulnerability) error {
+// upsertVulnerabilities inserts or updates vulnerabilities from dbVersion and adds missing
+// aliases. A row from a newer DB is not overwritten. Rows are written in ID order so that
+// concurrent scans lock shared rows in the same order.
+func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, vulns []v0s.Vulnerability) error {
 	n := len(vulns)
 	var (
 		ids, titles, descriptions      = make([]string, n), make([]string, n), make([]string, n)
@@ -162,10 +176,10 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, vulns []v0s.Vulnerabi
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO vulnerabilities AS v (id, title, description, severities, cvss, "references", published_at, modified_at)
+		INSERT INTO vulnerabilities AS v (id, title, description, severities, cvss, "references", published_at, modified_at, db_version)
 		SELECT DISTINCT ON (t.id)
 			t.id, t.title, t.description, t.severities, t.cvss,
-			ARRAY(SELECT jsonb_array_elements_text(t.refs)), t.published_at, t.modified_at
+			ARRAY(SELECT jsonb_array_elements_text(t.refs)), t.published_at, t.modified_at, $9::timestamptz
 		FROM unnest($1::text[], $2::text[], $3::text[], $4::jsonb[], $5::jsonb[], $6::jsonb[], $7::timestamptz[], $8::timestamptz[])
 			AS t (id, title, description, severities, cvss, refs, published_at, modified_at)
 		ORDER BY t.id
@@ -177,11 +191,14 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, vulns []v0s.Vulnerabi
 			"references" = excluded."references",
 			published_at = excluded.published_at,
 			modified_at = excluded.modified_at,
+			db_version = excluded.db_version,
 			updated_at = now()
-		WHERE (v.title, v.description, v.severities, v.cvss, v."references", v.published_at, v.modified_at)
-			IS DISTINCT FROM (excluded.title, excluded.description, excluded.severities, excluded.cvss,
-				excluded."references", excluded.published_at, excluded.modified_at)`,
-		ids, titles, descriptions, severities, cvss, references, publishedAt, modifiedAt,
+		WHERE v.db_version IS NULL OR v.db_version < excluded.db_version
+			OR (v.db_version = excluded.db_version
+				AND (v.title, v.description, v.severities, v.cvss, v."references", v.published_at, v.modified_at)
+				IS DISTINCT FROM (excluded.title, excluded.description, excluded.severities, excluded.cvss,
+					excluded."references", excluded.published_at, excluded.modified_at))`,
+		ids, titles, descriptions, severities, cvss, references, publishedAt, modifiedAt, dbVersion,
 	); err != nil {
 		return fmt.Errorf("upserting vulnerabilities: %w", err)
 	}

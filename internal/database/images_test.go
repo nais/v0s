@@ -94,6 +94,25 @@ func TestClaimSBOMFetchesConcurrently(t *testing.T) {
 	}
 }
 
+func TestStoreSBOMKeepsFirst(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	id := runImages(t, db, "c1", "img")["img"]
+
+	for _, doc := range []string{"first", "second"} {
+		if err := db.StoreSBOM(ctx, id, []byte(doc)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job, ok, err := db.ClaimScan(ctx, time.Now(), time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("ClaimScan = %t, %v, want a job", ok, err)
+	}
+	if got := string(job.SBOM); got != "first" {
+		t.Errorf("SBOM = %q, want %q", got, "first")
+	}
+}
+
 func TestDeleteUnusedImages(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)

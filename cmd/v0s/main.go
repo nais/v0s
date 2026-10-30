@@ -170,8 +170,8 @@ func run(log *slog.Logger) error {
 		pending--
 		stop()
 	}
-	srv.GracefulStop()
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	stopGRPC(srv, shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	_ = probes.Shutdown(shutdownCtx) // best effort: probes carry no state
 	for range pending {
@@ -180,4 +180,22 @@ func run(log *slog.Logger) error {
 		}
 	}
 	return err
+}
+
+// shutdownTimeout bounds each shutdown step.
+const shutdownTimeout = 10 * time.Second
+
+// stopGRPC stops srv gracefully, and cancels the RPCs still running after timeout.
+func stopGRPC(srv *grpc.Server, timeout time.Duration) {
+	stopped := make(chan struct{})
+	go func() {
+		srv.GracefulStop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(timeout):
+		srv.Stop()
+		<-stopped
+	}
 }

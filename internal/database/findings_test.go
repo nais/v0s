@@ -6,7 +6,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/database/databasetest"
@@ -51,21 +50,9 @@ INSERT INTO components (image_id, purl, package_key, name, version) VALUES
 // newFixture returns a database seeded with fixture and a function that runs more SQL against it.
 func newFixture(t *testing.T) (*database.DB, func(sql string)) {
 	t.Helper()
-	db, url := databasetest.NewWithURL(t)
-	exec := func(sql string) {
-		t.Helper()
-		ctx := context.Background()
-		conn, err := pgx.Connect(ctx, url)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer conn.Close(ctx)
-		if _, err := conn.Exec(ctx, sql); err != nil {
-			t.Fatalf("seeding: %v", err)
-		}
-	}
-	exec(fixture)
-	return db, exec
+	db := databasetest.New(t)
+	exec(t, db, fixture)
+	return db, func(sql string) { t.Helper(); exec(t, db, sql) }
 }
 
 // findingKeys returns "digest vulnerability purl" for each finding.

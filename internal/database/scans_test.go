@@ -44,12 +44,15 @@ func TestClaimScans(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			jobs, err := db.ClaimScans(ctx, v2, 10, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
 			var got []string
-			for _, j := range jobs {
+			for {
+				j, ok, err := db.ClaimScan(ctx, v2, time.Minute)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !ok {
+					break
+				}
 				got = append(got, j.Image.Name+" "+string(j.SBOM))
 			}
 			slices.Sort(got)
@@ -161,6 +164,83 @@ func TestStoreScan(t *testing.T) {
 		WHERE v.id = 'CVE-A'`)
 	if want := []string{"CVE-A HIGH 7.5 https://example.com/CVE-A GHSA-CVE-A"}; !slices.Equal(got, want) {
 		t.Errorf("vulnerability = %q, want %q", got, want)
+	}
+}
+
+func TestRecordScanFailure(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	v1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	v2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	v3 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	id := runImages(t, db, "c1", "img")["img"]
+	if err := db.StoreSBOM(ctx, id, []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.StoreScan(ctx, id, v1, scanResult("CVE-A pkg:x/p1")); err != nil {
+		t.Fatal(err)
+	}
+
+	state := func() []string {
+		t.Helper()
+		return queryStrings(t, db, `
+			SELECT concat_ws(' ', to_char(i.scanned_db_version AT TIME ZONE 'UTC', 'YYYY-MM-DD'), quote_literal(i.scan_error), f.vulnerability_id)
+			FROM images i LEFT JOIN findings f ON f.image_id = i.id ORDER BY 1`)
+	}
+	claimed := func(dbVersion time.Time) bool {
+		t.Helper()
+		_, ok, err := db.ClaimScan(ctx, dbVersion, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ok
+	}
+
+	if err := db.RecordScanFailure(ctx, id, v2, "boom"); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := state(), []string{"2026-01-01 'boom' CVE-A"}; !slices.Equal(got, want) {
+		t.Errorf("after failure with v2: %q, want findings from v1 kept: %q", got, want)
+	}
+	if claimed(v2) {
+		t.Error("image that failed with v2 claimed again for v2")
+	}
+
+	if err := db.StoreScan(ctx, id, v2, scanResult("CVE-B pkg:x/p1")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := state(), []string{"2026-02-01 '' CVE-B"}; !slices.Equal(got, want) {
+		t.Errorf("after successful scan with v2: %q, want %q", got, want)
+	}
+	if !claimed(v3) {
+		t.Error("image not claimed for a newer DB")
+	}
+}
+
+func TestStoreScanKeepsNewerVulnerability(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	v1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	v2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	ids := runImages(t, db, "c1", "a", "b")
+
+	for _, s := range []struct {
+		image     string
+		dbVersion time.Time
+		title     string
+	}{
+		{image: "a", dbVersion: v2, title: "from v2"},
+		{image: "b", dbVersion: v1, title: "from v1"},
+	} {
+		r := scanResult("CVE-A pkg:x/p1")
+		r.Vulnerabilities[0].Title = s.title
+		if err := db.StoreScan(ctx, ids[s.image], s.dbVersion, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got := queryStrings(t, db, `SELECT title FROM vulnerabilities WHERE id = 'CVE-A'`)
+	if want := []string{"from v2"}; !slices.Equal(got, want) {
+		t.Errorf("title = %q, want %q", got, want)
 	}
 }
 

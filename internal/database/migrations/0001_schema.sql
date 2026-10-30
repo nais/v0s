@@ -15,10 +15,13 @@ CREATE TABLE images (
     sbom_error           text        NOT NULL DEFAULT '',
     sbom_fetched_at      timestamptz,
 
-    -- UpdatedAt of the vulnerability DB this image was last scanned with.
+    -- UpdatedAt of the vulnerability DB that produced the image's current findings.
     scanned_db_version   timestamptz,
     scanned_at           timestamptz,
+    -- Last failed scan and the DB version it used. Cleared by a successful scan. The image is
+    -- not rescanned until a DB newer than scan_failed_db_version is loaded.
     scan_error           text        NOT NULL DEFAULT '',
+    scan_failed_db_version timestamptz,
     scan_lease_until     timestamptz,
 
     UNIQUE (name, digest)
@@ -72,6 +75,8 @@ CREATE TABLE vulnerabilities (
     "references" text[]      NOT NULL DEFAULT '{}',
     published_at timestamptz,
     modified_at  timestamptz,
+    -- UpdatedAt of the vulnerability DB this row was taken from. Older DBs never overwrite it.
+    db_version   timestamptz,
     updated_at   timestamptz NOT NULL DEFAULT now()
 );
 

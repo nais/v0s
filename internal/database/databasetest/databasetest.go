@@ -6,7 +6,7 @@
 //
 // Main uses V0S_TEST_DATABASE_URL if set. Otherwise it starts a temporary
 // cluster with initdb and pg_ctl from V0S_PG_BIN, or from PATH. If neither is available, tests
-// calling New are skipped.
+// calling New are skipped. If the binaries exist but the cluster does not start, the run fails.
 package databasetest
 
 import (
@@ -39,10 +39,15 @@ func run(m *testing.M) int {
 		adminURL = url
 		return m.Run()
 	}
-	stop, err := startCluster()
+	initdb, pgCtl, err := pgBinaries()
 	if err != nil {
 		skipReason = err.Error()
 		return m.Run()
+	}
+	stop, err := startCluster(initdb, pgCtl)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "databasetest: starting postgres: %v\n", err)
+		return 1
 	}
 	defer stop()
 	return m.Run()
@@ -106,15 +111,7 @@ func NewWithURL(t testing.TB) (*database.DB, string) {
 }
 
 // startCluster starts a temporary Postgres cluster and sets adminURL.
-func startCluster() (stop func(), err error) {
-	initdb, err := pgBinary("initdb")
-	if err != nil {
-		return nil, err
-	}
-	pgCtl, err := pgBinary("pg_ctl")
-	if err != nil {
-		return nil, err
-	}
+func startCluster(initdb, pgCtl string) (stop func(), err error) {
 	dir, err := os.MkdirTemp("", "v0s-pg-")
 	if err != nil {
 		return nil, err
@@ -141,9 +138,24 @@ func startCluster() (stop func(), err error) {
 	}, nil
 }
 
+// pgBinaries returns the paths of initdb and pg_ctl, or an error if either is missing.
+func pgBinaries() (initdb, pgCtl string, err error) {
+	if initdb, err = pgBinary("initdb"); err != nil {
+		return "", "", err
+	}
+	if pgCtl, err = pgBinary("pg_ctl"); err != nil {
+		return "", "", err
+	}
+	return initdb, pgCtl, nil
+}
+
 func pgBinary(name string) (string, error) {
 	if dir := os.Getenv("V0S_PG_BIN"); dir != "" {
-		return filepath.Join(dir, name), nil
+		p, err := exec.LookPath(filepath.Join(dir, name))
+		if err != nil {
+			return "", fmt.Errorf("%s not in V0S_PG_BIN: %w", name, err)
+		}
+		return p, nil
 	}
 	p, err := exec.LookPath(name)
 	if err != nil {

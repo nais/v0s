@@ -8,6 +8,10 @@ import (
 	"github.com/nais/v0s"
 )
 
+// clusterLockSpace is the first key of the two-key advisory locks that serialize
+// SyncWorkloadImages per cluster.
+const clusterLockSpace = 0x7630_7343 // "v0sC"
+
 // SyncWorkloadImages makes ws the complete set of workload images for cluster. It creates
 // missing images (sbom_state pending), bumps last_seen_at for every image in ws, and replaces
 // the cluster's workload_images rows. Atomic.
@@ -28,6 +32,12 @@ func (db *DB) SyncWorkloadImages(ctx context.Context, cluster string, ws []v0s.W
 	}
 
 	return pgx.BeginFunc(ctx, db.pool, func(tx pgx.Tx) error {
+		// Concurrent syncs of one cluster would each delete before the other inserts, leaving
+		// the union of both snapshots, so they take turns.
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, clusterLockSpace, cluster); err != nil {
+			return fmt.Errorf("locking cluster %q: %w", cluster, err)
+		}
+
 		// Rows are upserted in a fixed order so that concurrent syncs of clusters
 		// sharing images lock them in the same order.
 		if _, err := tx.Exec(ctx, `

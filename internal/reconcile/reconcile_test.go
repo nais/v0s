@@ -47,7 +47,7 @@ func (s fakeScanner) Update(context.Context) (bool, error) { return false, nil }
 func (s fakeScanner) DBVersion() time.Time                 { return s.version }
 func (s fakeScanner) Scan(_ context.Context, sbom []byte) (v0s.ScanResult, time.Time, error) {
 	if string(sbom) != "sbom" {
-		return v0s.ScanResult{}, time.Time{}, errors.New("not an SBOM")
+		return v0s.ScanResult{}, s.version, errors.New("not an SBOM")
 	}
 	return v0s.ScanResult{
 		Components: []v0s.Component{{PURL: "pkg:npm/lodash@4.17.20", PackageKey: "pkg:npm/lodash", Name: "lodash", Version: "4.17.20"}},
@@ -67,11 +67,16 @@ func TestPipeline(t *testing.T) {
 	workload := func(app, digest string) v0s.WorkloadImage {
 		return v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: app, Container: app, ImageName: "registry/" + app, Digest: digest}
 	}
+	prod := workload("stored", "sha256:e")
+	prod.Cluster = "prod"
+	if err := db.SyncWorkloadImages(ctx, "prod", []v0s.WorkloadImage{prod}); err != nil {
+		t.Fatal(err)
+	}
 	r := &Reconciler{
 		DB: db,
 		Watcher: fakeWatcher{
 			"dev":  {workload("scanned", "sha256:a"), workload("unsigned", "sha256:b"), workload("flaky", "sha256:c"), workload("garbage", "sha256:d")},
-			"prod": nil, // not synced: must not be written
+			"prod": nil, // not synced: its stored workloads must be kept
 		},
 		Fetcher: fakeFetcher{
 			"registry/scanned@sha256:a": []byte("sbom"),
@@ -92,13 +97,15 @@ func TestPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	images := map[string]v0s.Image{}
+	clusters := map[string]string{}
 	for _, w := range workloads {
-		if w.Cluster != "dev" {
-			t.Errorf("workload %s/%s from unsynced cluster", w.Cluster, w.Name)
-		}
+		clusters[w.Name] = w.Cluster
 		for _, c := range w.Containers {
 			images[w.Name] = c.Image
 		}
+	}
+	if got := clusters["stored"]; got != "prod" {
+		t.Errorf("workload stored in unsynced cluster prod: cluster %q, want it kept", got)
 	}
 	wantState := map[string]v0s.SBOMState{"scanned": v0s.SBOMFetched, "unsigned": v0s.SBOMMissing, "flaky": v0s.SBOMFailed, "garbage": v0s.SBOMFetched}
 	for app, want := range wantState {
@@ -119,8 +126,50 @@ func TestPipeline(t *testing.T) {
 	}
 
 	// A second pass with the same DB version claims nothing.
-	jobs, err := db.ClaimScans(ctx, r.Scanner.DBVersion(), 10, time.Minute)
-	if err != nil || len(jobs) != 0 {
-		t.Errorf("ClaimScans after pass = %d jobs, %v; want none", len(jobs), err)
+	if _, ok, err := db.ClaimScan(ctx, r.Scanner.DBVersion(), time.Minute); err != nil || ok {
+		t.Errorf("ClaimScan after pass = %t, %v; want nothing to claim", ok, err)
+	}
+}
+
+// staleScanner fails every scan with the DB version it had before an update.
+type staleScanner struct {
+	fakeScanner
+	used time.Time
+}
+
+func (s staleScanner) Scan(context.Context, []byte) (v0s.ScanResult, time.Time, error) {
+	return v0s.ScanResult{}, s.used, errors.New("scan failed")
+}
+
+// TestScanFailureRecordsUsedVersion checks that a scan failing with an older DB than the one
+// loaded afterwards does not mark the image as attempted with the newer DB.
+func TestScanFailureRecordsUsedVersion(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	w := v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: "app", Container: "app", ImageName: "registry/app", Digest: "sha256:a"}
+	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
+		t.Fatal(err)
+	}
+	r := &Reconciler{
+		DB:      db,
+		Watcher: fakeWatcher{},
+		Fetcher: fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
+		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	if err := r.fetch(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	v1 := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
+	v2 := v1.Add(time.Hour)
+	r.Scanner = staleScanner{fakeScanner: fakeScanner{version: v2}, used: v1}
+	job, ok, err := db.ClaimScan(ctx, v2, time.Minute)
+	if err != nil || !ok {
+		t.Fatalf("ClaimScan = %t, %v, want a job", ok, err)
+	}
+	r.scanOne(ctx, job)
+
+	if _, ok, err := db.ClaimScan(ctx, v2, time.Minute); err != nil || !ok {
+		t.Errorf("ClaimScan for %v after a failure with %v = %t, %v; want the image again", v2, v1, ok, err)
 	}
 }
