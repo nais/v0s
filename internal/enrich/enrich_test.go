@@ -28,6 +28,9 @@ func TestFetchEPSS(t *testing.T) {
 		}},
 		{name: "no scores", file: "testdata/epss-empty.csv", status: http.StatusOK, wantErr: true},
 		{name: "no score date", file: "testdata/epss-no-date.csv", status: http.StatusOK, wantErr: true},
+		{name: "empty CVE ID", file: "testdata/epss-empty-cve.csv", status: http.StatusOK, wantErr: true},
+		{name: "NaN score", file: "testdata/epss-nan-score.csv", status: http.StatusOK, wantErr: true},
+		{name: "percentile above one", file: "testdata/epss-percentile-above-one.csv", status: http.StatusOK, wantErr: true},
 		{name: "server error", file: "testdata/epss.csv", status: http.StatusInternalServerError, wantErr: true},
 	}
 	for _, tt := range tests {
@@ -80,6 +83,8 @@ func TestFetchKEV(t *testing.T) {
 			{CVE: "CVE-2026-97229", DateAdded: day("2026-10-29")},
 		}},
 		{name: "no vulnerabilities", file: "testdata/kev-empty.json", status: http.StatusOK, wantErr: true},
+		{name: "empty CVE ID", file: "testdata/kev-empty-cve.json", status: http.StatusOK, wantErr: true},
+		{name: "count mismatch", file: "testdata/kev-count-mismatch.json", status: http.StatusOK, wantErr: true},
 		{name: "server error", file: "testdata/kev.json", status: http.StatusServiceUnavailable, wantErr: true},
 	}
 	for _, tt := range tests {

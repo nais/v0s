@@ -15,8 +15,10 @@ example `europe-north1-docker.pkg.dev/nais-io/nais/images/foo@sha256:…`. The t
 is not part of the identity.
 
 **Workload image**
-: The fact that a container in a workload currently runs a given image. This is
-observed from pod status (`imageID`), not from the spec.
+: The fact that a container in a pod present in the cluster uses a given image,
+including completed job pods, so the images of naisjobs stay visible between
+runs. This is observed from pod status (`imageID`), not from the spec. Running
+init containers, such as native sidecars, count as containers.
 
 **SBOM**
 : The CycloneDX document attested to an image with cosign, signed by the

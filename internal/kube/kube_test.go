@@ -26,28 +26,26 @@ func TestParseImageID(t *testing.T) {
 	tests := []struct {
 		name       string
 		imageID    string
-		image      string
 		wantName   string
 		wantDigest string
 		wantOK     bool
 	}{
-		{name: "containerd", imageID: "europe-north1-docker.pkg.dev/nais/app@" + digestA, image: "europe-north1-docker.pkg.dev/nais/app:1", wantName: "europe-north1-docker.pkg.dev/nais/app", wantDigest: digestA, wantOK: true},
+		{name: "containerd", imageID: "europe-north1-docker.pkg.dev/nais/app@" + digestA, wantName: "europe-north1-docker.pkg.dev/nais/app", wantDigest: digestA, wantOK: true},
 		{name: "docker-pullable", imageID: "docker-pullable://ghcr.io/nais/app@" + digestA, wantName: "ghcr.io/nais/app", wantDigest: digestA, wantOK: true},
-		{name: "digest only takes repository from image", imageID: digestA, image: "ghcr.io/nais/app:v1", wantName: "ghcr.io/nais/app", wantDigest: digestA, wantOK: true},
-		{name: "digest only with registry port", imageID: digestA, image: "registry:5000/app:v1", wantName: "registry:5000/app", wantDigest: digestA, wantOK: true},
-		{name: "digest only with untagged image", imageID: digestA, image: "registry:5000/app", wantName: "registry:5000/app", wantDigest: digestA, wantOK: true},
-		{name: "digest only with tag and digest in image", imageID: digestA, image: "ghcr.io/nais/app:v1@" + digestB, wantName: "ghcr.io/nais/app", wantDigest: digestA, wantOK: true},
-		{name: "empty", imageID: "", image: "ghcr.io/nais/app:v1"},
-		{name: "digest only without image", imageID: digestA},
-		{name: "not a digest", imageID: "ghcr.io/nais/app:v1", image: "ghcr.io/nais/app:v1"},
+		{name: "registry port", imageID: "registry:5000/app@" + digestA, wantName: "registry:5000/app", wantDigest: digestA, wantOK: true},
+		{name: "bare digest", imageID: digestA},
+		{name: "docker bare digest", imageID: "docker://" + digestA},
+		{name: "empty", imageID: ""},
+		{name: "not a digest", imageID: "ghcr.io/nais/app:v1"},
 		{name: "empty digest", imageID: "ghcr.io/nais/app@sha256:"},
+		{name: "empty repository", imageID: "@" + digestA},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			name, digest, ok := kube.ParseImageID(tt.imageID, tt.image)
+			name, digest, ok := kube.ParseImageID(tt.imageID)
 			if name != tt.wantName || digest != tt.wantDigest || ok != tt.wantOK {
-				t.Errorf("ParseImageID(%q, %q) = (%q, %q, %v), want (%q, %q, %v)",
-					tt.imageID, tt.image, name, digest, ok, tt.wantName, tt.wantDigest, tt.wantOK)
+				t.Errorf("ParseImageID(%q) = (%q, %q, %v), want (%q, %q, %v)",
+					tt.imageID, name, digest, ok, tt.wantName, tt.wantDigest, tt.wantOK)
 			}
 		})
 	}
@@ -74,13 +72,15 @@ func TestSnapshot(t *testing.T) {
 	rs := &metav1.OwnerReference{Kind: "ReplicaSet", Name: "api-123", Controller: &controller}
 
 	api1 := pod("api-1", "api", rs, status("api", "ghcr.io/nais/api@"+digestA), status("proxy", "docker-pullable://ghcr.io/nais/proxy@"+digestB))
-	api1.Status.InitContainerStatuses = []corev1.ContainerStatus{status("init", "ghcr.io/nais/init@"+digestA)}
+	sidecar := status("sidecar", "ghcr.io/nais/sidecar@"+digestB)
+	sidecar.State.Running = &corev1.ContainerStateRunning{}
+	api1.Status.InitContainerStatuses = []corev1.ContainerStatus{status("init", "ghcr.io/nais/init@"+digestA), sidecar}
 	api1.Status.EphemeralContainerStatuses = []corev1.ContainerStatus{status("debug", "ghcr.io/nais/debug@"+digestA)}
 	api2 := pod("api-2", "api", rs, status("api", "ghcr.io/nais/api@"+digestA), status("proxy", "docker-pullable://ghcr.io/nais/proxy@"+digestB))
-	job := pod("batch-1", "batch", &metav1.OwnerReference{Kind: "Job", Name: "batch", Controller: &controller}, status("batch", digestA))
+	job := pod("batch-1", "batch", &metav1.OwnerReference{Kind: "Job", Name: "batch", Controller: &controller}, status("batch", "ghcr.io/nais/batch@"+digestA))
 	job.Status.Phase = corev1.PodSucceeded
 	bare := pod("bare", "bare", &metav1.OwnerReference{Kind: "ConfigMap", Name: "not-a-controller"},
-		status("bare", "ghcr.io/nais/bare@"+digestA), status("pending", ""))
+		status("bare", "ghcr.io/nais/bare@"+digestA), status("pending", ""), status("local", digestB))
 	noApp := pod("no-app", "", rs, status("api", "ghcr.io/nais/api@"+digestA))
 
 	client := fake.NewClientset([]runtime.Object{api1, api2, job, bare, noApp}...)
@@ -107,6 +107,7 @@ func TestSnapshot(t *testing.T) {
 	want := []v0s.WorkloadImage{
 		{Cluster: "dev", Namespace: "team", Workload: "api", Container: "api", OwnerKind: "ReplicaSet", ImageName: "ghcr.io/nais/api", Digest: digestA},
 		{Cluster: "dev", Namespace: "team", Workload: "api", Container: "proxy", OwnerKind: "ReplicaSet", ImageName: "ghcr.io/nais/proxy", Digest: digestB},
+		{Cluster: "dev", Namespace: "team", Workload: "api", Container: "sidecar", OwnerKind: "ReplicaSet", ImageName: "ghcr.io/nais/sidecar", Digest: digestB},
 		{Cluster: "dev", Namespace: "team", Workload: "bare", Container: "bare", OwnerKind: "", ImageName: "ghcr.io/nais/bare", Digest: digestA},
 		{Cluster: "dev", Namespace: "team", Workload: "batch", Container: "batch", OwnerKind: "Job", ImageName: "ghcr.io/nais/batch", Digest: digestA},
 	}

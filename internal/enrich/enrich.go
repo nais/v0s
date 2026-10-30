@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -25,8 +26,11 @@ const (
 	DefaultKEVURL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 )
 
+// cveID matches a CVE identifier. Both feeds key their entries by CVE.
+var cveID = regexp.MustCompile(`^CVE-[0-9]{4}-[0-9]{4,}$`)
+
 // FetchEPSS downloads and parses the daily FIRST EPSS CSV (gzip). It returns an error for a feed
-// without scores, so a broken upstream never wipes stored scores.
+// without scores or with an invalid row, so a broken upstream never wipes stored scores.
 func FetchEPSS(ctx context.Context, c *http.Client, url string) ([]v0s.EPSS, error) {
 	body, err := get(ctx, c, url)
 	if err != nil {
@@ -71,6 +75,9 @@ func FetchEPSS(ctx context.Context, c *http.Client, url string) ([]v0s.EPSS, err
 		if err != nil {
 			return nil, fmt.Errorf("reading EPSS row: %w", err)
 		}
+		if !cveID.MatchString(rec[0]) {
+			return nil, fmt.Errorf("EPSS row has invalid CVE ID %q", rec[0])
+		}
 		score, err := strconv.ParseFloat(rec[1], 64)
 		if err != nil {
 			return nil, fmt.Errorf("parsing EPSS score for %s: %w", rec[0], err)
@@ -78,6 +85,10 @@ func FetchEPSS(ctx context.Context, c *http.Client, url string) ([]v0s.EPSS, err
 		percentile, err := strconv.ParseFloat(rec[2], 64)
 		if err != nil {
 			return nil, fmt.Errorf("parsing EPSS percentile for %s: %w", rec[0], err)
+		}
+		// Written so that NaN fails too.
+		if !(score >= 0 && score <= 1 && percentile >= 0 && percentile <= 1) {
+			return nil, fmt.Errorf("EPSS score %v or percentile %v for %s is outside [0,1]", score, percentile, rec[0])
 		}
 		scores = append(scores, v0s.EPSS{CVE: rec[0], Score: score, Percentile: percentile, Date: date})
 	}
@@ -109,7 +120,8 @@ func epssScoreDate(comment string) (time.Time, error) {
 }
 
 // FetchKEV downloads and parses the CISA KEV JSON feed. It returns an error for a feed without
-// entries, so a broken upstream never wipes stored entries.
+// entries, with an invalid entry, or with fewer or more entries than its count, so a broken
+// upstream never wipes stored entries.
 func FetchKEV(ctx context.Context, c *http.Client, url string) ([]v0s.KEV, error) {
 	body, err := get(ctx, c, url)
 	if err != nil {
@@ -118,6 +130,7 @@ func FetchKEV(ctx context.Context, c *http.Client, url string) ([]v0s.KEV, error
 	defer body.Close()
 
 	var catalog struct {
+		Count           int `json:"count"`
 		Vulnerabilities []struct {
 			CVEID                      string `json:"cveID"`
 			DateAdded                  string `json:"dateAdded"`
@@ -131,9 +144,15 @@ func FetchKEV(ctx context.Context, c *http.Client, url string) ([]v0s.KEV, error
 	if len(catalog.Vulnerabilities) == 0 {
 		return nil, errors.New("KEV catalog has no vulnerabilities")
 	}
+	if len(catalog.Vulnerabilities) != catalog.Count {
+		return nil, fmt.Errorf("KEV catalog has %d vulnerabilities, but count %d", len(catalog.Vulnerabilities), catalog.Count)
+	}
 
 	kevs := make([]v0s.KEV, 0, len(catalog.Vulnerabilities))
 	for _, v := range catalog.Vulnerabilities {
+		if !cveID.MatchString(v.CVEID) {
+			return nil, fmt.Errorf("KEV entry has invalid CVE ID %q", v.CVEID)
+		}
 		added, err := time.Parse(time.DateOnly, v.DateAdded)
 		if err != nil {
 			return nil, fmt.Errorf("parsing KEV dateAdded for %s: %w", v.CVEID, err)

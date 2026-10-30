@@ -96,14 +96,7 @@ func (f *Fetcher) Fetch(ctx context.Context, ref string) ([]byte, error) {
 }
 
 func (f *Fetcher) verify(ctx context.Context, ref name.Reference) ([]oci.Signature, error) {
-	co := &cosign.CheckOpts{
-		RegistryClientOpts: []ociremote.Option{
-			ociremote.WithRemoteOptions(remote.WithAuthFromKeychain(f.keychain), remote.WithContext(ctx)),
-		},
-		TrustedMaterial: f.trustedRoot,
-		Identities:      []cosign.Identity{f.identity},
-		NewBundleFormat: true,
-	}
+	co := f.checkOpts(ctx)
 	sigs, _, err := cosign.VerifyImageAttestations(ctx, ref, co)
 	if _, ok := errors.AsType[*cosign.ErrNoMatchingAttestations](err); !ok {
 		return sigs, err
@@ -113,6 +106,21 @@ func (f *Fetcher) verify(ctx context.Context, ref name.Reference) ([]oci.Signatu
 	co.NewBundleFormat = false
 	sigs, _, err = cosign.VerifyImageAttestations(ctx, ref, co)
 	return sigs, err
+}
+
+// checkOpts returns the options for verifying attestations, starting with the bundle format.
+// ClaimVerifier binds a legacy-format attestation to the image: without it cosign checks only the
+// signature, and would accept a signed attestation copied from another image's .att tag.
+func (f *Fetcher) checkOpts(ctx context.Context) *cosign.CheckOpts {
+	return &cosign.CheckOpts{
+		RegistryClientOpts: []ociremote.Option{
+			ociremote.WithRemoteOptions(remote.WithAuthFromKeychain(f.keychain), remote.WithContext(ctx)),
+		},
+		TrustedMaterial: f.trustedRoot,
+		Identities:      []cosign.Identity{f.identity},
+		ClaimVerifier:   cosign.IntotoSubjectClaimVerifier,
+		NewBundleFormat: true,
+	}
 }
 
 // isNotFound reports whether err means that the image has no matching attestation.

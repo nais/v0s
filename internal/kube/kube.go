@@ -104,12 +104,12 @@ func (w *Watcher) Snapshot(clusterName string) ([]v0s.WorkloadImage, bool) {
 		if ref := metav1.GetControllerOf(pod); ref != nil {
 			ownerKind = ref.Kind
 		}
-		for _, s := range pod.Status.ContainerStatuses {
-			name, digest, ok := parseImageID(s.ImageID, s.Image)
+		for _, s := range observedStatuses(pod) {
+			name, digest, ok := parseImageID(s.ImageID)
 			if !ok {
 				if s.ImageID != "" {
 					w.log.With("cluster", clusterName, "namespace", pod.Namespace, "pod", pod.Name, "container", s.Name).
-						Debug("ignoring container with unparseable imageID")
+						Debug("ignoring container whose imageID has no repository digest")
 				}
 				continue
 			}
@@ -131,31 +131,31 @@ func (w *Watcher) Snapshot(clusterName string) ([]v0s.WorkloadImage, bool) {
 	return images, true
 }
 
-// parseImageID returns the repository and manifest digest of a container status. It accepts
-// imageID forms "docker-pullable://repo@sha256:…", "repo@sha256:…" and "sha256:…". In the last
-// form the repository is taken from image, without its tag or digest.
-func parseImageID(imageID, image string) (name, digest string, ok bool) {
+// observedStatuses returns the statuses of the pod's containers and of its running init
+// containers. A running init container is usually a native sidecar (restartPolicy Always), which
+// keeps running alongside the containers.
+func observedStatuses(pod *corev1.Pod) []corev1.ContainerStatus {
+	statuses := slices.Clone(pod.Status.ContainerStatuses)
+	for _, s := range pod.Status.InitContainerStatuses {
+		if s.State.Running != nil {
+			statuses = append(statuses, s)
+		}
+	}
+	return statuses
+}
+
+// parseImageID returns the repository and manifest digest in a container status imageID of the
+// form "repo@sha256:…", optionally with a scheme such as "docker-pullable://". A bare "sha256:…"
+// is rejected: the runtime may report the image config digest there, not the manifest digest.
+func parseImageID(imageID string) (name, digest string, ok bool) {
 	if _, rest, found := strings.Cut(imageID, "://"); found {
 		imageID = rest
 	}
 	name, digest, found := strings.Cut(imageID, "@")
-	if !found {
-		name, digest = repository(image), imageID
-	}
-	if name == "" || !strings.HasPrefix(digest, "sha256:") || len(digest) == len("sha256:") {
+	if !found || name == "" || !strings.HasPrefix(digest, "sha256:") || len(digest) == len("sha256:") {
 		return "", "", false
 	}
 	return name, digest, true
-}
-
-// repository strips the digest and tag from an image reference. A colon before the last slash is
-// a registry port, not a tag.
-func repository(image string) string {
-	image, _, _ = strings.Cut(image, "@")
-	if i := strings.LastIndex(image, ":"); i > strings.LastIndex(image, "/") {
-		image = image[:i]
-	}
-	return image
 }
 
 // stripPod keeps only the pod fields Snapshot reads, so the cache stays small in large clusters.
@@ -178,13 +178,20 @@ func stripPod(obj any) (any, error) {
 	if ref := metav1.GetControllerOf(pod); ref != nil {
 		stripped.OwnerReferences = []metav1.OwnerReference{*ref}
 	}
-	if len(pod.Status.ContainerStatuses) > 0 {
-		stripped.Status.ContainerStatuses = make([]corev1.ContainerStatus, len(pod.Status.ContainerStatuses))
-		for i, s := range pod.Status.ContainerStatuses {
-			stripped.Status.ContainerStatuses[i] = corev1.ContainerStatus{Name: s.Name, Image: s.Image, ImageID: s.ImageID}
-		}
-	}
+	stripped.Status.ContainerStatuses = stripStatuses(pod.Status.ContainerStatuses)
+	stripped.Status.InitContainerStatuses = stripStatuses(pod.Status.InitContainerStatuses)
 	return stripped, nil
+}
+
+func stripStatuses(statuses []corev1.ContainerStatus) []corev1.ContainerStatus {
+	if len(statuses) == 0 {
+		return nil
+	}
+	stripped := make([]corev1.ContainerStatus, len(statuses))
+	for i, s := range statuses {
+		stripped[i] = corev1.ContainerStatus{Name: s.Name, ImageID: s.ImageID, State: corev1.ContainerState{Running: s.State.Running}}
+	}
+	return stripped
 }
 
 // googleScopes are the scopes GKE needs to authenticate a Google identity.
