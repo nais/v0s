@@ -8,10 +8,9 @@ Scanning calls `github.com/aquasecurity/trivy/pkg/scan/local` in-process against
 a local trivy-db. We get typed results, no binary to keep in sync with the
 image, and no shared Trivy server to isolate per tenant (it has no tenant
 isolation). The cost is a large module graph and Trivy's unstable internal API.
-Only `internal/scan` and `internal/vulndb` import Trivy, so an upgrade touches
-two packages.
+Only `internal/scan` imports Trivy, so an upgrade touches one package.
 
-trivy-db uses a process-global bolt handle. `internal/vulndb` owns it. A DB swap
+trivy-db uses a process-global bolt handle. `internal/scan` owns it, both lifecycle and matching. A DB swap
 takes a write lock, and scans hold a read lock.
 
 ## Level-triggered loops, no job queue
