@@ -1,0 +1,37 @@
+- bucket: alpine 3.19
+  pairs:
+    - bucket: musl
+      pairs:
+        - key: CVE-2025-0001
+          value:
+            FixedVersion: 1.2.4-r3
+- bucket: "npm::GitHub Security Advisory npm"
+  pairs:
+    - bucket: lodash
+      pairs:
+        - key: CVE-2025-0002
+          value:
+            PatchedVersions:
+              - 4.17.21
+            VulnerableVersions:
+              - < 4.17.21
+            VendorIDs:
+              - GHSA-aaaa-bbbb-cccc
+        - key: GHSA-xxxx-yyyy-zzzz
+          value:
+            VulnerableVersions:
+              - <= 4.17.20
+            VendorIDs:
+              - GHSA-xxxx-yyyy-zzzz
+- bucket: data-source
+  pairs:
+    - key: alpine 3.19
+      value:
+        ID: alpine
+        Name: Alpine Secdb
+        URL: https://secdb.alpinelinux.org/
+    - key: "npm::GitHub Security Advisory npm"
+      value:
+        ID: ghsa
+        Name: GitHub Security Advisory npm
+        URL: https://github.com/advisories?query=type%3Areviewed+ecosystem%3Anpm

@@ -1,0 +1,18 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "version": 1,
+  "metadata": {
+    "component": {"bom-ref": "image", "type": "container", "name": "example"}
+  },
+  "components": [
+    {"bom-ref": "os", "type": "operating-system", "name": "alpine", "version": "3.19.1"},
+    {"bom-ref": "musl", "type": "library", "name": "musl", "version": "1.2.4-r2",
+     "purl": "pkg:apk/alpine/musl@1.2.4-r2?arch=x86_64&distro=3.19.1"},
+    {"bom-ref": "lodash-a", "type": "library", "name": "lodash", "version": "4.17.20",
+     "purl": "pkg:npm/lodash@4.17.20"},
+    {"bom-ref": "lodash-b", "type": "library", "name": "lodash", "version": "4.17.20",
+     "purl": "pkg:npm/lodash@4.17.20"},
+    {"bom-ref": "vendored", "type": "library", "name": "vendored", "version": "1.0.0"}
+  ]
+}
