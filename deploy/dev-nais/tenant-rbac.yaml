@@ -1,0 +1,23 @@
+# Applied by hand to each dev-nais workload cluster: lets v0s (running as
+# v13s's Google service account) watch Pods. Additive to v13s-rbac.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: v0s-pod-reader
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: v0s-pod-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: v0s-pod-reader
+subjects:
+  - apiGroup: rbac.authorization.k8s.io
+    kind: User
+    name: v13s-sa@nais-management-7178.iam.gserviceaccount.com
