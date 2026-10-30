@@ -3,8 +3,11 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 
 	"google.golang.org/api/idtoken"
@@ -45,6 +48,12 @@ func newUnaryInterceptor(validate validateFunc, audience string, serviceAccounts
 			log.Warn("missing bearer token")
 			return nil, status.Error(codes.Unauthenticated, "missing bearer token")
 		}
+		// Service account ID tokens are RS256. The pinned validator panics on
+		// some malformed ES256 tokens, so other algorithms never reach it.
+		if alg := tokenAlgorithm(token); alg != "RS256" {
+			log.With("alg", strconv.Quote(alg)).Warn("unsupported token algorithm")
+			return nil, status.Error(codes.Unauthenticated, "invalid token")
+		}
 		payload, err := validate(ctx, token, audience)
 		if err != nil {
 			log.With("err", err).Warn("invalid token")
@@ -61,6 +70,22 @@ func newUnaryInterceptor(validate validateFunc, audience string, serviceAccounts
 		}
 		return handler(ctx, req)
 	}
+}
+
+// tokenAlgorithm returns the "alg" of a JWT's header, or "" if the header is malformed.
+func tokenAlgorithm(token string) string {
+	segment, _, _ := strings.Cut(token, ".")
+	b, err := base64.RawURLEncoding.DecodeString(segment)
+	if err != nil {
+		return ""
+	}
+	var header struct {
+		Alg string `json:"alg"`
+	}
+	if err := json.Unmarshal(b, &header); err != nil {
+		return ""
+	}
+	return header.Alg
 }
 
 // bearerToken returns the token from the incoming "authorization" metadata.

@@ -1935,13 +1935,20 @@ func (x *WorkloadRef) GetName() string {
 	return ""
 }
 
+// ListFindingEventsRequest narrows finding events. Empty fields do not filter.
 type ListFindingEventsRequest struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Image name, digest, vulnerability and namespace filters apply. Severity, fix and suppression filters are ignored.
-	Filter        *FindingFilter         `protobuf:"bytes,1,opt,name=filter,proto3" json:"filter,omitempty"`
-	Since         *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=since,proto3" json:"since,omitempty"`
-	PageSize      int32                  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                 `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	ImageName   string                 `protobuf:"bytes,1,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
+	ImageDigest string                 `protobuf:"bytes,2,opt,name=image_digest,json=imageDigest,proto3" json:"image_digest,omitempty"`
+	// Vulnerability ID or alias.
+	VulnerabilityId string `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
+	// Events for images that currently run in one of these namespaces. Matching
+	// uses current workload placement, not placement when the event was recorded.
+	Namespaces []string `protobuf:"bytes,4,rep,name=namespaces,proto3" json:"namespaces,omitempty"`
+	// Events created at or after this time.
+	Since         *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
+	PageSize      int32                  `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken     string                 `protobuf:"bytes,7,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1976,9 +1983,30 @@ func (*ListFindingEventsRequest) Descriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{21}
 }
 
-func (x *ListFindingEventsRequest) GetFilter() *FindingFilter {
+func (x *ListFindingEventsRequest) GetImageName() string {
 	if x != nil {
-		return x.Filter
+		return x.ImageName
+	}
+	return ""
+}
+
+func (x *ListFindingEventsRequest) GetImageDigest() string {
+	if x != nil {
+		return x.ImageDigest
+	}
+	return ""
+}
+
+func (x *ListFindingEventsRequest) GetVulnerabilityId() string {
+	if x != nil {
+		return x.VulnerabilityId
+	}
+	return ""
+}
+
+func (x *ListFindingEventsRequest) GetNamespaces() []string {
+	if x != nil {
+		return x.Namespaces
 	}
 	return nil
 }
@@ -3003,13 +3031,19 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\vWorkloadRef\x12\x18\n" +
 	"\acluster\x18\x01 \x01(\tR\acluster\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x01(\tR\tnamespace\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"\xb7\x01\n" +
-	"\x18ListFindingEventsRequest\x12-\n" +
-	"\x06filter\x18\x01 \x01(\v2\x15.v0s.v1.FindingFilterR\x06filter\x120\n" +
-	"\x05since\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12\x1b\n" +
-	"\tpage_size\x18\x03 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\x95\x02\n" +
+	"\x18ListFindingEventsRequest\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x04 \x01(\tR\tpageToken\"q\n" +
+	"image_name\x18\x01 \x01(\tR\timageName\x12!\n" +
+	"\fimage_digest\x18\x02 \x01(\tR\vimageDigest\x12)\n" +
+	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12\x1e\n" +
+	"\n" +
+	"namespaces\x18\x04 \x03(\tR\n" +
+	"namespaces\x120\n" +
+	"\x05since\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12\x1b\n" +
+	"\tpage_size\x18\x06 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\n" +
+	"page_token\x18\a \x01(\tR\tpageToken\"q\n" +
 	"\x19ListFindingEventsResponse\x12,\n" +
 	"\x06events\x18\x01 \x03(\v2\x14.v0s.v1.FindingEventR\x06events\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xf8\x02\n" +
@@ -3223,49 +3257,48 @@ var file_v0s_v1_v0s_proto_depIdxs = []int32{
 	26, // 26: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
 	7,  // 27: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
 	27, // 28: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
-	10, // 29: v0s.v1.ListFindingEventsRequest.filter:type_name -> v0s.v1.FindingFilter
-	42, // 30: v0s.v1.ListFindingEventsRequest.since:type_name -> google.protobuf.Timestamp
-	30, // 31: v0s.v1.ListFindingEventsResponse.events:type_name -> v0s.v1.FindingEvent
-	6,  // 32: v0s.v1.FindingEvent.kind:type_name -> v0s.v1.FindingEvent.Kind
-	42, // 33: v0s.v1.FindingEvent.db_version:type_name -> google.protobuf.Timestamp
-	42, // 34: v0s.v1.FindingEvent.created_at:type_name -> google.protobuf.Timestamp
-	2,  // 35: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
-	3,  // 36: v0s.v1.Suppression.justification:type_name -> v0s.v1.Justification
-	42, // 37: v0s.v1.Suppression.created_at:type_name -> google.protobuf.Timestamp
-	42, // 38: v0s.v1.Suppression.expires_at:type_name -> google.protobuf.Timestamp
-	42, // 39: v0s.v1.Suppression.revoked_at:type_name -> google.protobuf.Timestamp
-	2,  // 40: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
-	3,  // 41: v0s.v1.NewSuppression.justification:type_name -> v0s.v1.Justification
-	42, // 42: v0s.v1.NewSuppression.expires_at:type_name -> google.protobuf.Timestamp
-	32, // 43: v0s.v1.CreateSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
-	41, // 44: v0s.v1.CreateSuppressionsResponse.results:type_name -> v0s.v1.CreateSuppressionsResponse.CreatedSuppression
-	31, // 45: v0s.v1.RevokeSuppressionsResponse.revoked:type_name -> v0s.v1.Suppression
-	31, // 46: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
-	0,  // 47: v0s.v1.Vulnerability.SeveritiesEntry.value:type_name -> v0s.v1.Severity
-	31, // 48: v0s.v1.CreateSuppressionsResponse.CreatedSuppression.suppression:type_name -> v0s.v1.Suppression
-	14, // 49: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
-	16, // 50: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
-	18, // 51: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
-	20, // 52: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
-	24, // 53: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
-	28, // 54: v0s.v1.VulnerabilityService.ListFindingEvents:input_type -> v0s.v1.ListFindingEventsRequest
-	33, // 55: v0s.v1.SuppressionService.CreateSuppressions:input_type -> v0s.v1.CreateSuppressionsRequest
-	35, // 56: v0s.v1.SuppressionService.RevokeSuppressions:input_type -> v0s.v1.RevokeSuppressionsRequest
-	37, // 57: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
-	15, // 58: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
-	17, // 59: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
-	19, // 60: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
-	21, // 61: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
-	25, // 62: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
-	29, // 63: v0s.v1.VulnerabilityService.ListFindingEvents:output_type -> v0s.v1.ListFindingEventsResponse
-	34, // 64: v0s.v1.SuppressionService.CreateSuppressions:output_type -> v0s.v1.CreateSuppressionsResponse
-	36, // 65: v0s.v1.SuppressionService.RevokeSuppressions:output_type -> v0s.v1.RevokeSuppressionsResponse
-	38, // 66: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
-	58, // [58:67] is the sub-list for method output_type
-	49, // [49:58] is the sub-list for method input_type
-	49, // [49:49] is the sub-list for extension type_name
-	49, // [49:49] is the sub-list for extension extendee
-	0,  // [0:49] is the sub-list for field type_name
+	42, // 29: v0s.v1.ListFindingEventsRequest.since:type_name -> google.protobuf.Timestamp
+	30, // 30: v0s.v1.ListFindingEventsResponse.events:type_name -> v0s.v1.FindingEvent
+	6,  // 31: v0s.v1.FindingEvent.kind:type_name -> v0s.v1.FindingEvent.Kind
+	42, // 32: v0s.v1.FindingEvent.db_version:type_name -> google.protobuf.Timestamp
+	42, // 33: v0s.v1.FindingEvent.created_at:type_name -> google.protobuf.Timestamp
+	2,  // 34: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
+	3,  // 35: v0s.v1.Suppression.justification:type_name -> v0s.v1.Justification
+	42, // 36: v0s.v1.Suppression.created_at:type_name -> google.protobuf.Timestamp
+	42, // 37: v0s.v1.Suppression.expires_at:type_name -> google.protobuf.Timestamp
+	42, // 38: v0s.v1.Suppression.revoked_at:type_name -> google.protobuf.Timestamp
+	2,  // 39: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
+	3,  // 40: v0s.v1.NewSuppression.justification:type_name -> v0s.v1.Justification
+	42, // 41: v0s.v1.NewSuppression.expires_at:type_name -> google.protobuf.Timestamp
+	32, // 42: v0s.v1.CreateSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
+	41, // 43: v0s.v1.CreateSuppressionsResponse.results:type_name -> v0s.v1.CreateSuppressionsResponse.CreatedSuppression
+	31, // 44: v0s.v1.RevokeSuppressionsResponse.revoked:type_name -> v0s.v1.Suppression
+	31, // 45: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	0,  // 46: v0s.v1.Vulnerability.SeveritiesEntry.value:type_name -> v0s.v1.Severity
+	31, // 47: v0s.v1.CreateSuppressionsResponse.CreatedSuppression.suppression:type_name -> v0s.v1.Suppression
+	14, // 48: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
+	16, // 49: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
+	18, // 50: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
+	20, // 51: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
+	24, // 52: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
+	28, // 53: v0s.v1.VulnerabilityService.ListFindingEvents:input_type -> v0s.v1.ListFindingEventsRequest
+	33, // 54: v0s.v1.SuppressionService.CreateSuppressions:input_type -> v0s.v1.CreateSuppressionsRequest
+	35, // 55: v0s.v1.SuppressionService.RevokeSuppressions:input_type -> v0s.v1.RevokeSuppressionsRequest
+	37, // 56: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
+	15, // 57: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
+	17, // 58: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
+	19, // 59: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
+	21, // 60: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
+	25, // 61: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
+	29, // 62: v0s.v1.VulnerabilityService.ListFindingEvents:output_type -> v0s.v1.ListFindingEventsResponse
+	34, // 63: v0s.v1.SuppressionService.CreateSuppressions:output_type -> v0s.v1.CreateSuppressionsResponse
+	36, // 64: v0s.v1.SuppressionService.RevokeSuppressions:output_type -> v0s.v1.RevokeSuppressionsResponse
+	38, // 65: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
+	57, // [57:66] is the sub-list for method output_type
+	48, // [48:57] is the sub-list for method input_type
+	48, // [48:48] is the sub-list for extension type_name
+	48, // [48:48] is the sub-list for extension extendee
+	0,  // [0:48] is the sub-list for field type_name
 }
 
 func init() { file_v0s_v1_v0s_proto_init() }

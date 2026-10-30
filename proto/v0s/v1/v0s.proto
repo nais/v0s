@@ -14,12 +14,18 @@ service VulnerabilityService {
   // ListFindings lists findings for images matching the filter.
   rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse);
   // CountFindings counts findings matching the filter, grouped by one dimension.
+  // Under NAMESPACE and WORKLOAD, a finding counts once for every matching workload
+  // running its image, since one image can run in several workloads. A namespace
+  // count is the sum over its workloads. Under the other groupings each finding
+  // counts once.
   rpc CountFindings(CountFindingsRequest) returns (CountFindingsResponse);
   // GetVulnerability returns the vulnerability record for an ID or alias.
   rpc GetVulnerability(GetVulnerabilityRequest) returns (GetVulnerabilityResponse);
   // SearchComponents finds packages in SBOMs of running images, whether or not they have findings.
   rpc SearchComponents(SearchComponentsRequest) returns (SearchComponentsResponse);
-  // ListFindingEvents lists findings appearing and resolving over time.
+  // ListFindingEvents lists findings appearing and resolving over time, oldest first.
+  // Pagination is best-effort under concurrent writes: an event committed while a
+  // client pages may be skipped if a later event was already returned.
   rpc ListFindingEvents(ListFindingEventsRequest) returns (ListFindingEventsResponse);
 }
 
@@ -28,7 +34,7 @@ service SuppressionService {
   // CreateSuppressions creates suppressions atomically. With dry_run, nothing is written,
   // but the response still reports what each suppression would match.
   rpc CreateSuppressions(CreateSuppressionsRequest) returns (CreateSuppressionsResponse);
-  // RevokeSuppressions revokes active suppressions atomically.
+  // RevokeSuppressions revokes unrevoked suppressions atomically, expired or not.
   rpc RevokeSuppressions(RevokeSuppressionsRequest) returns (RevokeSuppressionsResponse);
   // ListSuppressions lists suppressions, including revoked and expired ones when asked.
   rpc ListSuppressions(ListSuppressionsRequest) returns (ListSuppressionsResponse);
@@ -268,12 +274,19 @@ message WorkloadRef {
   string name = 3;
 }
 
+// ListFindingEventsRequest narrows finding events. Empty fields do not filter.
 message ListFindingEventsRequest {
-  // Image name, digest, vulnerability and namespace filters apply. Severity, fix and suppression filters are ignored.
-  FindingFilter filter = 1;
-  google.protobuf.Timestamp since = 2;
-  int32 page_size = 3;
-  string page_token = 4;
+  string image_name = 1;
+  string image_digest = 2;
+  // Vulnerability ID or alias.
+  string vulnerability_id = 3;
+  // Events for images that currently run in one of these namespaces. Matching
+  // uses current workload placement, not placement when the event was recorded.
+  repeated string namespaces = 4;
+  // Events created at or after this time.
+  google.protobuf.Timestamp since = 5;
+  int32 page_size = 6;
+  string page_token = 7;
 }
 
 message ListFindingEventsResponse {

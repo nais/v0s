@@ -86,6 +86,21 @@ func TestCreateSuppressions(t *testing.T) {
 		}
 	})
 
+	// GHSA-1 names CVE-1 as an alias and a stale record of its own, and
+	// ListFindings by GHSA-1 matches both, so a suppression for it is ambiguous.
+	t.Run("rejects ID that is also an alias", func(t *testing.T) {
+		db, exec := newFixture(t)
+		exec(`INSERT INTO vulnerabilities (id) VALUES ('GHSA-1')`)
+		item := lodashSuppression("accepted_risk")
+		item.VulnerabilityID = "GHSA-1"
+		if _, err := db.CreateSuppressions(ctx, []database.NewSuppression{item}, "me", false); !errors.Is(err, database.ErrInvalid) {
+			t.Errorf("CreateSuppressions: err = %v, want ErrInvalid", err)
+		}
+		if _, err := db.GetVulnerability(ctx, "GHSA-1"); !errors.Is(err, database.ErrInvalid) {
+			t.Errorf("GetVulnerability: err = %v, want ErrInvalid", err)
+		}
+	})
+
 	t.Run("replaces active suppression", func(t *testing.T) {
 		db, _ := newFixture(t)
 		first := create(t, db, lodashSuppression("accepted_risk"))

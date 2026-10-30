@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 	"strings"
+	"time"
 
 	v0sv1 "github.com/nais/v0s/api/v0s/v1"
 	"github.com/nais/v0s/internal/database"
@@ -15,7 +16,8 @@ func (s *Server) CreateSuppressions(ctx context.Context, req *v0sv1.CreateSuppre
 		return nil, invalidArgument("no suppressions")
 	}
 	items := make([]database.NewSuppression, 0, len(req.GetSuppressions()))
-	for _, n := range req.GetSuppressions() {
+	now := time.Now()
+	for i, n := range req.GetSuppressions() {
 		item := database.NewSuppression{
 			ImageName:       n.GetImageName(),
 			Package:         n.GetPackage(),
@@ -24,8 +26,15 @@ func (s *Server) CreateSuppressions(ctx context.Context, req *v0sv1.CreateSuppre
 			Justification:   enumToDatabase(v0sv1.Justification_name, int32(n.GetJustification()), "JUSTIFICATION_"),
 			Detail:          n.GetDetail(),
 		}
-		if n.GetExpiresAt() != nil {
-			item.ExpiresAt = n.GetExpiresAt().AsTime()
+		// The database treats a zero expiry as none, so a present expiry must be checked here.
+		if exp := n.GetExpiresAt(); exp != nil {
+			if err := exp.CheckValid(); err != nil {
+				return nil, invalidArgument("suppression %d: invalid expiry: %v", i, err)
+			}
+			if !exp.AsTime().After(now) {
+				return nil, invalidArgument("suppression %d: expiry must be in the future", i)
+			}
+			item.ExpiresAt = exp.AsTime()
 		}
 		items = append(items, item)
 	}

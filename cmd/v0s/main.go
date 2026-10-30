@@ -134,7 +134,10 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(auth.UnaryInterceptor(cfg.authAudience, cfg.serviceAccounts, log)))
+	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(
+		grpcapi.RecoveryInterceptor(log),
+		auth.UnaryInterceptor(cfg.authAudience, cfg.serviceAccounts, log),
+	))
 	grpcapi.New(db, log).Register(srv)
 
 	// Probes are plain HTTP, outside the authenticated gRPC server.

@@ -113,7 +113,7 @@ func packageMatch(purlColumn, keyColumn, pkg string, args *sqlArgs) (string, err
 		return "", fmt.Errorf("package %q is not a purl: %w", pkg, ErrInvalid)
 	}
 	if p.Version != "" {
-		return purlColumn + " = " + args.add(pkg), nil
+		return purlColumn + " = " + args.add(p.ToString()), nil
 	}
 	key, err := purl.PackageKey(pkg)
 	if err != nil {
@@ -257,7 +257,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		v.title, coalesce((SELECT max((c.value->>'v3_score')::float8) FROM jsonb_each(v.cvss) c), 0),
 		e.score, e.percentile, e.date,
 		k.date_added, k.due_date, k.known_ransomware_campaign,
-		s.id
+		` + suppressionColumns + `
 	FROM findings f
 	JOIN images i ON i.id = f.image_id
 	JOIN vulnerabilities v ON v.id = f.vulnerability_id
@@ -274,17 +274,14 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	}
 	defer rows.Close()
 
-	var (
-		findings       []ImageFinding
-		suppressionIDs []int64
-	)
+	var findings []ImageFinding
 	for rows.Next() {
 		var (
-			img           imageScan
-			fi            ImageFinding
-			epss          epssScan
-			kev           kevScan
-			suppressionID *int64
+			img         imageScan
+			fi          ImageFinding
+			epss        epssScan
+			kev         kevScan
+			suppression suppressionScan
 		)
 		dest := append(img.dest(),
 			&fi.Finding.VulnerabilityID, &fi.Finding.PURL, &fi.Finding.PackageKey, &fi.Finding.InstalledVersion,
@@ -293,17 +290,14 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		)
 		dest = append(dest, epss.dest()...)
 		dest = append(dest, kev.dest()...)
-		dest = append(dest, &suppressionID)
+		dest = append(dest, suppression.dest()...)
 		if err := rows.Scan(dest...); err != nil {
 			return nil, "", fmt.Errorf("scanning finding: %w", err)
 		}
 		fi.Image = img.image()
 		fi.EPSS = epss.epss(fi.Finding.VulnerabilityID)
 		fi.KEV = kev.kev(fi.Finding.VulnerabilityID)
-		if suppressionID != nil {
-			fi.Suppression = &Suppression{ID: *suppressionID}
-			suppressionIDs = append(suppressionIDs, *suppressionID)
-		}
+		fi.Suppression = suppression.suppression()
 		findings = append(findings, fi)
 	}
 	if err := rows.Err(); err != nil {
@@ -317,27 +311,6 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		next, err = encodePageToken(findingCursor{ImageID: last.Image.ID, VulnerabilityID: last.Finding.VulnerabilityID, PURL: last.Finding.PURL})
 		if err != nil {
 			return nil, "", err
-		}
-	}
-
-	if len(suppressionIDs) > 0 {
-		rows, err := db.pool.Query(ctx, "SELECT "+suppressionColumns+" FROM suppressions WHERE id = ANY($1)", suppressionIDs)
-		if err != nil {
-			return nil, "", fmt.Errorf("listing finding suppressions: %w", err)
-		}
-		suppressions, err := pgx.CollectRows(rows, collectSuppression)
-		if err != nil {
-			return nil, "", fmt.Errorf("listing finding suppressions: %w", err)
-		}
-		byID := make(map[int64]Suppression, len(suppressions))
-		for _, s := range suppressions {
-			byID[s.ID] = s
-		}
-		for i := range findings {
-			if s := findings[i].Suppression; s != nil {
-				full := byID[s.ID]
-				findings[i].Suppression = &full
-			}
 		}
 	}
 	return findings, next, nil
@@ -455,14 +428,14 @@ func (db *DB) CountFindings(ctx context.Context, filter FindingFilter, groupBy G
 	return counts, nil
 }
 
-// vulnerabilityIDs returns the vulnerability ID idOrAlias names: itself if it
-// is an ID, otherwise every ID it is an alias of.
+// vulnerabilityIDs returns the distinct vulnerability IDs idOrAlias names:
+// itself if it is an ID, and every ID it is an alias of. It matches the same
+// vulnerabilities as vulnerabilityMatch.
 func vulnerabilityIDs(ctx context.Context, q pgxQuerier, idOrAlias string) ([]string, error) {
 	rows, err := q.Query(ctx, `
 		SELECT id FROM vulnerabilities WHERE id = $1
-		UNION ALL
-		SELECT vulnerability_id FROM vulnerability_aliases
-		WHERE alias = $1 AND NOT EXISTS (SELECT 1 FROM vulnerabilities WHERE id = $1)
+		UNION
+		SELECT vulnerability_id FROM vulnerability_aliases WHERE alias = $1
 		ORDER BY 1`, idOrAlias)
 	if err != nil {
 		return nil, fmt.Errorf("resolving vulnerability: %w", err)
@@ -487,7 +460,7 @@ type VulnerabilityDetail struct {
 }
 
 // GetVulnerability returns the vulnerability named by an ID or an alias.
-// An alias of several vulnerabilities is ErrInvalid.
+// A name that matches several vulnerabilities, as IDs or aliases, is ErrInvalid.
 func (db *DB) GetVulnerability(ctx context.Context, idOrAlias string) (VulnerabilityDetail, error) {
 	ids, err := vulnerabilityIDs(ctx, db.pool, idOrAlias)
 	if err != nil {
@@ -498,7 +471,7 @@ func (db *DB) GetVulnerability(ctx context.Context, idOrAlias string) (Vulnerabi
 		return VulnerabilityDetail{}, fmt.Errorf("vulnerability %q: %w", idOrAlias, ErrNotFound)
 	case 1:
 	default:
-		return VulnerabilityDetail{}, fmt.Errorf("%q is an alias of several vulnerabilities (%s): %w", idOrAlias, strings.Join(ids, ", "), ErrInvalid)
+		return VulnerabilityDetail{}, fmt.Errorf("%q names several vulnerabilities (%s): %w", idOrAlias, strings.Join(ids, ", "), ErrInvalid)
 	}
 
 	var (

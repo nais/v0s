@@ -32,19 +32,51 @@ type Suppression struct {
 	RevokeReason    string
 }
 
-const suppressionColumns = `id, image_name, package_key, vulnerability_id, state, justification, detail,
-	created_by, created_at, expires_at, revoked_at, revoked_by, revoke_reason`
+// suppressionColumns are the columns of suppressions s that suppressionScan reads.
+const suppressionColumns = `s.id, s.image_name, s.package_key, s.vulnerability_id, s.state, s.justification, s.detail,
+	s.created_by, s.created_at, s.expires_at, s.revoked_at, s.revoked_by, s.revoke_reason`
+
+// suppressionScan reads suppressionColumns. Every column is NULL when a LEFT JOIN finds no suppression.
+type suppressionScan struct {
+	id                                                        pgtype.Int8
+	imageName, packageKey, vulnerabilityID, state             pgtype.Text
+	justification, detail, createdBy, revokedBy, revokeReason pgtype.Text
+	createdAt, expiresAt, revokedAt                           pgtype.Timestamptz
+}
+
+func (s *suppressionScan) dest() []any {
+	return []any{&s.id, &s.imageName, &s.packageKey, &s.vulnerabilityID, &s.state, &s.justification, &s.detail,
+		&s.createdBy, &s.createdAt, &s.expiresAt, &s.revokedAt, &s.revokedBy, &s.revokeReason}
+}
+
+// suppression returns nil if no suppression was read.
+func (s *suppressionScan) suppression() *Suppression {
+	if !s.id.Valid {
+		return nil
+	}
+	return &Suppression{
+		ID:              s.id.Int64,
+		ImageName:       s.imageName.String,
+		PackageKey:      s.packageKey.String,
+		VulnerabilityID: s.vulnerabilityID.String,
+		State:           s.state.String,
+		Justification:   s.justification.String,
+		Detail:          s.detail.String,
+		CreatedBy:       s.createdBy.String,
+		CreatedAt:       s.createdAt.Time,
+		ExpiresAt:       s.expiresAt.Time,
+		RevokedAt:       s.revokedAt.Time,
+		RevokedBy:       s.revokedBy.String,
+		RevokeReason:    s.revokeReason.String,
+	}
+}
 
 func scanSuppression(row pgx.Row) (Suppression, error) {
-	var (
-		s                    Suppression
-		expiresAt, revokedAt pgtype.Timestamptz
-	)
-	err := row.Scan(&s.ID, &s.ImageName, &s.PackageKey, &s.VulnerabilityID, &s.State, &s.Justification, &s.Detail,
-		&s.CreatedBy, &s.CreatedAt, &expiresAt, &revokedAt, &s.RevokedBy, &s.RevokeReason)
-	s.ExpiresAt = expiresAt.Time
-	s.RevokedAt = revokedAt.Time
-	return s, err
+	var s suppressionScan
+	if err := row.Scan(s.dest()...); err != nil {
+		return Suppression{}, err
+	}
+	return *s.suppression(), nil
 }
 
 func collectSuppression(row pgx.CollectableRow) (Suppression, error) { return scanSuppression(row) }
@@ -145,7 +177,7 @@ func (db *DB) CreateSuppressions(ctx context.Context, items []NewSuppression, ac
 			return nil, fmt.Errorf("suppression %d: unknown vulnerability %q: %w", i, item.VulnerabilityID, ErrInvalid)
 		case 1:
 		default:
-			return nil, fmt.Errorf("suppression %d: %q is an alias of several vulnerabilities (%s): %w",
+			return nil, fmt.Errorf("suppression %d: %q names several vulnerabilities (%s): %w",
 				i, item.VulnerabilityID, strings.Join(ids, ", "), ErrInvalid)
 		}
 		k := key{item.ImageName, pkg, ids[0]}
@@ -270,8 +302,8 @@ func (db *DB) RevokeSuppressions(ctx context.Context, ids []int64, actor, reason
 	revoked := make([]Suppression, 0, len(ids))
 	for _, id := range ids {
 		s, err := scanSuppression(tx.QueryRow(ctx, `
-			UPDATE suppressions SET revoked_at = now(), revoked_by = $2, revoke_reason = $3
-			WHERE id = $1 AND revoked_at IS NULL
+			UPDATE suppressions s SET revoked_at = now(), revoked_by = $2, revoke_reason = $3
+			WHERE s.id = $1 AND s.revoked_at IS NULL
 			RETURNING `+suppressionColumns, id, actor, reason))
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool

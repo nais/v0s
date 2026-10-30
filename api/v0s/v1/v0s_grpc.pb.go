@@ -39,12 +39,18 @@ type VulnerabilityServiceClient interface {
 	// ListFindings lists findings for images matching the filter.
 	ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error)
 	// CountFindings counts findings matching the filter, grouped by one dimension.
+	// Under NAMESPACE and WORKLOAD, a finding counts once for every matching workload
+	// running its image, since one image can run in several workloads. A namespace
+	// count is the sum over its workloads. Under the other groupings each finding
+	// counts once.
 	CountFindings(ctx context.Context, in *CountFindingsRequest, opts ...grpc.CallOption) (*CountFindingsResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
 	GetVulnerability(ctx context.Context, in *GetVulnerabilityRequest, opts ...grpc.CallOption) (*GetVulnerabilityResponse, error)
 	// SearchComponents finds packages in SBOMs of running images, whether or not they have findings.
 	SearchComponents(ctx context.Context, in *SearchComponentsRequest, opts ...grpc.CallOption) (*SearchComponentsResponse, error)
-	// ListFindingEvents lists findings appearing and resolving over time.
+	// ListFindingEvents lists findings appearing and resolving over time, oldest first.
+	// Pagination is best-effort under concurrent writes: an event committed while a
+	// client pages may be skipped if a later event was already returned.
 	ListFindingEvents(ctx context.Context, in *ListFindingEventsRequest, opts ...grpc.CallOption) (*ListFindingEventsResponse, error)
 }
 
@@ -128,12 +134,18 @@ type VulnerabilityServiceServer interface {
 	// ListFindings lists findings for images matching the filter.
 	ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error)
 	// CountFindings counts findings matching the filter, grouped by one dimension.
+	// Under NAMESPACE and WORKLOAD, a finding counts once for every matching workload
+	// running its image, since one image can run in several workloads. A namespace
+	// count is the sum over its workloads. Under the other groupings each finding
+	// counts once.
 	CountFindings(context.Context, *CountFindingsRequest) (*CountFindingsResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
 	GetVulnerability(context.Context, *GetVulnerabilityRequest) (*GetVulnerabilityResponse, error)
 	// SearchComponents finds packages in SBOMs of running images, whether or not they have findings.
 	SearchComponents(context.Context, *SearchComponentsRequest) (*SearchComponentsResponse, error)
-	// ListFindingEvents lists findings appearing and resolving over time.
+	// ListFindingEvents lists findings appearing and resolving over time, oldest first.
+	// Pagination is best-effort under concurrent writes: an event committed while a
+	// client pages may be skipped if a later event was already returned.
 	ListFindingEvents(context.Context, *ListFindingEventsRequest) (*ListFindingEventsResponse, error)
 	mustEmbedUnimplementedVulnerabilityServiceServer()
 }
@@ -343,7 +355,7 @@ type SuppressionServiceClient interface {
 	// CreateSuppressions creates suppressions atomically. With dry_run, nothing is written,
 	// but the response still reports what each suppression would match.
 	CreateSuppressions(ctx context.Context, in *CreateSuppressionsRequest, opts ...grpc.CallOption) (*CreateSuppressionsResponse, error)
-	// RevokeSuppressions revokes active suppressions atomically.
+	// RevokeSuppressions revokes unrevoked suppressions atomically, expired or not.
 	RevokeSuppressions(ctx context.Context, in *RevokeSuppressionsRequest, opts ...grpc.CallOption) (*RevokeSuppressionsResponse, error)
 	// ListSuppressions lists suppressions, including revoked and expired ones when asked.
 	ListSuppressions(ctx context.Context, in *ListSuppressionsRequest, opts ...grpc.CallOption) (*ListSuppressionsResponse, error)
@@ -396,7 +408,7 @@ type SuppressionServiceServer interface {
 	// CreateSuppressions creates suppressions atomically. With dry_run, nothing is written,
 	// but the response still reports what each suppression would match.
 	CreateSuppressions(context.Context, *CreateSuppressionsRequest) (*CreateSuppressionsResponse, error)
-	// RevokeSuppressions revokes active suppressions atomically.
+	// RevokeSuppressions revokes unrevoked suppressions atomically, expired or not.
 	RevokeSuppressions(context.Context, *RevokeSuppressionsRequest) (*RevokeSuppressionsResponse, error)
 	// ListSuppressions lists suppressions, including revoked and expired ones when asked.
 	ListSuppressions(context.Context, *ListSuppressionsRequest) (*ListSuppressionsResponse, error)

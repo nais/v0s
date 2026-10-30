@@ -5,13 +5,16 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	v0sv1 "github.com/nais/v0s/api/v0s/v1"
 	"github.com/nais/v0s/internal/database/databasetest"
 	"github.com/nais/v0s/internal/grpcapi"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
@@ -95,6 +98,14 @@ func TestErrorCodes(t *testing.T) {
 			}}})
 			return err
 		}},
+		{name: "zero expiry is not never", want: codes.InvalidArgument, call: func() error {
+			_, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
+				ImageName: "repo/app", Package: "pkg:npm/x", VulnerabilityId: "CVE-1",
+				State: v0sv1.SuppressionState_SUPPRESSION_STATE_FALSE_POSITIVE, Detail: "d",
+				ExpiresAt: timestamppb.New(time.Time{}),
+			}}})
+			return err
+		}},
 		{name: "unknown vulnerability", want: codes.NotFound, call: func() error {
 			_, err := s.GetVulnerability(ctx, &v0sv1.GetVulnerabilityRequest{Id: "CVE-404"})
 			return err
@@ -120,5 +131,14 @@ func TestErrorCodes(t *testing.T) {
 				t.Errorf("err = %v, want %v", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestRecoveryInterceptor(t *testing.T) {
+	intercept := grpcapi.RecoveryInterceptor(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	handler := func(context.Context, any) (any, error) { panic("boom") }
+	_, err := intercept(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/v0s.v1.VulnerabilityService/ListFindings"}, handler)
+	if status.Code(err) != codes.Internal {
+		t.Errorf("err = %v, want Internal", err)
 	}
 }

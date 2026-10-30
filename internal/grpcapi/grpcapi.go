@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"time"
@@ -58,6 +59,20 @@ func (s *Server) toStatus(ctx context.Context, err error) error {
 	method, _ := grpc.Method(ctx)
 	s.log.With("method", method, "err", err).Error("request failed")
 	return status.Error(codes.Internal, "internal error")
+}
+
+// RecoveryInterceptor returns an interceptor that turns a panic in a later
+// interceptor or handler into an Internal error instead of a crashed process.
+func RecoveryInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				log.With("method", info.FullMethod, "panic", p, "stack", string(debug.Stack())).Error("request panicked")
+				resp, err = nil, status.Error(codes.Internal, "internal error")
+			}
+		}()
+		return handler(ctx, req)
+	}
 }
 
 func invalidArgument(format string, args ...any) error {
@@ -212,12 +227,11 @@ func (s *Server) SearchComponents(ctx context.Context, req *v0sv1.SearchComponen
 
 // ListFindingEvents implements VulnerabilityService.
 func (s *Server) ListFindingEvents(ctx context.Context, req *v0sv1.ListFindingEventsRequest) (*v0sv1.ListFindingEventsResponse, error) {
-	f := req.GetFilter()
 	filter := database.FindingEventFilter{
-		ImageName:       f.GetImageName(),
-		ImageDigest:     f.GetImageDigest(),
-		VulnerabilityID: f.GetVulnerabilityId(),
-		Namespaces:      f.GetNamespaces(),
+		ImageName:       req.GetImageName(),
+		ImageDigest:     req.GetImageDigest(),
+		VulnerabilityID: req.GetVulnerabilityId(),
+		Namespaces:      req.GetNamespaces(),
 	}
 	if req.GetSince() != nil {
 		filter.Since = req.GetSince().AsTime()
