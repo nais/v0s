@@ -21,7 +21,7 @@ Each loop reads the desired state from Postgres, claims work with
 separate queue:
 
 - fetch: images whose SBOM is not yet fetched, or due for a retry
-- scan: images in use whose `scanned_db_version` differs from the loaded DB
+- scan: images in use whose `scanned_db_version` differs from the loaded DB, unless a scan with that DB already failed
 - enrich: EPSS and KEV once a day, behind an advisory lock
 - vulndb: check the registry for a newer DB every hour
 - watch: pod informers keep `workload_images` current

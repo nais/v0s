@@ -112,7 +112,7 @@ func run(log *slog.Logger) error {
 	}
 	defer db.Close()
 
-	// scan.New replaces the default slog logger; see its doc comment.
+	// slog.SetDefault above must run before any scan: Trivy logs through slog.Default.
 	scanner, err := scan.New(cfg.trivyDBDir, cfg.trivyDBRepos, log)
 	if err != nil {
 		return fmt.Errorf("opening vulnerability DB: %w", err)
