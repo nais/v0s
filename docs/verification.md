@@ -16,7 +16,7 @@ management cluster (nais-system)                     tenant cluster(s)
    │  │  └─ attestations ──▶ registries (GAR, ghcr)
    │  └─ Trivy DB ─────────▶ europe-north1-docker.pkg.dev/nais-io/github-ptc/aquasecurity/trivy-db:2
    ├─ EPSS/KEV ───────────▶ epss.empiricalsecurity.com, www.cisa.gov
-   ├─ Cloud SQL (own instance, via cloud-sql-proxy)
+   ├─ Postgres 18: CloudNativePG cluster in the same release (nais-postgresql chart)
    ├─ gRPC  ◀── ingress v0s.<tenant>.cloud.nais.io (naisdevice) ◀── grpcurl / compare script
    └─ :8080 /healthz /metrics ◀── ServiceMonitor
 ```
@@ -28,22 +28,27 @@ The Trivy DB pull-through cache already exists and serves the same digest as
 
 | Where | What | Scope |
 |---|---|---|
-| GitHub | `nais/v0s` repo, workflow: test, build/push/sign image, push chart to `oci://europe-north1-docker.pkg.dev/nais-io/nais/feature`, `fasit-deploy` with targets `dev-nais` management only | new repo |
+| GitHub | public `nais/v0s` repo, workflow: test, build/push/sign image, push chart to `oci://europe-north1-docker.pkg.dev/nais-io/nais/feature`, `fasit-deploy` with targets `dev-nais` management only | new repo |
 | nais-io-terraform-modules | `gh-v0s` publisher service account for the repo | nais.io |
-| nais-terraform-modules | `modules/management/v0s.tf` behind `v0s_enabled` (default false): `v0s-sa` with Workload Identity and `artifactregistry.reader`, a small Cloud SQL instance, Fasit values `v0s_*`; set `v0s_enabled = true` in `tenants/dev-nais` | dev-nais only (Atlantis plan must show no change elsewhere) |
+| nais-terraform-modules | `modules/management/v0s.tf` behind `v0s_enabled` (default false): `v0s-sa` with Workload Identity and `artifactregistry.reader`, Fasit value `v0s_serviceaccount_email`; set `v0s_enabled = true` in `tenants/dev-nais` | dev-nais only (Atlantis plan must show no change elsewhere) |
 | helm-charts | `features/v0s-rbac`: ClusterRole pods get/list/watch bound to `v0s-sa@<management project>`, `targets.json` = dev-nais `tenant` | dev-nais only |
 | v0s | Dockerfile, chart (`charts/` with `Feature.yaml`), metrics, gRPC reflection | this repo |
 
-The chart follows v13s: one Deployment with a cloud-sql-proxy sidecar, own KSA
+The chart follows v13s: one Deployment, own KSA
 `v0s-sa`, NetworkPolicy plus FQDNNetworkPolicy listing the hosts above,
 read-only root filesystem with an `emptyDir` (sizeLimit 4Gi) for the Trivy DB,
 ServiceMonitor, gRPC ingress. Access is the existing Google ID-token check; the
 allowed service accounts are `v0s-sa` itself (people impersonate it, as with
 v13s's `vulnz`) and later the nais-api account.
 
-Postgres: a separate small instance rather than a database on the v13s
-instance, so that load and storage measurements belong to v0s alone and nothing
-we do can affect v13s. Pin the major version and run the test suite against it.
+Postgres: the chart depends on `nais-postgresql` (helm-charts `charts/`, published
+to `oci://europe-north1-docker.pkg.dev/nais-io/nais/chart`), which adds a
+CloudNativePG cluster to the v0s release using the `cloudnative-pg` operator
+feature already running in management clusters. v0s reads `DATABASE_URL` from the
+generated `v0s-db-app` Secret. PostgreSQL 18, the version the tests run against.
+One instance in dev-nais: the data can be rebuilt from the clusters and
+registries, and the chart configures no backups. Load and storage belong to v0s
+alone, and nothing we do can affect v13s.
 
 ## What v0s needs before deploying
 
@@ -98,15 +103,15 @@ the session notes with the image/DB versions used.
 | Trivy DB update (about every 6 h) | every image rescanned once; `v0s_scans_total` rises by the image count, not more |
 | Two replicas | no image scanned twice for the same DB version; one watcher leader |
 | Kill a pod during a scan | the image is picked up again after the lease; no lost or duplicated findings |
-| Cloud SQL restart, apiserver or registry unreachable, EPSS/KEV feed down | loops log and retry; stored data stays; `/healthz` reflects the database only |
+| Postgres pod restart, apiserver or registry unreachable, EPSS/KEV feed down | loops log and retry; stored data stays; `/healthz` reflects the database only |
 
 ### Performance
 
-Measured from metrics and Cloud SQL monitoring, recorded per tenant:
+Measured from v0s metrics and the CNPG PodMonitor, recorded per tenant:
 
 - cold start: pod start → DB downloaded → backlog (`pending`) at zero;
 - per-scan duration p50/p99 and peak memory (`container_memory_working_set_bytes`);
-- full rescan after a DB update: duration, CPU, Cloud SQL CPU/IO;
+- full rescan after a DB update: duration, CPU, Postgres CPU/IO;
 - database size after a week, and growth per rescan (finding events);
 - gRPC latency for `ListFindings`, `CountFindings` and `SearchComponents` with real filters.
 
@@ -117,10 +122,12 @@ passes.
 ## Order
 
 1. v0s: Dockerfile, metrics, reflection, attempt cap.
-2. Repo on GitHub and `gh-v0s`; CI publishes image and chart without deploying.
+2. Repo on GitHub and `gh-v0s`; CI publishes image and chart. The deploy job targets
+   dev-nais management only (no ci-nais canary) and is switched on after step 3.
 3. Terraform (dev-nais) and `v0s-rbac` (dev-nais), as draft PRs; read the Atlantis plan.
 4. Deploy to dev-nais with one replica; run the output checks.
 5. Two replicas; run the behaviour checks; one week of performance data.
 6. nav: static clusters, then the same in shadow mode.
 
-Removing it is the reverse: delete the Fasit targets, `v0s_enabled = false`.
+Removing it is the reverse: remove the Fasit targets, `v0s_enabled = false`. The
+CNPG cluster is kept on uninstall (`keep: true`); delete it explicitly.
