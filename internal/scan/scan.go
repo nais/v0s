@@ -175,8 +175,13 @@ func fillPURL(c *cdx.Component) (packageurl.PackageURL, bool) {
 	if err != nil {
 		return packageurl.PackageURL{}, false
 	}
-	if p.Version == "" {
-		p.Version = c.Version
+	if p.Version == "" && c.Version != "" {
+		// Re-parse so the filled version is normalized and validated like one in the purl.
+		withVersion := p
+		withVersion.Version = c.Version
+		if q, err := packageurl.FromString(withVersion.ToString()); err == nil {
+			p = q
+		}
 	}
 	c.PackageURL = p.ToString()
 	return p, true

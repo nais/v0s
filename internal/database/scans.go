@@ -57,7 +57,12 @@ func (db *DB) ClaimScan(ctx context.Context, dbVersion time.Time, lease time.Dur
 	}
 	sbom, err := gunzip(compressed)
 	if err != nil {
-		return ScanJob{}, false, fmt.Errorf("decompressing sbom of image %d: %w", img.img.ID, err)
+		// Retrying cannot help, so record it as a failed scan with this DB.
+		err = fmt.Errorf("decompressing sbom of image %d: %w", img.img.ID, err)
+		if rerr := db.RecordScanFailure(ctx, img.img.ID, dbVersion, err.Error()); rerr != nil {
+			return ScanJob{}, false, errors.Join(err, rerr)
+		}
+		return ScanJob{}, false, err
 	}
 	return ScanJob{Image: img.image(), SBOM: sbom}, true, nil
 }

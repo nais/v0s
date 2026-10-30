@@ -131,13 +131,18 @@ func (w *Watcher) Snapshot(clusterName string) ([]v0s.WorkloadImage, bool) {
 	return images, true
 }
 
-// observedStatuses returns the statuses of the pod's containers and of its running init
-// containers. A running init container is usually a native sidecar (restartPolicy Always), which
-// keeps running alongside the containers.
+// observedStatuses returns the statuses of the pod's containers, of its native sidecars (init
+// containers with restartPolicy Always) in any state, and of other init containers while running.
 func observedStatuses(pod *corev1.Pod) []corev1.ContainerStatus {
 	statuses := slices.Clone(pod.Status.ContainerStatuses)
+	sidecars := map[string]bool{}
+	for _, c := range pod.Spec.InitContainers {
+		if c.RestartPolicy != nil && *c.RestartPolicy == corev1.ContainerRestartPolicyAlways {
+			sidecars[c.Name] = true
+		}
+	}
 	for _, s := range pod.Status.InitContainerStatuses {
-		if s.State.Running != nil {
+		if sidecars[s.Name] || s.State.Running != nil {
 			statuses = append(statuses, s)
 		}
 	}
@@ -177,6 +182,11 @@ func stripPod(obj any) (any, error) {
 	}
 	if ref := metav1.GetControllerOf(pod); ref != nil {
 		stripped.OwnerReferences = []metav1.OwnerReference{*ref}
+	}
+	for _, c := range pod.Spec.InitContainers {
+		if c.RestartPolicy != nil {
+			stripped.Spec.InitContainers = append(stripped.Spec.InitContainers, corev1.Container{Name: c.Name, RestartPolicy: c.RestartPolicy})
+		}
 	}
 	stripped.Status.ContainerStatuses = stripStatuses(pod.Status.ContainerStatuses)
 	stripped.Status.InitContainerStatuses = stripStatuses(pod.Status.InitContainerStatuses)

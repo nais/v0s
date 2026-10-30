@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/attest"
 	"github.com/nais/v0s/internal/database"
@@ -171,5 +172,51 @@ func TestScanFailureRecordsUsedVersion(t *testing.T) {
 
 	if _, ok, err := db.ClaimScan(ctx, v2, time.Minute); err != nil || !ok {
 		t.Errorf("ClaimScan for %v after a failure with %v = %t, %v; want the image again", v2, v1, ok, err)
+	}
+}
+
+// nulScanner returns a result Postgres rejects: text cannot contain NUL.
+type nulScanner struct{ fakeScanner }
+
+func (s nulScanner) Scan(context.Context, []byte) (v0s.ScanResult, time.Time, error) {
+	return v0s.ScanResult{
+		Components: []v0s.Component{{PURL: "pkg:npm/bad@1", PackageKey: "pkg:npm/bad", Name: "b\x00d", Version: "1"}},
+	}, s.version, nil
+}
+
+// TestRejectedResultIsNotRetried checks that a result the database rejects is recorded as a
+// failure with that DB, so the image is not rescanned on every lease expiry.
+func TestRejectedResultIsNotRetried(t *testing.T) {
+	ctx := context.Background()
+	db, url := databasetest.NewWithURL(t)
+	w := v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: "app", Container: "app", ImageName: "registry/app", Digest: "sha256:a"}
+	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
+		t.Fatal(err)
+	}
+	version := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
+	r := &Reconciler{
+		DB:      db,
+		Watcher: fakeWatcher{},
+		Fetcher: fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
+		Scanner: nulScanner{fakeScanner{version: version}},
+		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	if err := r.fetch(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.scan(ctx); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	var failed *time.Time
+	if err := conn.QueryRow(ctx, `SELECT scan_failed_db_version FROM images`).Scan(&failed); err != nil {
+		t.Fatal(err)
+	}
+	if failed == nil || !failed.Equal(version) {
+		t.Errorf("scan_failed_db_version = %v, want %v", failed, version)
 	}
 }

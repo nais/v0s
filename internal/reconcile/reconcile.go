@@ -9,9 +9,11 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/attest"
 	"github.com/nais/v0s/internal/database"
@@ -184,6 +186,13 @@ func (r *Reconciler) scanOne(ctx context.Context, j database.ScanJob) {
 		err = r.DB.RecordScanFailure(ctx, j.Image.ID, version, err.Error())
 	default:
 		err = r.DB.StoreScan(ctx, j.Image.ID, version, res)
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && (strings.HasPrefix(pgErr.Code, "22") || strings.HasPrefix(pgErr.Code, "23")) {
+			// The result itself is rejected (data exception or constraint violation), so
+			// retrying with the same DB cannot help.
+			log.Warn("storing scan", "error", err, "db_version", version)
+			err = r.DB.RecordScanFailure(ctx, j.Image.ID, version, err.Error())
+		}
 	}
 	if err != nil {
 		log.Error("recording scan", "error", err)

@@ -74,7 +74,9 @@ func TestSnapshot(t *testing.T) {
 	api1 := pod("api-1", "api", rs, status("api", "ghcr.io/nais/api@"+digestA), status("proxy", "docker-pullable://ghcr.io/nais/proxy@"+digestB))
 	sidecar := status("sidecar", "ghcr.io/nais/sidecar@"+digestB)
 	sidecar.State.Running = &corev1.ContainerStateRunning{}
-	api1.Status.InitContainerStatuses = []corev1.ContainerStatus{status("init", "ghcr.io/nais/init@"+digestA), sidecar}
+	api1.Status.InitContainerStatuses = []corev1.ContainerStatus{status("init", "ghcr.io/nais/init@"+digestA), sidecar, status("mesh", "ghcr.io/nais/mesh@"+digestB)}
+	always := corev1.ContainerRestartPolicyAlways
+	api1.Spec.InitContainers = []corev1.Container{{Name: "init"}, {Name: "sidecar", RestartPolicy: &always}, {Name: "mesh", RestartPolicy: &always}} // mesh is crashlooping
 	api1.Status.EphemeralContainerStatuses = []corev1.ContainerStatus{status("debug", "ghcr.io/nais/debug@"+digestA)}
 	api2 := pod("api-2", "api", rs, status("api", "ghcr.io/nais/api@"+digestA), status("proxy", "docker-pullable://ghcr.io/nais/proxy@"+digestB))
 	job := pod("batch-1", "batch", &metav1.OwnerReference{Kind: "Job", Name: "batch", Controller: &controller}, status("batch", "ghcr.io/nais/batch@"+digestA))
@@ -106,6 +108,7 @@ func TestSnapshot(t *testing.T) {
 	got := waitForSnapshot(t, w, "dev")
 	want := []v0s.WorkloadImage{
 		{Cluster: "dev", Namespace: "team", Workload: "api", Container: "api", OwnerKind: "ReplicaSet", ImageName: "ghcr.io/nais/api", Digest: digestA},
+		{Cluster: "dev", Namespace: "team", Workload: "api", Container: "mesh", OwnerKind: "ReplicaSet", ImageName: "ghcr.io/nais/mesh", Digest: digestB},
 		{Cluster: "dev", Namespace: "team", Workload: "api", Container: "proxy", OwnerKind: "ReplicaSet", ImageName: "ghcr.io/nais/proxy", Digest: digestB},
 		{Cluster: "dev", Namespace: "team", Workload: "api", Container: "sidecar", OwnerKind: "ReplicaSet", ImageName: "ghcr.io/nais/sidecar", Digest: digestB},
 		{Cluster: "dev", Namespace: "team", Workload: "bare", Container: "bare", OwnerKind: "", ImageName: "ghcr.io/nais/bare", Digest: digestA},
