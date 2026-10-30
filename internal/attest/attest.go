@@ -61,6 +61,12 @@ func NewFetcher(organizations []string, log *slog.Logger) (*Fetcher, error) {
 
 // githubIdentity accepts certificates issued to any workflow under .github/workflows in a
 // repository owned by one of organizations.
+//
+// TODO: the SAN of a GitHub Actions certificate names the workflow that signed, which for a
+// reusable workflow is the called workflow, not the caller. A repository outside the allowed
+// organizations that calls a public reusable workflow in them therefore matches. This is only
+// exploitable if such a workflow signs attestations from caller-supplied input. Consider also
+// requiring the source repository owner certificate extension to be an allowed organization.
 func githubIdentity(organizations []string) cosign.Identity {
 	orgs := make([]string, len(organizations))
 	for i, org := range organizations {
