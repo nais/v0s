@@ -51,6 +51,14 @@ func run(m *testing.M) int {
 // New returns a migrated, empty database that is dropped when the test ends.
 func New(t testing.TB) *database.DB {
 	t.Helper()
+	db, _ := NewWithURL(t)
+	return db
+}
+
+// NewWithURL is like New, and also returns the database's connection URL,
+// for tests that seed data with plain SQL.
+func NewWithURL(t testing.TB) (*database.DB, string) {
+	t.Helper()
 	if adminURL == "" {
 		if skipReason == "" {
 			skipReason = "databasetest.Main not called from TestMain"
@@ -94,7 +102,7 @@ func New(t testing.TB) *database.DB {
 			t.Errorf("dropping database: %v", err)
 		}
 	})
-	return db
+	return db, url
 }
 
 // startCluster starts a temporary Postgres cluster and sets adminURL.
