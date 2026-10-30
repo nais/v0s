@@ -1,0 +1,1 @@
+{"_type":"https://in-toto.io/Statement/v1","predicateType":"https://slsa.dev/provenance/v1","subject":[{"name":"ghcr.io/nais/app","digest":{"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}],"predicate":{"buildDefinition":{"buildType":"https://actions.github.io/buildtypes/workflow/v1"}}}

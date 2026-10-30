@@ -79,9 +79,6 @@ func (a *sqlArgs) add(v any) string {
 	return "$" + strconv.Itoa(len(*a))
 }
 
-// imageColumns are the images columns that imageScan reads, for alias i.
-const imageColumns = "i.id, i.name, i.digest, i.sbom_state, i.sbom_error, i.scanned_at, i.scanned_db_version, i.scan_error"
-
 type imageScan struct {
 	img                         v0s.Image
 	scannedAt, scannedDBVersion pgtype.Timestamptz
