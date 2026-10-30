@@ -77,7 +77,7 @@ func New(dir string, repos []string, log *slog.Logger) (*Scanner, error) {
 		}
 		s.current, s.version = c.path, c.meta.UpdatedAt
 		s.digest = strings.Replace(strings.TrimPrefix(filepath.Base(c.path), dbPrefix), "-", ":", 1)
-		log.With("db_version", s.version).Info("loaded vulnerability DB")
+		log.With("db_version", s.version, "digest", s.digest).Info("loaded vulnerability DB")
 		break
 	}
 	return s, nil

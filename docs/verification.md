@@ -4,6 +4,40 @@ Goal: run v0s in a real tenant, read-only and without consumers, so that we can
 look at the findings it produces for real workloads, compare them with v13s, and
 measure how it behaves and performs. Start in `dev-nais`, then `nav`.
 
+## What the proof of concept decides
+
+Whether v0s can replace both v13s and Dependency-Track. Agreed boundaries:
+
+- **Correct means classified, not equal to DT.** DT is not ground truth. Every
+  critical/high difference is classified by hand: v0s wrong, v13s/DT wrong, or a
+  defensible source difference.
+- **Facts, not judgments.** v0s serves facts; priority tiers, risk score and
+  URGENT (with ingress exposure) are computed in nais-api later. nais-api and
+  Console are not changed in the PoC: we verify the findings and the API that
+  serves them, and the consumers follow from a solid facts API.
+- **Unfixed findings are shown** with their status (affected, will_not_fix,
+  fix_deferred). DT hides them (`ignore_unfixed`), so the comparison reports
+  them separately.
+- **Inventory is what runs**: images in present Pods, including completed job
+  Pods. Apps scaled to zero have no findings in v0s; the comparison counts such
+  workloads instead of treating them as misses.
+- **History** is derived from finding events (appeared/resolved), not from
+  materialized summaries.
+- **Suppressions**: only new ones through the v0s API. Moving v13s's
+  suppressions (versioned purl to versionless key) comes later.
+- **SBOM gaps** (customer SBOMs without OS packages, binaries outside a package
+  manager) are measured, not fixed. They affect v13s and v0s alike.
+- **Dependency paths** (direct or transitive) are not served yet. SBOMs are
+  retained, so they can be added without refetching.
+- **Trivy DB**: taken from the Nais registry's GitHub pull-through cache as
+  published. v0s logs the digest of every DB it loads or swaps in, and every
+  scan records its DB version, so each finding traces back to an artifact digest.
+  Verifying the DB's signature is a separate item.
+- **Performance** is measured and judged together while we run it, not against
+  budgets set in advance.
+- **Scale**: dev-nais shows behaviour; nav shows scale, its GCP clusters first,
+  on-prem fss after.
+
 ## Shape
 
 v0s runs the way v13s does: a Fasit feature in the tenant's management cluster,
@@ -66,9 +100,9 @@ alone, and nothing we do can affect v13s.
   the process must not crash-loop every replica. Count claims, record a failure
   after three.
 
-Not needed for dev-nais, needed for nav: static clusters (on-prem `fss` with
-token credentials, as v13s supports) and nav's `legacy` environment kind in the
-Fasit cluster list.
+Not needed for dev-nais, needed for nav: nav's `legacy` environment kind in the
+Fasit cluster list (GCP clusters, first), then static clusters (on-prem `fss` with
+token credentials, as v13s supports).
 
 ## Verification
 
@@ -82,16 +116,19 @@ the session notes with the image/DB versions used.
    - v0s: `grpcurl … v0s.v1.VulnerabilityService/ListFindings` per workload.
    - v13s: `vulnz` with the same workload.
    A small comparison script (kept with the session notes, not in this repo) prints
-   matched / v0s-only / v13s-only per workload and severity.
-2. Inspect every critical/high difference by hand and classify it (advisory
-   withdrawn, different source, purl/version mismatch, real miss). Accept when no
-   unexplained critical/high difference remains.
+   matched / v0s-only / v13s-only per workload and severity, with v0s-only unfixed
+   findings and workloads that run no Pods (scaled to zero) counted separately.
+2. Inspect every critical/high difference by hand and classify it: v0s wrong,
+   v13s/DT wrong (for example a withdrawn advisory or package misattribution), or a
+   defensible source difference. Done when no critical/high difference is unclassified.
 3. Coverage: share of running images with a verified SBOM, and the reasons for the
    rest (`missing`, `failed`), compared with v13s for the same images.
 4. Package search: look up a package known to run (e.g. `pkg:golang/stdlib`) and one
    with no finding; both must list the workloads using it.
-5. Suppressions: dry-run, create, list, revoke through grpcurl on a real finding;
-   the finding's suppression state and counts change accordingly.
+5. Suppressions: dry-run, create, list, revoke new suppressions through grpcurl on a
+   real finding; the finding's suppression state and counts change accordingly.
+6. SBOM gaps: count images whose SBOM has no OS packages, and runtime binaries that
+   the SBOM misses (spot-check with a direct image scan).
 
 ### Behaviour
 
@@ -127,7 +164,7 @@ passes.
 3. Terraform (dev-nais) and `v0s-rbac` (dev-nais), as draft PRs; read the Atlantis plan.
 4. Deploy to dev-nais with one replica; run the output checks.
 5. Two replicas; run the behaviour checks; one week of performance data.
-6. nav: static clusters, then the same in shadow mode.
+6. nav GCP clusters in shadow mode; then on-prem fss with static clusters.
 
 Removing it is the reverse: remove the Fasit targets, `v0s_enabled = false`. The
 CNPG cluster is kept on uninstall (`keep: true`); delete it explicitly.
