@@ -13,6 +13,7 @@ import (
 	"github.com/nais/v0s/internal/attest"
 	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/database/databasetest"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
@@ -86,6 +87,7 @@ func TestPipeline(t *testing.T) {
 		},
 		Scanner: fakeScanner{version: time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)},
 		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	for _, step := range []func(context.Context) error{r.sync, r.fetch, r.scan} {
 		if err := step(ctx); err != nil {
@@ -156,6 +158,7 @@ func TestScanFailureRecordsUsedVersion(t *testing.T) {
 		Watcher: fakeWatcher{},
 		Fetcher: fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
 		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	if err := r.fetch(ctx); err != nil {
 		t.Fatal(err)
@@ -200,6 +203,7 @@ func TestRejectedResultIsNotRetried(t *testing.T) {
 		Fetcher: fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
 		Scanner: nulScanner{fakeScanner{version: version}},
 		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	if err := r.fetch(ctx); err != nil {
 		t.Fatal(err)

@@ -14,7 +14,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
+	"google.golang.org/grpc/status"
 
 	"github.com/nais/v0s/internal/attest"
 	"github.com/nais/v0s/internal/auth"
@@ -134,20 +140,11 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(
-		grpcapi.RecoveryInterceptor(log),
-		auth.UnaryInterceptor(cfg.authAudience, cfg.serviceAccounts, log),
-	))
-	grpcapi.New(db, log).Register(srv)
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
-	// Probes are plain HTTP, outside the authenticated gRPC server.
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		if err := db.Ping(r.Context()); err != nil {
-			http.Error(w, "database unreachable", http.StatusServiceUnavailable)
-		}
-	})
-	probes := &http.Server{Addr: cfg.probeAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	srv := newGRPCServer(db, reg, cfg.authAudience, cfg.serviceAccounts, log)
+	probes := &http.Server{Addr: cfg.probeAddr, Handler: newProbeHandler(db, reg, log), ReadHeaderTimeout: 5 * time.Second}
 
 	r := &reconcile.Reconciler{
 		DB:      db,
@@ -156,6 +153,7 @@ func run(log *slog.Logger) error {
 		Scanner: scanner,
 		HTTP:    &http.Client{Timeout: 2 * time.Minute},
 		Log:     log,
+		Metrics: reconcile.NewMetrics(reg, db, scanner),
 	}
 
 	errc := make(chan error, 4)
@@ -183,6 +181,55 @@ func run(log *slog.Logger) error {
 		}
 	}
 	return err
+}
+
+// newGRPCServer returns the authenticated API server, with reflection, recording request durations
+// in reg.
+func newGRPCServer(db *database.DB, reg prometheus.Registerer, audience string, serviceAccounts []string, log *slog.Logger) *grpc.Server {
+	duration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "v0s_grpc_request_duration_seconds",
+		Help:    "Duration of unary gRPC requests by method and status code.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"method", "code"})
+	srv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(
+			durationInterceptor(duration), // first, so that rejected requests are measured too
+			grpcapi.RecoveryInterceptor(log),
+			auth.UnaryInterceptor(audience, serviceAccounts, log),
+		),
+		// Reflection is a streaming RPC: this keeps it behind the same authentication as the API.
+		grpc.StreamInterceptor(auth.StreamInterceptor(audience, serviceAccounts, log)),
+	)
+	grpcapi.New(db, log).Register(srv)
+	reflection.Register(srv)
+	return srv
+}
+
+// durationInterceptor observes each request's duration in h, by method and status code.
+func durationInterceptor(h *prometheus.HistogramVec) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		start := time.Now()
+		resp, err := handler(ctx, req)
+		h.WithLabelValues(info.FullMethod, status.Code(err).String()).Observe(time.Since(start).Seconds())
+		return resp, err
+	}
+}
+
+// newProbeHandler serves the probes and the metrics in reg. They are plain HTTP, outside the
+// authenticated gRPC server.
+func newProbeHandler(db *database.DB, reg *prometheus.Registry, log *slog.Logger) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		if err := db.Ping(r.Context()); err != nil {
+			http.Error(w, "database unreachable", http.StatusServiceUnavailable)
+		}
+	})
+	// A failing collector, such as v0s_images without a database, must not hide the other metrics.
+	mux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{
+		ErrorHandling: promhttp.ContinueOnError,
+		ErrorLog:      slog.NewLogLogger(log.Handler(), slog.LevelError),
+	}))
+	return mux
 }
 
 // shutdownTimeout bounds each shutdown step.

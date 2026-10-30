@@ -117,3 +117,49 @@ func (db *DB) DeleteUnusedImages(ctx context.Context, unusedFor time.Duration) (
 	}
 	return tag.RowsAffected(), nil
 }
+
+// ImageStateCount is the number of in-use images in one SBOM state and scan state.
+type ImageStateCount struct {
+	SBOM v0s.SBOMState
+	// Scan is "" if the SBOM is not fetched. Otherwise it is "current" if the image is scanned
+	// with the DB version counted against or newer, "failed" if scanning with that version or
+	// newer failed, and "pending" if ClaimScan would still claim it.
+	Scan  string
+	Count int
+}
+
+// CountImageStates counts the in-use images (referenced by workload_images) by SBOM state and
+// scan state relative to dbVersion. A zero dbVersion means no DB is loaded: no image is current
+// or failed.
+func (db *DB) CountImageStates(ctx context.Context, dbVersion time.Time) ([]ImageStateCount, error) {
+	var version *time.Time
+	if !dbVersion.IsZero() {
+		version = &dbVersion
+	}
+	rows, err := db.pool.Query(ctx, `
+		SELECT sbom_state,
+			CASE
+				WHEN sbom_state <> 'fetched' THEN ''
+				WHEN scanned_db_version >= $1 THEN 'current'
+				WHEN scan_failed_db_version >= $1 THEN 'failed'
+				ELSE 'pending'
+			END,
+			count(*)
+		FROM images i
+		WHERE EXISTS (SELECT 1 FROM workload_images w WHERE w.image_id = i.id)
+		GROUP BY 1, 2`,
+		version,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("counting image states: %w", err)
+	}
+	counts, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (ImageStateCount, error) {
+		var c ImageStateCount
+		err := row.Scan(&c.SBOM, &c.Scan, &c.Count)
+		return c, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("counting image states: %w", err)
+	}
+	return counts, nil
+}

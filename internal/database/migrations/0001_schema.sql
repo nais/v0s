@@ -23,6 +23,10 @@ CREATE TABLE images (
     scan_error           text        NOT NULL DEFAULT '',
     scan_failed_db_version timestamptz,
     scan_lease_until     timestamptz,
+    -- Claims without a recorded result, counted for scan_attempts_db_version only. Reset by a
+    -- successful or failed scan. ClaimScan gives up on an image after maxScanAttempts.
+    scan_attempts        integer     NOT NULL DEFAULT 0,
+    scan_attempts_db_version timestamptz,
 
     UNIQUE (name, digest)
 );

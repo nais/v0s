@@ -31,7 +31,30 @@ func UnaryInterceptor(audience string, serviceAccounts []string, log *slog.Logge
 	return newUnaryInterceptor(idtoken.Validate, audience, serviceAccounts, log)
 }
 
+// StreamInterceptor is UnaryInterceptor for streaming RPCs.
+func StreamInterceptor(audience string, serviceAccounts []string, log *slog.Logger) grpc.StreamServerInterceptor {
+	authenticate := newAuthenticator(idtoken.Validate, audience, serviceAccounts, log)
+	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		if err := authenticate(ss.Context(), info.FullMethod); err != nil {
+			return err
+		}
+		return handler(srv, ss)
+	}
+}
+
 func newUnaryInterceptor(validate validateFunc, audience string, serviceAccounts []string, log *slog.Logger) grpc.UnaryServerInterceptor {
+	authenticate := newAuthenticator(validate, audience, serviceAccounts, log)
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if err := authenticate(ctx, info.FullMethod); err != nil {
+			return nil, err
+		}
+		return handler(ctx, req)
+	}
+}
+
+// newAuthenticator returns a function that returns nil if the caller of method is allowed, and
+// an Unauthenticated or PermissionDenied status error otherwise.
+func newAuthenticator(validate validateFunc, audience string, serviceAccounts []string, log *slog.Logger) func(ctx context.Context, method string) error {
 	allowed := make([]string, len(serviceAccounts))
 	for i, sa := range serviceAccounts {
 		if !strings.HasSuffix(sa, serviceAccountSuffix) {
@@ -40,35 +63,35 @@ func newUnaryInterceptor(validate validateFunc, audience string, serviceAccounts
 		allowed[i] = sa
 	}
 
-	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
-		log := log.With("method", info.FullMethod)
+	return func(ctx context.Context, method string) error {
+		log := log.With("method", method)
 
 		token, ok := bearerToken(ctx)
 		if !ok {
 			log.Warn("missing bearer token")
-			return nil, status.Error(codes.Unauthenticated, "missing bearer token")
+			return status.Error(codes.Unauthenticated, "missing bearer token")
 		}
 		// Service account ID tokens are RS256. The pinned validator panics on
 		// some malformed ES256 tokens, so other algorithms never reach it.
 		if alg := tokenAlgorithm(token); alg != "RS256" {
 			log.With("alg", strconv.Quote(alg)).Warn("unsupported token algorithm")
-			return nil, status.Error(codes.Unauthenticated, "invalid token")
+			return status.Error(codes.Unauthenticated, "invalid token")
 		}
 		payload, err := validate(ctx, token, audience)
 		if err != nil {
 			log.With("err", err).Warn("invalid token")
-			return nil, status.Error(codes.Unauthenticated, "invalid token")
+			return status.Error(codes.Unauthenticated, "invalid token")
 		}
 		email, _ := payload.Claims["email"].(string)
 		if email == "" {
 			log.Warn("token has no email claim")
-			return nil, status.Error(codes.Unauthenticated, "token has no email claim")
+			return status.Error(codes.Unauthenticated, "token has no email claim")
 		}
 		if !slices.Contains(allowed, email) {
 			log.With("email", email).Warn("service account not allowed")
-			return nil, status.Error(codes.PermissionDenied, "service account not allowed")
+			return status.Error(codes.PermissionDenied, "service account not allowed")
 		}
-		return handler(ctx, req)
+		return nil
 	}
 }
 

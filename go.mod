@@ -10,7 +10,9 @@ require (
 	github.com/google/go-containerregistry v0.22.1
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/package-url/packageurl-go v0.1.7
+	github.com/prometheus/client_golang v1.25.0
 	github.com/sigstore/cosign/v3 v3.1.4
+	github.com/sigstore/sigstore v1.11.1
 	github.com/sigstore/sigstore-go v1.3.0
 	golang.org/x/oauth2 v0.37.0
 	google.golang.org/api v0.310.0
@@ -75,6 +77,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4 // indirect
 	github.com/aws/smithy-go v1.28.5 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/go-netrc v0.0.0-20140422174119-9fd32a8b3d3d // indirect
 	github.com/bitnami/go-version v0.0.0-20231130084017-bb00604d650c // indirect
 	github.com/bmatcuk/doublestar/v4 v4.10.2 // indirect
@@ -182,6 +185,9 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/prometheus/client_model v0.6.3 // indirect
+	github.com/prometheus/common v0.72.0 // indirect
+	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/samber/lo v1.53.0 // indirect
 	github.com/samber/oops v1.18.1 // indirect
 	github.com/sassoftware/relic/v8 v8.2.0 // indirect
@@ -191,7 +197,6 @@ require (
 	github.com/sigstore/protobuf-specs v0.5.2 // indirect
 	github.com/sigstore/rekor v1.5.4 // indirect
 	github.com/sigstore/rekor-tiles/v2 v2.3.0 // indirect
-	github.com/sigstore/sigstore v1.11.1 // indirect
 	github.com/sigstore/timestamp-authority/v2 v2.1.5 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/spdx/tools-golang v0.5.7 // indirect

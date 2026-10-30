@@ -217,6 +217,52 @@ func TestRecordScanFailure(t *testing.T) {
 	}
 }
 
+// TestClaimScanAttemptCap checks that an image whose scans never record a result, as when the scan
+// kills the process, is given up for that DB version after three claims.
+func TestClaimScanAttemptCap(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	v1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	v2 := time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC)
+	v3 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	id := runImages(t, db, "c1", "img")["img"]
+	if err := db.StoreSBOM(ctx, id, []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+
+	// claim claims with dbVersion, then expires the lease as if the scanning process had died.
+	claim := func(dbVersion time.Time) bool {
+		t.Helper()
+		_, ok, err := db.ClaimScan(ctx, dbVersion, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exec(t, db, `UPDATE images SET scan_lease_until = NULL`)
+		return ok
+	}
+
+	for i := range 2 {
+		if !claim(v1) {
+			t.Fatalf("claim %d for v1 failed", i+1)
+		}
+	}
+	for i := range 3 {
+		if !claim(v2) {
+			t.Fatalf("claim %d for v2 failed: attempts with v1 must not count for v2", i+1)
+		}
+	}
+	if claim(v2) {
+		t.Error("image claimed a fourth time for v2")
+	}
+	got := queryStrings(t, db, `SELECT scan_error || ' ' || to_char(scan_failed_db_version AT TIME ZONE 'UTC', 'YYYY-MM-DD') FROM images`)
+	if want := []string{"abandoned after 3 attempts 2026-02-01"}; !slices.Equal(got, want) {
+		t.Errorf("after the fourth claim: %q, want %q", got, want)
+	}
+	if !claim(v3) {
+		t.Error("abandoned image not claimed for a newer DB")
+	}
+}
+
 func TestStoreScanKeepsNewerVulnerability(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)

@@ -62,6 +62,7 @@ type Reconciler struct {
 	Scanner Scanner
 	HTTP    *http.Client
 	Log     *slog.Logger
+	Metrics *Metrics
 }
 
 // Run runs every loop until ctx is done.
@@ -142,11 +143,14 @@ func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image) {
 	}
 	switch {
 	case errors.Is(err, attest.ErrNotFound):
+		r.Metrics.fetches.WithLabelValues("not_found").Inc()
 		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMMissing, err.Error(), time.Now().Add(retryMissing))
 	case err != nil:
+		r.Metrics.fetches.WithLabelValues("error").Inc()
 		log.Warn("fetching SBOM", "error", err)
 		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMFailed, err.Error(), time.Now().Add(retryFailed))
 	default:
+		r.Metrics.fetches.WithLabelValues("found").Inc()
 		err = r.DB.StoreSBOM(ctx, img.ID, doc)
 	}
 	if err != nil {
@@ -173,10 +177,17 @@ func (r *Reconciler) scan(ctx context.Context) error {
 
 func (r *Reconciler) scanOne(ctx context.Context, j database.ScanJob) {
 	log := r.Log.With("image", j.Image.Ref())
+	start := time.Now()
 	res, version, err := r.Scanner.Scan(ctx, j.SBOM)
 	if ctx.Err() != nil {
 		return
 	}
+	r.Metrics.scanDuration.Observe(time.Since(start).Seconds())
+	result := "ok"
+	if err != nil {
+		result = "error"
+	}
+	r.Metrics.scans.WithLabelValues(result).Inc()
 	switch {
 	case err != nil && version.IsZero():
 		log.Warn("scanning without a vulnerability DB", "error", err)
@@ -201,8 +212,14 @@ func (r *Reconciler) scanOne(ctx context.Context, j database.ScanJob) {
 
 func (r *Reconciler) updateDB(ctx context.Context) error {
 	updated, err := r.Scanner.Update(ctx)
-	if updated {
+	switch {
+	case err != nil:
+		r.Metrics.dbUpdates.WithLabelValues("error").Inc()
+	case updated:
+		r.Metrics.dbUpdates.WithLabelValues("updated").Inc()
 		r.Log.Info("vulnerability DB updated", "version", r.Scanner.DBVersion())
+	default:
+		r.Metrics.dbUpdates.WithLabelValues("unchanged").Inc()
 	}
 	return err
 }
@@ -217,11 +234,16 @@ func (r *Reconciler) enrich(ctx context.Context) error {
 		if err := r.DB.ReplaceEPSS(ctx, epss); err != nil {
 			return err
 		}
+		r.Metrics.enrichmentSuccess.WithLabelValues("epss").SetToCurrentTime()
 		kev, err := enrich.FetchKEV(ctx, r.HTTP, enrich.DefaultKEVURL)
 		if err != nil {
 			return err
 		}
-		return r.DB.ReplaceKEV(ctx, kev)
+		if err := r.DB.ReplaceKEV(ctx, kev); err != nil {
+			return err
+		}
+		r.Metrics.enrichmentSuccess.WithLabelValues("kev").SetToCurrentTime()
+		return nil
 	})
 	return err
 }

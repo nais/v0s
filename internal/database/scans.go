@@ -18,6 +18,11 @@ import (
 // maxSBOMSize is the largest decompressed SBOM ClaimScan returns.
 const maxSBOMSize = 256 << 20
 
+// maxScanAttempts is how often ClaimScan hands out an image for one DB version without a result
+// being recorded. A scan that kills the process records nothing, so without a cap the image would
+// crash every replica in turn.
+const maxScanAttempts = 3
+
 // ScanJob is a claimed image and its SBOM.
 type ScanJob struct {
 	Image v0s.Image
@@ -27,44 +32,60 @@ type ScanJob struct {
 // ClaimScan claims one in-use, fetched image whose scan lease has expired and that has neither
 // been scanned nor failed to scan with dbVersion or newer. It leases the image for lease and
 // returns it with its SBOM. ok is false if no image needs scanning.
+//
+// Each claim counts as an attempt for dbVersion; claiming with another DB version starts the count
+// again. An image already claimed maxScanAttempts times for dbVersion is not handed out again but
+// recorded as failed with dbVersion.
 func (db *DB) ClaimScan(ctx context.Context, dbVersion time.Time, lease time.Duration) (job ScanJob, ok bool, err error) {
-	var (
-		img        imageScan
-		compressed []byte
-	)
-	err = db.pool.QueryRow(ctx, `
-		UPDATE images i SET scan_lease_until = now() + make_interval(secs => $2)
-		FROM sboms s
-		WHERE s.image_id = i.id AND i.id IN (
-			SELECT id FROM images
-			WHERE sbom_state = 'fetched'
-				AND (scanned_db_version IS NULL OR scanned_db_version < $1)
-				AND (scan_failed_db_version IS NULL OR scan_failed_db_version < $1)
-				AND (scan_lease_until IS NULL OR scan_lease_until <= now())
-				AND EXISTS (SELECT 1 FROM workload_images w WHERE w.image_id = images.id)
-			ORDER BY scanned_db_version NULLS FIRST, id
-			LIMIT 1
-			FOR UPDATE SKIP LOCKED
+	for {
+		var (
+			img        imageScan
+			compressed []byte
+			attempts   int
 		)
-		RETURNING `+imageColumns+`, s.document`,
-		dbVersion, lease.Seconds(),
-	).Scan(append(img.dest(), &compressed)...)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ScanJob{}, false, nil
-	}
-	if err != nil {
-		return ScanJob{}, false, fmt.Errorf("claiming scan: %w", err)
-	}
-	sbom, err := gunzip(compressed)
-	if err != nil {
-		// Retrying cannot help, so record it as a failed scan with this DB.
-		err = fmt.Errorf("decompressing sbom of image %d: %w", img.img.ID, err)
-		if rerr := db.RecordScanFailure(ctx, img.img.ID, dbVersion, err.Error()); rerr != nil {
-			return ScanJob{}, false, errors.Join(err, rerr)
+		err = db.pool.QueryRow(ctx, `
+			UPDATE images i SET scan_lease_until = now() + make_interval(secs => $2),
+				scan_attempts = CASE WHEN i.scan_attempts_db_version = $1 THEN i.scan_attempts + 1 ELSE 1 END,
+				scan_attempts_db_version = $1
+			FROM sboms s
+			WHERE s.image_id = i.id AND i.id IN (
+				SELECT id FROM images
+				WHERE sbom_state = 'fetched'
+					AND (scanned_db_version IS NULL OR scanned_db_version < $1)
+					AND (scan_failed_db_version IS NULL OR scan_failed_db_version < $1)
+					AND (scan_lease_until IS NULL OR scan_lease_until <= now())
+					AND EXISTS (SELECT 1 FROM workload_images w WHERE w.image_id = images.id)
+				ORDER BY scanned_db_version NULLS FIRST, id
+				LIMIT 1
+				FOR UPDATE SKIP LOCKED
+			)
+			RETURNING `+imageColumns+`, s.document, i.scan_attempts`,
+			dbVersion, lease.Seconds(),
+		).Scan(append(img.dest(), &compressed, &attempts)...)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ScanJob{}, false, nil
 		}
-		return ScanJob{}, false, err
+		if err != nil {
+			return ScanJob{}, false, fmt.Errorf("claiming scan: %w", err)
+		}
+		if attempts > maxScanAttempts {
+			msg := fmt.Sprintf("abandoned after %d attempts", maxScanAttempts)
+			if err := db.RecordScanFailure(ctx, img.img.ID, dbVersion, msg); err != nil {
+				return ScanJob{}, false, err
+			}
+			continue
+		}
+		sbom, err := gunzip(compressed)
+		if err != nil {
+			// Retrying cannot help, so record it as a failed scan with this DB.
+			err = fmt.Errorf("decompressing sbom of image %d: %w", img.img.ID, err)
+			if rerr := db.RecordScanFailure(ctx, img.img.ID, dbVersion, err.Error()); rerr != nil {
+				return ScanJob{}, false, errors.Join(err, rerr)
+			}
+			return ScanJob{}, false, err
+		}
+		return ScanJob{Image: img.image(), SBOM: sbom}, true, nil
 	}
-	return ScanJob{Image: img.image(), SBOM: sbom}, true, nil
 }
 
 func gunzip(b []byte) ([]byte, error) {
@@ -83,12 +104,13 @@ func gunzip(b []byte) ([]byte, error) {
 	return out, nil
 }
 
-// RecordScanFailure records that scanning with dbVersion failed, and clears the lease. The image
-// keeps its findings and scanned_db_version, and is not claimed again until a newer DB is loaded.
-// An image already scanned with dbVersion or newer, or failed with a newer DB, is left alone.
+// RecordScanFailure records that scanning with dbVersion failed, and clears the lease and the
+// attempt count. The image keeps its findings and scanned_db_version, and is not claimed again
+// until a newer DB is loaded. An image already scanned with dbVersion or newer, or failed with a
+// newer DB, is left alone.
 func (db *DB) RecordScanFailure(ctx context.Context, imageID int64, dbVersion time.Time, msg string) error {
 	if _, err := db.pool.Exec(ctx, `
-		UPDATE images SET scan_error = $3, scan_failed_db_version = $2, scan_lease_until = NULL
+		UPDATE images SET scan_error = $3, scan_failed_db_version = $2, scan_lease_until = NULL, scan_attempts = 0
 		WHERE id = $1
 			AND (scanned_db_version IS NULL OR scanned_db_version < $2)
 			AND (scan_failed_db_version IS NULL OR scan_failed_db_version <= $2)`,
@@ -106,7 +128,7 @@ type findingKey struct{ vulnerabilityID, purl string }
 // finding events (appeared for new (vulnerability, purl) pairs, resolved for vanished ones),
 // replaces findings while preserving first_seen_at for findings that persist, inserts components
 // if the image has none (SBOMs are immutable), and marks the image scanned, clearing any recorded
-// scan failure. Vulnerability rows from a newer DB than dbVersion are kept.
+// scan failure and the attempt count. Vulnerability rows from a newer DB than dbVersion are kept.
 //
 // Duplicate findings (same vulnerability and purl) and components (same purl) keep the first.
 func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time, r v0s.ScanResult) error {
@@ -139,7 +161,7 @@ func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time,
 		if _, err := tx.Exec(ctx, `
 			UPDATE images
 			SET scanned_db_version = $2, scanned_at = now(), scan_error = '', scan_failed_db_version = NULL,
-				scan_lease_until = NULL
+				scan_lease_until = NULL, scan_attempts = 0
 			WHERE id = $1`,
 			imageID, dbVersion,
 		); err != nil {
