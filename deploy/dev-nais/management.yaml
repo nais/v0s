@@ -54,7 +54,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: v0s
-          image: europe-north1-docker.pkg.dev/nais-io/nais/images/v0s@sha256:432f2246f36bb53bc0c79e61c34eb3ddd7e9965d65c7f5235118d6db8f0dc62f
+          image: europe-north1-docker.pkg.dev/nais-io/nais/images/v0s@sha256:9c142984bf1b23ef59b3d938fb89ed05eb1b847c45747eb2193a8d84187c6f44
           env:
             - name: DATABASE_URL
               valueFrom:
