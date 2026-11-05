@@ -100,12 +100,7 @@ func (inv *Inventory) Snapshot(ctx context.Context) (map[string][]v0s.WorkloadIm
 		}
 		images := []v0s.WorkloadImage{}
 		for _, w := range env.GetWorkloads() {
-			wlog := inv.log.With("environment", env.GetEnvironment(), "namespace", w.GetTeamSlug(), "workload", w.GetName())
-			kind, ok := ownerKinds[w.GetKind()]
-			if !ok {
-				wlog.With("kind", w.GetKind()).Warn("skipping workload of unknown kind")
-				continue
-			}
+			wlog := inv.log.With("environment", env.GetEnvironment(), "team", w.GetTeamSlug(), "workload", w.GetName())
 			ref, err := parseImage(w.GetImage())
 			if err != nil {
 				wlog.With("err", err).Warn("skipping workload with unparsable image")
@@ -118,24 +113,16 @@ func (inv *Inventory) Snapshot(ctx context.Context) (map[string][]v0s.WorkloadIm
 				}
 			}
 			images = append(images, v0s.WorkloadImage{
-				Cluster:   env.GetEnvironment(),
-				Namespace: w.GetTeamSlug(),
-				Workload:  w.GetName(),
-				// Naiserator names a workload's container after the workload.
-				Container: w.GetName(),
-				OwnerKind: kind,
-				ImageName: repository(ref.Context()),
-				Digest:    digest,
+				Environment: env.GetEnvironment(),
+				Team:        w.GetTeamSlug(),
+				Workload:    w.GetName(),
+				ImageName:   repository(ref.Context()),
+				Digest:      digest,
 			})
 		}
 		out[env.GetEnvironment()] = images
 	}
 	return out, nil
-}
-
-var ownerKinds = map[protoapi.WorkloadKind]string{
-	protoapi.WorkloadKind_APPLICATION: "Application",
-	protoapi.WorkloadKind_JOB:         "Job",
 }
 
 // parseImage returns the image's digest reference if it has one, else its tag reference.

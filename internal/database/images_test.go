@@ -145,26 +145,24 @@ func TestDeleteUnusedImages(t *testing.T) {
 }
 
 // workloadImage returns a workload image for image name, with digest "sha256:"+name.
-func workloadImage(cluster, workload, name string) v0s.WorkloadImage {
+func workloadImage(environment, workload, name string) v0s.WorkloadImage {
 	return v0s.WorkloadImage{
-		Cluster:   cluster,
-		Namespace: "team",
-		Workload:  workload,
-		Container: "app",
-		OwnerKind: "ReplicaSet",
-		ImageName: name,
-		Digest:    "sha256:" + name,
+		Environment: environment,
+		Team:        "team",
+		Workload:    workload,
+		ImageName:   name,
+		Digest:      "sha256:" + name,
 	}
 }
 
-// runImages makes the named images the only ones running in cluster and returns all image IDs by name.
-func runImages(t *testing.T, db *database.DB, cluster string, names ...string) map[string]int64 {
+// runImages makes the named images the only ones in use in environment and returns all image IDs by name.
+func runImages(t *testing.T, db *database.DB, environment string, names ...string) map[string]int64 {
 	t.Helper()
 	var ws []v0s.WorkloadImage
 	for _, name := range names {
-		ws = append(ws, workloadImage(cluster, name, name))
+		ws = append(ws, workloadImage(environment, name, name))
 	}
-	if err := db.SyncWorkloadImages(context.Background(), cluster, ws); err != nil {
+	if err := db.SyncWorkloadImages(context.Background(), environment, ws); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := db.Pool().Query(context.Background(), `SELECT name, id FROM images`)

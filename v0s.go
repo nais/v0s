@@ -43,15 +43,13 @@ type Image struct {
 // Ref returns the image reference by digest, e.g. "repo/name@sha256:…".
 func (i Image) Ref() string { return i.Name + "@" + i.Digest }
 
-// WorkloadImage records that a container in a workload runs an image.
+// WorkloadImage records that a workload is deployed with an image.
 type WorkloadImage struct {
-	Cluster   string
-	Namespace string
-	Workload  string
-	Container string
-	OwnerKind string
-	ImageName string
-	Digest    string
+	Environment string
+	Team        string
+	Workload    string
+	ImageName   string
+	Digest      string
 }
 
 // Component is a package listed in an SBOM.

@@ -22,7 +22,7 @@ func TestImagesMetric(t *testing.T) {
 	names := []string{"pending", "missing", "unreachable", "unscanned", "old", "current", "newer", "failed", "unused"}
 	var ws []v0s.WorkloadImage
 	for _, n := range names {
-		ws = append(ws, v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: n, Container: n, ImageName: "registry/" + n, Digest: "sha256:" + n})
+		ws = append(ws, v0s.WorkloadImage{Environment: "dev", Team: "team", Workload: n, ImageName: "registry/" + n, Digest: "sha256:" + n})
 	}
 	if err := db.SyncWorkloadImages(ctx, "dev", ws); err != nil {
 		t.Fatal(err)

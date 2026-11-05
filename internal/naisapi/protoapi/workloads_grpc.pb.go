@@ -27,8 +27,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WorkloadsClient interface {
 	// ListImages returns the image of every application and job, by environment. It is not
-	// paginated, so that the result is one consistent snapshot. Only environments whose
-	// caches are synced are included, and an included environment's list is complete.
+	// paginated, so that a client gets every workload in one response. Only environments
+	// whose caches are synced are included, and an included environment's list is complete.
+	// Workloads in nais-system are not included.
 	ListImages(ctx context.Context, in *ListWorkloadImagesRequest, opts ...grpc.CallOption) (*ListWorkloadImagesResponse, error)
 }
 
@@ -55,8 +56,9 @@ func (c *workloadsClient) ListImages(ctx context.Context, in *ListWorkloadImages
 // for forward compatibility.
 type WorkloadsServer interface {
 	// ListImages returns the image of every application and job, by environment. It is not
-	// paginated, so that the result is one consistent snapshot. Only environments whose
-	// caches are synced are included, and an included environment's list is complete.
+	// paginated, so that a client gets every workload in one response. Only environments
+	// whose caches are synced are included, and an included environment's list is complete.
+	// Workloads in nais-system are not included.
 	ListImages(context.Context, *ListWorkloadImagesRequest) (*ListWorkloadImagesResponse, error)
 	mustEmbedUnimplementedWorkloadsServer()
 }

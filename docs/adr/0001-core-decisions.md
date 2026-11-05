@@ -58,12 +58,19 @@ is left out until it is. Nais API lists only environments whose caches are
 synced, and v0s skips a sync on any error, so a partial answer is never taken
 for an empty tenant.
 
-## Suppressions are owned here, keyed on package key
+## Suppressions are owned here, per team, keyed on package key
 
-The key is `(image name, package key, vulnerability ID)`. It is
+The key is `(team, image name, package key, vulnerability ID)`. It is
 version-agnostic, so an assessment survives a version bump of the package, and
-tag-agnostic, so it survives new image builds. Team-wide scope is deferred
-because an image name can be shared by several teams.
+tag-agnostic, so it survives new image builds. It is per team because an image
+name can be shared by several teams, and one team's assessment must not change
+what another team sees. The caller then only has to authorize the actor for one
+team, which is how Nais API authorizes everything else.
+
+The cost is that whether a finding is suppressed depends on whose view it is:
+per workload it is the workload team's decision, and once per finding it takes
+every team using the image within the request. For one team, the usual request,
+the two agree.
 
 Rows are append-only. Changing an assessment means revoking the old row and
 inserting a new one. A partial unique index allows at most one unrevoked row per

@@ -64,23 +64,17 @@ func env(name string, workloads ...*protoapi.WorkloadImage) *protoapi.Environmen
 	return &protoapi.EnvironmentWorkloadImages{Environment: name, Workloads: workloads}
 }
 
-func workload(kind protoapi.WorkloadKind, team, name, image string) *protoapi.WorkloadImage {
-	return &protoapi.WorkloadImage{Kind: kind, TeamSlug: team, Name: name, Image: image}
+func workload(team, name, image string) *protoapi.WorkloadImage {
+	return &protoapi.WorkloadImage{TeamSlug: team, Name: name, Image: image}
 }
-
-const (
-	app = protoapi.WorkloadKind_APPLICATION
-	job = protoapi.WorkloadKind_JOB
-)
 
 func TestSnapshot(t *testing.T) {
 	client := environments(
 		env("dev",
-			workload(app, "team", "pinned", "europe-north1-docker.pkg.dev/p/team/pinned:1@"+digestA),
-			workload(job, "team", "tagged", "ghcr.io/nais/tagged:2026-10-30"),
-			workload(app, "team", "hub", "redis:7"),
-			workload(app, "team", "broken", ""),
-			workload(protoapi.WorkloadKind_WORKLOAD_KIND_UNSPECIFIED, "team", "unknown", "redis:7"),
+			workload("team", "pinned", "europe-north1-docker.pkg.dev/p/team/pinned:1@"+digestA),
+			workload("team", "tagged", "ghcr.io/nais/tagged:2026-10-30"),
+			workload("team", "hub", "redis:7"),
+			workload("team", "broken", ""),
 		),
 		env("prod"),
 	)
@@ -96,9 +90,9 @@ func TestSnapshot(t *testing.T) {
 
 	want := map[string][]v0s.WorkloadImage{
 		"dev": {
-			{Cluster: "dev", Namespace: "team", Workload: "pinned", Container: "pinned", OwnerKind: "Application", ImageName: "europe-north1-docker.pkg.dev/p/team/pinned", Digest: digestA},
-			{Cluster: "dev", Namespace: "team", Workload: "tagged", Container: "tagged", OwnerKind: "Job", ImageName: "ghcr.io/nais/tagged", Digest: digestB},
-			{Cluster: "dev", Namespace: "team", Workload: "hub", Container: "hub", OwnerKind: "Application", ImageName: "docker.io/library/redis", Digest: digestC},
+			{Environment: "dev", Team: "team", Workload: "pinned", ImageName: "europe-north1-docker.pkg.dev/p/team/pinned", Digest: digestA},
+			{Environment: "dev", Team: "team", Workload: "tagged", ImageName: "ghcr.io/nais/tagged", Digest: digestB},
+			{Environment: "dev", Team: "team", Workload: "hub", ImageName: "docker.io/library/redis", Digest: digestC},
 		},
 		"prod": {}, // known and empty: its stored workloads are to be removed
 	}
@@ -127,7 +121,7 @@ func TestSnapshotIncomplete(t *testing.T) {
 }
 
 func TestTagResolution(t *testing.T) {
-	client := environments(env("dev", workload(app, "team", "app", "ghcr.io/nais/app:latest")))
+	client := environments(env("dev", workload("team", "app", "ghcr.io/nais/app:latest")))
 	resolver := &fakeResolver{digests: map[string]string{"ghcr.io/nais/app:latest": digestA}}
 	inv := newInventory(client, resolver)
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)

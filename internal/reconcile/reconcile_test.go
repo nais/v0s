@@ -65,10 +65,10 @@ func TestPipeline(t *testing.T) {
 	db := databasetest.New(t)
 
 	workload := func(app, digest string) v0s.WorkloadImage {
-		return v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: app, Container: app, ImageName: "registry/" + app, Digest: digest}
+		return v0s.WorkloadImage{Environment: "dev", Team: "team", Workload: app, ImageName: "registry/" + app, Digest: digest}
 	}
 	prod := workload("stored", "sha256:e")
-	prod.Cluster = "prod"
+	prod.Environment = "prod"
 	if err := db.SyncWorkloadImages(ctx, "prod", []v0s.WorkloadImage{prod}); err != nil {
 		t.Fatal(err)
 	}
@@ -98,15 +98,13 @@ func TestPipeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	images := map[string]v0s.Image{}
-	clusters := map[string]string{}
+	environments := map[string]string{}
 	for _, w := range workloads {
-		clusters[w.Name] = w.Cluster
-		for _, c := range w.Containers {
-			images[w.Name] = c.Image
-		}
+		environments[w.Name] = w.Environment
+		images[w.Name] = w.Image
 	}
-	if got := clusters["stored"]; got != "prod" {
-		t.Errorf("workload stored in environment prod missing from the snapshot: cluster %q, want it kept", got)
+	if got := environments["stored"]; got != "prod" {
+		t.Errorf("workload stored in environment prod missing from the snapshot: environment %q, want it kept", got)
 	}
 	wantState := map[string]v0s.SBOMState{"scanned": v0s.SBOMFetched, "unsigned": v0s.SBOMMissing, "flaky": v0s.SBOMFailed, "garbage": v0s.SBOMFetched}
 	for app, want := range wantState {
@@ -137,7 +135,7 @@ func TestPipeline(t *testing.T) {
 func TestFailedSnapshotKeepsWorkloads(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
-	w := v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: "app", Container: "app", ImageName: "registry/app", Digest: "sha256:a"}
+	w := v0s.WorkloadImage{Environment: "dev", Team: "team", Workload: "app", ImageName: "registry/app", Digest: "sha256:a"}
 	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +167,7 @@ func (s staleScanner) Scan(context.Context, []byte) (v0s.ScanResult, time.Time, 
 func TestScanFailureRecordsUsedVersion(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
-	w := v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: "app", Container: "app", ImageName: "registry/app", Digest: "sha256:a"}
+	w := v0s.WorkloadImage{Environment: "dev", Team: "team", Workload: "app", ImageName: "registry/app", Digest: "sha256:a"}
 	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +210,7 @@ func (s nulScanner) Scan(context.Context, []byte) (v0s.ScanResult, time.Time, er
 func TestRejectedResultIsNotRetried(t *testing.T) {
 	ctx := context.Background()
 	db, url := databasetest.NewWithURL(t)
-	w := v0s.WorkloadImage{Cluster: "dev", Namespace: "team", Workload: "app", Container: "app", ImageName: "registry/app", Digest: "sha256:a"}
+	w := v0s.WorkloadImage{Environment: "dev", Team: "team", Workload: "app", ImageName: "registry/app", Digest: "sha256:a"}
 	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
 		t.Fatal(err)
 	}

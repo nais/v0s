@@ -85,18 +85,14 @@ func page(size int32, token string) database.Page {
 
 // ListWorkloads implements VulnerabilityService.
 func (s *Server) ListWorkloads(ctx context.Context, req *v0sv1.ListWorkloadsRequest) (*v0sv1.ListWorkloadsResponse, error) {
-	filter := database.WorkloadFilter{Namespaces: req.GetNamespaces(), Cluster: req.GetCluster()}
+	filter := database.WorkloadFilter{Teams: req.GetTeams(), Environment: req.GetEnvironment()}
 	workloads, next, err := s.db.ListWorkloads(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
 	resp := &v0sv1.ListWorkloadsResponse{Workloads: make([]*v0sv1.Workload, 0, len(workloads)), NextPageToken: next}
 	for _, w := range workloads {
-		pw := &v0sv1.Workload{Cluster: w.Cluster, Namespace: w.Namespace, Name: w.Name, OwnerKind: w.OwnerKind}
-		for _, c := range w.Containers {
-			pw.Containers = append(pw.Containers, &v0sv1.WorkloadContainer{Name: c.Name, Image: imageToProto(c.Image)})
-		}
-		resp.Workloads = append(resp.Workloads, pw)
+		resp.Workloads = append(resp.Workloads, &v0sv1.Workload{Environment: w.Environment, Team: w.Team, Name: w.Name, Image: imageToProto(w.Image)})
 	}
 	return resp, nil
 }
@@ -129,9 +125,10 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 			Epss:             epssToProto(f.EPSS),
 			Kev:              kevToProto(f.KEV),
 			FirstSeenAt:      timestamp(f.FirstSeenAt),
+			Suppressed:       f.Suppressed,
 		}
-		if f.Suppression != nil {
-			pf.Suppression = suppressionToProto(*f.Suppression)
+		for _, sup := range f.Suppressions {
+			pf.Suppressions = append(pf.Suppressions, suppressionToProto(sup))
 		}
 		resp.Findings = append(resp.Findings, pf)
 	}
@@ -144,8 +141,8 @@ func (s *Server) CountFindings(ctx context.Context, req *v0sv1.CountFindingsRequ
 	switch req.GetGroupBy() {
 	case v0sv1.CountFindingsRequest_GROUP_BY_SEVERITY:
 		groupBy = database.GroupBySeverity
-	case v0sv1.CountFindingsRequest_GROUP_BY_NAMESPACE:
-		groupBy = database.GroupByNamespace
+	case v0sv1.CountFindingsRequest_GROUP_BY_TEAM:
+		groupBy = database.GroupByTeam
 	case v0sv1.CountFindingsRequest_GROUP_BY_WORKLOAD:
 		groupBy = database.GroupByWorkload
 	case v0sv1.CountFindingsRequest_GROUP_BY_IMAGE:
@@ -204,7 +201,7 @@ func (s *Server) GetVulnerability(ctx context.Context, req *v0sv1.GetVulnerabili
 
 // SearchComponents implements VulnerabilityService.
 func (s *Server) SearchComponents(ctx context.Context, req *v0sv1.SearchComponentsRequest) (*v0sv1.SearchComponentsResponse, error) {
-	filter := database.ComponentFilter{Query: req.GetQuery(), Namespaces: req.GetNamespaces()}
+	filter := database.ComponentFilter{Query: req.GetQuery(), Teams: req.GetTeams()}
 	matches, next, err := s.db.SearchComponents(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
@@ -218,7 +215,7 @@ func (s *Server) SearchComponents(ctx context.Context, req *v0sv1.SearchComponen
 			Image:   imageToProto(m.Image),
 		}
 		for _, w := range m.Workloads {
-			pm.Workloads = append(pm.Workloads, &v0sv1.WorkloadRef{Cluster: w.Cluster, Namespace: w.Namespace, Name: w.Name})
+			pm.Workloads = append(pm.Workloads, &v0sv1.WorkloadRef{Environment: w.Environment, Team: w.Team, Name: w.Name})
 		}
 		resp.Matches = append(resp.Matches, pm)
 	}
@@ -231,7 +228,7 @@ func (s *Server) ListFindingEvents(ctx context.Context, req *v0sv1.ListFindingEv
 		ImageName:       req.GetImageName(),
 		ImageDigest:     req.GetImageDigest(),
 		VulnerabilityID: req.GetVulnerabilityId(),
-		Namespaces:      req.GetNamespaces(),
+		Teams:           req.GetTeams(),
 	}
 	if req.GetSince() != nil {
 		filter.Since = req.GetSince().AsTime()
@@ -257,8 +254,8 @@ func (s *Server) ListFindingEvents(ctx context.Context, req *v0sv1.ListFindingEv
 
 func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
 	filter := database.FindingFilter{
-		Namespaces:      f.GetNamespaces(),
-		Cluster:         f.GetCluster(),
+		Teams:           f.GetTeams(),
+		Environment:     f.GetEnvironment(),
 		Workload:        f.GetWorkload(),
 		ImageName:       f.GetImageName(),
 		ImageDigest:     f.GetImageDigest(),

@@ -13,22 +13,22 @@ import (
 type ComponentMatch struct {
 	Component v0s.Component
 	Image     v0s.Image
-	Workloads []WorkloadRef // workloads running the image, limited to the requested namespaces
+	Workloads []WorkloadRef // workloads using the image, limited to the requested teams
 }
 
 // WorkloadRef identifies a workload.
 type WorkloadRef struct {
-	Cluster   string
-	Namespace string
-	Name      string
+	Environment string
+	Team        string
+	Name        string
 }
 
 // ComponentFilter selects components.
 type ComponentFilter struct {
 	// Query is a package key, a purl with version for an exact match, or,
 	// when it does not start with "pkg:", a case-insensitive name prefix.
-	Query      string
-	Namespaces []string // only images running in these namespaces; empty for all
+	Query string
+	Teams []string // only images used by these teams; empty for all
 }
 
 type componentCursor struct {
@@ -61,8 +61,8 @@ func (db *DB) SearchComponents(ctx context.Context, filter ComponentFilter, page
 	} else {
 		where = append(where, "lower(c.name) LIKE "+args.add(likePrefix(strings.ToLower(filter.Query))))
 	}
-	if len(filter.Namespaces) > 0 {
-		workload = append(workload, "wi.namespace = ANY("+args.add(filter.Namespaces)+")")
+	if len(filter.Teams) > 0 {
+		workload = append(workload, "wi.team = ANY("+args.add(filter.Teams)+")")
 	}
 	where = append(where, inUse(workload))
 	if page.Token != "" {
@@ -111,14 +111,14 @@ func (db *DB) SearchComponents(ctx context.Context, filter ComponentFilter, page
 	}
 	args = nil
 	where = []string{"image_id = ANY(" + args.add(imageIDs) + ")"}
-	if len(filter.Namespaces) > 0 {
-		where = append(where, "namespace = ANY("+args.add(filter.Namespaces)+")")
+	if len(filter.Teams) > 0 {
+		where = append(where, "team = ANY("+args.add(filter.Teams)+")")
 	}
 	rows, err = db.pool.Query(ctx, `
-		SELECT DISTINCT image_id, cluster, namespace, workload
+		SELECT image_id, environment, team, workload
 		FROM workload_images
 		WHERE `+and(where)+`
-		ORDER BY image_id, cluster, namespace, workload`, args...)
+		ORDER BY image_id, environment, team, workload`, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing component workloads: %w", err)
 	}
@@ -127,7 +127,7 @@ func (db *DB) SearchComponents(ctx context.Context, filter ComponentFilter, page
 		imageID int64
 		ref     WorkloadRef
 	)
-	_, err = pgx.ForEachRow(rows, []any{&imageID, &ref.Cluster, &ref.Namespace, &ref.Name}, func() error {
+	_, err = pgx.ForEachRow(rows, []any{&imageID, &ref.Environment, &ref.Team, &ref.Name}, func() error {
 		workloads[imageID] = append(workloads[imageID], ref)
 		return nil
 	})

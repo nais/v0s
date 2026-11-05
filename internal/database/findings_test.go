@@ -23,11 +23,10 @@ INSERT INTO images (id, name, digest, sbom_state) OVERRIDING SYSTEM VALUE VALUES
 	(1, 'repo/app', 'sha256:a', 'fetched'),
 	(2, 'repo/app', 'sha256:b', 'fetched'),
 	(3, 'repo/old', 'sha256:c', 'fetched');
-INSERT INTO workload_images (cluster, namespace, workload, container, image_id, owner_kind) VALUES
-	('c1', 'team-a', 'app', 'app', 1, 'ReplicaSet'),
-	('c1', 'team-a', 'app', 'sidecar', 1, 'ReplicaSet'),
-	('c1', 'team-a', 'worker', 'worker', 1, 'ReplicaSet'),
-	('c1', 'team-b', 'other', 'other', 2, 'Job');
+INSERT INTO workload_images (environment, team, workload, image_id) VALUES
+	('c1', 'team-a', 'app', 1),
+	('c1', 'team-a', 'worker', 1),
+	('c1', 'team-b', 'other', 2);
 INSERT INTO vulnerabilities (id, title, cvss) VALUES
 	('CVE-1', 'lodash bug', '{"nvd": {"v3_score": 7.5}, "ghsa": {"v3_score": 8.1}}'),
 	('CVE-2', 'express bug', '{}'),
@@ -86,8 +85,8 @@ func TestListFindingsFilters(t *testing.T) {
 		{name: "purl without version matches key", filter: database.FindingFilter{Package: "pkg:npm/lodash?arch=x"}, want: []string{aLodash, bLodash}},
 		{name: "purl with version", filter: database.FindingFilter{Package: "pkg:npm/lodash@4.17.20"}, want: []string{aLodash}},
 		{name: "purl with version in another spelling", filter: database.FindingFilter{Package: "pkg:NPM/%6Codash@4.17.20"}, want: []string{aLodash}},
-		{name: "namespace", filter: database.FindingFilter{Namespaces: []string{"team-b"}}, want: []string{bLodash}},
-		{name: "workload", filter: database.FindingFilter{Cluster: "c1", Workload: "worker"}, want: []string{aLodash, aExpress}},
+		{name: "team", filter: database.FindingFilter{Teams: []string{"team-b"}}, want: []string{bLodash}},
+		{name: "workload", filter: database.FindingFilter{Environment: "c1", Workload: "worker"}, want: []string{aLodash, aExpress}},
 		{name: "image digest", filter: database.FindingFilter{ImageName: "repo/app", ImageDigest: "sha256:b"}, want: []string{bLodash}},
 		{name: "severity", filter: database.FindingFilter{Severities: []v0s.Severity{v0s.SeverityLow}}, want: []string{aExpress}},
 		{name: "has fix", filter: database.FindingFilter{HasFix: true}, want: []string{aLodash, bLodash}},
@@ -114,8 +113,8 @@ func TestListFindingsFilters(t *testing.T) {
 			t.Fatalf("ListFindings = %d findings, %v; want 1", len(findings), err)
 		}
 		f := findings[0]
-		if f.CVSSScore != 8.1 || f.Title != "lodash bug" || f.KEV != nil || f.Suppression != nil {
-			t.Errorf("finding = cvss %v, title %q, kev %v, suppression %v; want 8.1, lodash bug, nil, nil", f.CVSSScore, f.Title, f.KEV, f.Suppression)
+		if f.CVSSScore != 8.1 || f.Title != "lodash bug" || f.KEV != nil || f.Suppressed || f.Suppressions != nil {
+			t.Errorf("finding = cvss %v, title %q, kev %v, suppressed %v by %v; want 8.1, lodash bug, nil, not suppressed", f.CVSSScore, f.Title, f.KEV, f.Suppressed, f.Suppressions)
 		}
 	})
 
@@ -169,7 +168,7 @@ func TestCountFindings(t *testing.T) {
 	}{
 		{groupBy: database.GroupBySeverity, want: []database.FindingCount{{Key: "HIGH", Count: 2}, {Key: "LOW", Count: 1}}},
 		// sha256:a runs in two workloads, so its findings count twice.
-		{groupBy: database.GroupByNamespace, want: []database.FindingCount{{Key: "team-a", Count: 4}, {Key: "team-b", Count: 1}}},
+		{groupBy: database.GroupByTeam, want: []database.FindingCount{{Key: "team-a", Count: 4}, {Key: "team-b", Count: 1}}},
 		{groupBy: database.GroupByWorkload, want: []database.FindingCount{{Key: "c1/team-a/app", Count: 2}, {Key: "c1/team-a/worker", Count: 2}, {Key: "c1/team-b/other", Count: 1}}},
 		{groupBy: database.GroupByImage, want: []database.FindingCount{{Key: "repo/app@sha256:a", Count: 2}, {Key: "repo/app@sha256:b", Count: 1}}},
 		{groupBy: database.GroupByVulnerability, want: []database.FindingCount{{Key: "CVE-1", Count: 2}, {Key: "CVE-2", Count: 1}}},
@@ -204,7 +203,7 @@ func TestSearchComponents(t *testing.T) {
 			want: []string{"sha256:b pkg:npm/lodash@4.17.19 other"}},
 		{name: "purl with version in another spelling", filter: database.ComponentFilter{Query: "pkg:NPM/%6Codash@4.17.19"},
 			want: []string{"sha256:b pkg:npm/lodash@4.17.19 other"}},
-		{name: "name prefix", filter: database.ComponentFilter{Query: "LOD", Namespaces: []string{"team-a"}},
+		{name: "name prefix", filter: database.ComponentFilter{Query: "LOD", Teams: []string{"team-a"}},
 			want: []string{"sha256:a pkg:npm/lodash@4.17.20 app worker"}},
 		{name: "underscore is literal", filter: database.ComponentFilter{Query: "left_"},
 			want: []string{"sha256:a pkg:npm/left_pad@1.0.0 app worker"}},
@@ -240,23 +239,19 @@ func TestListWorkloads(t *testing.T) {
 		page = database.Page{Size: 2}
 	)
 	for range 10 {
-		workloads, next, err := db.ListWorkloads(ctx, database.WorkloadFilter{Cluster: "c1"}, page)
+		workloads, next, err := db.ListWorkloads(ctx, database.WorkloadFilter{Environment: "c1"}, page)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, w := range workloads {
-			s := w.Namespace + "/" + w.Name
-			for _, c := range w.Containers {
-				s += " " + c.Name + "=" + c.Image.Digest
-			}
-			got = append(got, s)
+			got = append(got, w.Team+"/"+w.Name+" "+w.Image.Digest)
 		}
 		if next == "" {
 			break
 		}
 		page.Token = next
 	}
-	want := []string{"team-a/app app=sha256:a sidecar=sha256:a", "team-a/worker worker=sha256:a", "team-b/other other=sha256:b"}
+	want := []string{"team-a/app sha256:a", "team-a/worker sha256:a", "team-b/other sha256:b"}
 	if !slices.Equal(got, want) {
 		t.Errorf("workloads = %q, want %q", got, want)
 	}
@@ -278,7 +273,7 @@ func TestListFindingEvents(t *testing.T) {
 	}{
 		{name: "all", want: []int64{1, 2, 3, 4}},
 		{name: "alias", filter: database.FindingEventFilter{VulnerabilityID: "GHSA-1"}, want: []int64{1, 2, 4}},
-		{name: "namespace", filter: database.FindingEventFilter{Namespaces: []string{"team-a"}}, want: []int64{1, 3}},
+		{name: "team", filter: database.FindingEventFilter{Teams: []string{"team-a"}}, want: []int64{1, 3}},
 		{name: "image", filter: database.FindingEventFilter{ImageName: "repo/app", ImageDigest: "sha256:b"}, want: []int64{2}},
 	}
 	for _, tt := range tests {

@@ -5,11 +5,11 @@
 crosses tenants.
 
 **Workload**
-: A team's Nais application or job. A workload is identified by
-`(environment, namespace, name)`, as Nais API reports it. The namespace is the
-team. The `cluster` column holds the environment name. The platform's own
-workloads in `nais-system` are out of scope: Nais API leaves them out, and the
-platform has its own tools for them.
+: A team's Nais application or job, identified by `(environment, team, name)`,
+as Nais API reports it. An application and a job cannot share a name, so the
+kind is not part of the identity. The platform's own workloads in `nais-system`
+are out of scope: Nais API leaves them out, and the platform has its own tools
+for them.
 
 **Image**
 : A container image identified by repository name plus manifest digest, for
@@ -17,7 +17,7 @@ example `europe-north1-docker.pkg.dev/nais-io/nais/images/foo@sha256:…`. The t
 is not part of the identity.
 
 **Workload image**
-: The fact that a workload is deployed with a given image, whether or not it runs
+: The one image a workload is deployed with, whether or not it runs
 right now: apps scaled to zero and jobs between runs keep their image. Taken
 from the workload's effective image in Nais API; a tag is resolved to its digest
 in the registry, and re-resolved hourly so that a moved tag is noticed.
@@ -56,11 +56,18 @@ advisory IDs) resolve to this ID.
 version bumps.
 
 **Suppression**
-: A human assessment that a vulnerability does not apply to a package in an
-image name, keyed by `(image name, package key, vulnerability ID)`. It has a VEX
-state, an optional justification, an author, an optional expiry, and can be
-revoked. Rows are never updated except to revoke them. A suppression is active
-when it is not revoked and has not expired.
+: A team's assessment that a vulnerability does not apply to a package in an
+image name, keyed by `(team, image name, package key, vulnerability ID)`. It
+applies to the team's own workloads only: another team using the same image is
+not affected. It has a VEX state, an optional justification, an author, an
+optional expiry, and can be revoked. Rows are never updated except to revoke
+them. A suppression is active when it is not revoked and has not expired.
+
+**Suppressed**
+: A finding is suppressed for a workload when the workload's team has an active
+suppression of it. Where findings are listed or counted once rather than per
+workload, a finding is suppressed when every team using its image, within the
+requested teams, has suppressed it.
 
 **Finding event**
 : A recorded change in the findings for an image: `appeared` or `resolved`.

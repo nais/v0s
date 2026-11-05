@@ -4,7 +4,7 @@ CREATE TABLE images (
     name                 text        NOT NULL,
     digest               text        NOT NULL,
     created_at           timestamptz NOT NULL DEFAULT now(),
-    -- Bumped every time the image is observed running. Used for garbage collection.
+    -- Bumped every time the image is observed in use. Used for garbage collection.
     last_seen_at         timestamptz NOT NULL DEFAULT now(),
 
     sbom_state           text        NOT NULL DEFAULT 'pending'
@@ -39,17 +39,16 @@ CREATE TABLE sboms (
     document bytea NOT NULL
 );
 
--- What runs where, as observed from pod status. Replaced per cluster on every snapshot.
+-- Which image each team workload is deployed with, as listed by Nais API. An application
+-- and a job cannot share a name, so environment, team and name identify a workload.
+-- Replaced per environment on every sync.
 CREATE TABLE workload_images (
-    cluster     text        NOT NULL,
-    namespace   text        NOT NULL,
+    environment text        NOT NULL,
+    team        text        NOT NULL,
     workload    text        NOT NULL,
-    container   text        NOT NULL,
     image_id    bigint      NOT NULL REFERENCES images (id) ON DELETE CASCADE,
-    -- Kind of the pod's controlling owner: ReplicaSet, Job, StatefulSet, DaemonSet, or '' if none.
-    owner_kind  text        NOT NULL,
     observed_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (cluster, namespace, workload, container, image_id)
+    PRIMARY KEY (environment, team, workload)
 );
 
 CREATE INDEX workload_images_image ON workload_images (image_id);
@@ -147,9 +146,11 @@ CREATE TABLE kev (
     known_ransomware_campaign boolean NOT NULL
 );
 
--- Human assessments. Append-only: rows are only ever updated to revoke them.
+-- Human assessments, each by one team about its own workloads: another team using the
+-- same image is not affected. Append-only: rows are only ever updated to revoke them.
 CREATE TABLE suppressions (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    team             text        NOT NULL CHECK (team <> ''),
     image_name       text        NOT NULL,
     package_key      text        NOT NULL,
     vulnerability_id text        NOT NULL,
@@ -173,4 +174,4 @@ CREATE TABLE suppressions (
 );
 
 CREATE UNIQUE INDEX suppressions_one_unrevoked
-    ON suppressions (image_name, package_key, vulnerability_id) WHERE revoked_at IS NULL;
+    ON suppressions (team, image_name, package_key, vulnerability_id) WHERE revoked_at IS NULL;

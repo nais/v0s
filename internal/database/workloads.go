@@ -8,37 +8,35 @@ import (
 	"github.com/nais/v0s"
 )
 
-// clusterLockSpace is the first key of the two-key advisory locks that serialize
-// SyncWorkloadImages per cluster.
-const clusterLockSpace = 0x7630_7343 // "v0sC"
+// environmentLockSpace is the first key of the two-key advisory locks that serialize
+// SyncWorkloadImages per environment.
+const environmentLockSpace = 0x7630_7345 // "v0sE"
 
-// SyncWorkloadImages makes ws the complete set of workload images for cluster. It creates
+// SyncWorkloadImages makes ws the complete set of workload images for environment. It creates
 // missing images (sbom_state pending), bumps last_seen_at for every image in ws, and replaces
-// the cluster's workload_images rows. Atomic.
+// the environment's workload_images rows. Atomic.
 //
-// Every element of ws must have Cluster equal to cluster.
-func (db *DB) SyncWorkloadImages(ctx context.Context, cluster string, ws []v0s.WorkloadImage) error {
-	var namespaces, workloads, containers, ownerKinds, names, digests []string
+// Every element of ws must have Environment equal to environment.
+func (db *DB) SyncWorkloadImages(ctx context.Context, environment string, ws []v0s.WorkloadImage) error {
+	var teams, workloads, names, digests []string
 	for _, w := range ws {
-		if w.Cluster != cluster {
-			return fmt.Errorf("workload image %s/%s in cluster %q, want %q", w.Namespace, w.Workload, w.Cluster, cluster)
+		if w.Environment != environment {
+			return fmt.Errorf("workload image %s/%s in environment %q, want %q", w.Team, w.Workload, w.Environment, environment)
 		}
-		namespaces = append(namespaces, w.Namespace)
+		teams = append(teams, w.Team)
 		workloads = append(workloads, w.Workload)
-		containers = append(containers, w.Container)
-		ownerKinds = append(ownerKinds, w.OwnerKind)
 		names = append(names, w.ImageName)
 		digests = append(digests, w.Digest)
 	}
 
 	return pgx.BeginFunc(ctx, db.pool, func(tx pgx.Tx) error {
-		// Concurrent syncs of one cluster would each delete before the other inserts, leaving
+		// Concurrent syncs of one environment would each delete before the other inserts, leaving
 		// the union of both snapshots, so they take turns.
-		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, clusterLockSpace, cluster); err != nil {
-			return fmt.Errorf("locking cluster %q: %w", cluster, err)
+		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1, hashtext($2))`, environmentLockSpace, environment); err != nil {
+			return fmt.Errorf("locking environment %q: %w", environment, err)
 		}
 
-		// Rows are upserted in a fixed order so that concurrent syncs of clusters
+		// Rows are upserted in a fixed order so that concurrent syncs of environments
 		// sharing images lock them in the same order.
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO images (name, digest)
@@ -50,19 +48,18 @@ func (db *DB) SyncWorkloadImages(ctx context.Context, cluster string, ws []v0s.W
 			return fmt.Errorf("upserting images: %w", err)
 		}
 
-		if _, err := tx.Exec(ctx, `DELETE FROM workload_images WHERE cluster = $1`, cluster); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM workload_images WHERE environment = $1`, environment); err != nil {
 			return fmt.Errorf("deleting workload images: %w", err)
 		}
 
-		// Replicas of a workload report the same container and image, hence ON CONFLICT.
+		// Nais API lists a workload once; ON CONFLICT drops a duplicate rather than failing the sync.
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO workload_images (cluster, namespace, workload, container, image_id, owner_kind)
-			SELECT $1, t.namespace, t.workload, t.container, i.id, t.owner_kind
-			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::text[])
-				AS t (namespace, workload, container, owner_kind, name, digest)
+			INSERT INTO workload_images (environment, team, workload, image_id)
+			SELECT $1, t.team, t.workload, i.id
+			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS t (team, workload, name, digest)
 			JOIN images i ON i.name = t.name AND i.digest = t.digest
 			ON CONFLICT DO NOTHING`,
-			cluster, namespaces, workloads, containers, ownerKinds, names, digests,
+			environment, teams, workloads, names, digests,
 		); err != nil {
 			return fmt.Errorf("inserting workload images: %w", err)
 		}

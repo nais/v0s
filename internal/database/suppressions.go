@@ -14,10 +14,12 @@ import (
 	"github.com/nais/v0s/internal/purl"
 )
 
-// Suppression is a human assessment that a vulnerability does not apply to a
-// package in an image name. It is active when not revoked and not expired.
+// Suppression is a team's assessment that a vulnerability does not apply to a
+// package in an image name, in the team's own workloads. It is active when not
+// revoked and not expired.
 type Suppression struct {
 	ID              int64
+	Team            string
 	ImageName       string
 	PackageKey      string
 	VulnerabilityID string
@@ -33,41 +35,39 @@ type Suppression struct {
 }
 
 // suppressionColumns are the columns of suppressions s that suppressionScan reads.
-const suppressionColumns = `s.id, s.image_name, s.package_key, s.vulnerability_id, s.state, s.justification, s.detail,
+const suppressionColumns = `s.id, s.team, s.image_name, s.package_key, s.vulnerability_id, s.state, s.justification, s.detail,
 	s.created_by, s.created_at, s.expires_at, s.revoked_at, s.revoked_by, s.revoke_reason`
 
-// suppressionScan reads suppressionColumns. Every column is NULL when a LEFT JOIN finds no suppression.
+// suppressionScan reads suppressionColumns.
 type suppressionScan struct {
-	id                                                        pgtype.Int8
-	imageName, packageKey, vulnerabilityID, state             pgtype.Text
-	justification, detail, createdBy, revokedBy, revokeReason pgtype.Text
-	createdAt, expiresAt, revokedAt                           pgtype.Timestamptz
+	id                                                        int64
+	team, imageName, packageKey, vulnerabilityID, state       string
+	justification, detail, createdBy, revokedBy, revokeReason string
+	createdAt                                                 time.Time
+	expiresAt, revokedAt                                      pgtype.Timestamptz
 }
 
 func (s *suppressionScan) dest() []any {
-	return []any{&s.id, &s.imageName, &s.packageKey, &s.vulnerabilityID, &s.state, &s.justification, &s.detail,
+	return []any{&s.id, &s.team, &s.imageName, &s.packageKey, &s.vulnerabilityID, &s.state, &s.justification, &s.detail,
 		&s.createdBy, &s.createdAt, &s.expiresAt, &s.revokedAt, &s.revokedBy, &s.revokeReason}
 }
 
-// suppression returns nil if no suppression was read.
-func (s *suppressionScan) suppression() *Suppression {
-	if !s.id.Valid {
-		return nil
-	}
-	return &Suppression{
-		ID:              s.id.Int64,
-		ImageName:       s.imageName.String,
-		PackageKey:      s.packageKey.String,
-		VulnerabilityID: s.vulnerabilityID.String,
-		State:           s.state.String,
-		Justification:   s.justification.String,
-		Detail:          s.detail.String,
-		CreatedBy:       s.createdBy.String,
-		CreatedAt:       s.createdAt.Time,
+func (s *suppressionScan) suppression() Suppression {
+	return Suppression{
+		ID:              s.id,
+		Team:            s.team,
+		ImageName:       s.imageName,
+		PackageKey:      s.packageKey,
+		VulnerabilityID: s.vulnerabilityID,
+		State:           s.state,
+		Justification:   s.justification,
+		Detail:          s.detail,
+		CreatedBy:       s.createdBy,
+		CreatedAt:       s.createdAt,
 		ExpiresAt:       s.expiresAt.Time,
 		RevokedAt:       s.revokedAt.Time,
-		RevokedBy:       s.revokedBy.String,
-		RevokeReason:    s.revokeReason.String,
+		RevokedBy:       s.revokedBy,
+		RevokeReason:    s.revokeReason,
 	}
 }
 
@@ -76,7 +76,7 @@ func scanSuppression(row pgx.Row) (Suppression, error) {
 	if err := row.Scan(s.dest()...); err != nil {
 		return Suppression{}, err
 	}
-	return *s.suppression(), nil
+	return s.suppression(), nil
 }
 
 func collectSuppression(row pgx.CollectableRow) (Suppression, error) { return scanSuppression(row) }
@@ -95,7 +95,7 @@ type NewSuppression struct {
 // CreatedSuppression is the result of creating one suppression.
 type CreatedSuppression struct {
 	Suppression     Suppression
-	MatchedFindings int64 // current findings on images in use that the suppression matches
+	MatchedFindings int64 // current findings on images the team uses that the suppression matches
 	ReplacesID      int64 // the active suppression this one replaced, 0 if none
 }
 
@@ -139,14 +139,17 @@ func (n NewSuppression) validate(now time.Time) error {
 	return nil
 }
 
-// CreateSuppressions creates suppressions in one transaction: all of them or none.
+// CreateSuppressions creates suppressions for team in one transaction: all of them or none.
 //
-// Creating a suppression revokes the unrevoked suppression with the same key,
+// Creating a suppression revokes the team's unrevoked suppression with the same key,
 // if any. An active predecessor is revoked as "replaced by suppression <id>",
 // an expired one as "expired". With dryRun everything is rolled back, and the
 // results have ID 0.
-func (db *DB) CreateSuppressions(ctx context.Context, items []NewSuppression, actor string, dryRun bool) ([]CreatedSuppression, error) {
-	if actor == "" {
+func (db *DB) CreateSuppressions(ctx context.Context, team string, items []NewSuppression, actor string, dryRun bool) ([]CreatedSuppression, error) {
+	switch {
+	case team == "":
+		return nil, fmt.Errorf("team is required: %w", ErrInvalid)
+	case actor == "":
 		return nil, fmt.Errorf("actor is required: %w", ErrInvalid)
 	}
 	now := time.Now()
@@ -187,6 +190,7 @@ func (db *DB) CreateSuppressions(ctx context.Context, items []NewSuppression, ac
 		seen[k] = i
 
 		s := Suppression{
+			Team:            team,
 			ImageName:       item.ImageName,
 			PackageKey:      pkg,
 			VulnerabilityID: ids[0],
@@ -224,8 +228,8 @@ func createSuppression(ctx context.Context, tx pgx.Tx, s Suppression) (CreatedSu
 	err := tx.QueryRow(ctx, `
 		SELECT id, expires_at IS NOT NULL AND expires_at <= now()
 		FROM suppressions
-		WHERE image_name = $1 AND package_key = $2 AND vulnerability_id = $3 AND revoked_at IS NULL
-		FOR UPDATE`, s.ImageName, s.PackageKey, s.VulnerabilityID).Scan(&previousID, &previousExpired)
+		WHERE team = $1 AND image_name = $2 AND package_key = $3 AND vulnerability_id = $4 AND revoked_at IS NULL
+		FOR UPDATE`, s.Team, s.ImageName, s.PackageKey, s.VulnerabilityID).Scan(&previousID, &previousExpired)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return CreatedSuppression{}, fmt.Errorf("finding previous suppression: %w", err)
 	}
@@ -255,11 +259,11 @@ func createSuppression(ctx context.Context, tx pgx.Tx, s Suppression) (CreatedSu
 		expiresAt = &s.ExpiresAt
 	}
 	err = tx.QueryRow(ctx, `
-		INSERT INTO suppressions (id, image_name, package_key, vulnerability_id, state, justification, detail, created_by, expires_at)
+		INSERT INTO suppressions (id, team, image_name, package_key, vulnerability_id, state, justification, detail, created_by, expires_at)
 		OVERRIDING SYSTEM VALUE
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING created_at`,
-		s.ID, s.ImageName, s.PackageKey, s.VulnerabilityID, s.State, s.Justification, s.Detail, s.CreatedBy, expiresAt,
+		s.ID, s.Team, s.ImageName, s.PackageKey, s.VulnerabilityID, s.State, s.Justification, s.Detail, s.CreatedBy, expiresAt,
 	).Scan(&s.CreatedAt)
 	if pgErr := (*pgconn.PgError)(nil); errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		return CreatedSuppression{}, fmt.Errorf("suppression was created concurrently: %w", ErrConflict)
@@ -272,19 +276,21 @@ func createSuppression(ctx context.Context, tx pgx.Tx, s Suppression) (CreatedSu
 	err = tx.QueryRow(ctx, `
 		SELECT count(*)
 		FROM findings f JOIN images i ON i.id = f.image_id
-		WHERE i.name = $1 AND f.package_key = $2 AND f.vulnerability_id = $3
-			AND EXISTS (SELECT 1 FROM workload_images wi WHERE wi.image_id = i.id)`,
-		s.ImageName, s.PackageKey, s.VulnerabilityID).Scan(&created.MatchedFindings)
+		WHERE i.name = $2 AND f.package_key = $3 AND f.vulnerability_id = $4
+			AND EXISTS (SELECT 1 FROM workload_images wi WHERE wi.image_id = i.id AND wi.team = $1)`,
+		s.Team, s.ImageName, s.PackageKey, s.VulnerabilityID).Scan(&created.MatchedFindings)
 	if err != nil {
 		return CreatedSuppression{}, fmt.Errorf("counting matched findings: %w", err)
 	}
 	return created, nil
 }
 
-// RevokeSuppressions revokes suppressions in one transaction: all of them or
-// none. An unknown ID is ErrNotFound, a revoked one ErrAlreadyRevoked.
-func (db *DB) RevokeSuppressions(ctx context.Context, ids []int64, actor, reason string) ([]Suppression, error) {
+// RevokeSuppressions revokes team's suppressions in one transaction: all of them or
+// none. An unknown ID, or one of another team, is ErrNotFound; a revoked one ErrAlreadyRevoked.
+func (db *DB) RevokeSuppressions(ctx context.Context, team string, ids []int64, actor, reason string) ([]Suppression, error) {
 	switch {
+	case team == "":
+		return nil, fmt.Errorf("team is required: %w", ErrInvalid)
 	case len(ids) == 0:
 		return nil, fmt.Errorf("no suppression IDs: %w", ErrInvalid)
 	case actor == "":
@@ -302,12 +308,12 @@ func (db *DB) RevokeSuppressions(ctx context.Context, ids []int64, actor, reason
 	revoked := make([]Suppression, 0, len(ids))
 	for _, id := range ids {
 		s, err := scanSuppression(tx.QueryRow(ctx, `
-			UPDATE suppressions s SET revoked_at = now(), revoked_by = $2, revoke_reason = $3
-			WHERE s.id = $1 AND s.revoked_at IS NULL
-			RETURNING `+suppressionColumns, id, actor, reason))
+			UPDATE suppressions s SET revoked_at = now(), revoked_by = $3, revoke_reason = $4
+			WHERE s.id = $1 AND s.team = $2 AND s.revoked_at IS NULL
+			RETURNING `+suppressionColumns, id, team, actor, reason))
 		if errors.Is(err, pgx.ErrNoRows) {
 			var exists bool
-			if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM suppressions WHERE id = $1)", id).Scan(&exists); err != nil {
+			if err := tx.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM suppressions WHERE id = $1 AND team = $2)", id, team).Scan(&exists); err != nil {
 				return nil, fmt.Errorf("revoking suppression %d: %w", id, err)
 			}
 			if exists {
@@ -328,6 +334,7 @@ func (db *DB) RevokeSuppressions(ctx context.Context, ids []int64, actor, reason
 
 // SuppressionFilter narrows suppressions. Empty fields do not filter.
 type SuppressionFilter struct {
+	Teams           []string
 	ImageName       string
 	VulnerabilityID string // ID or alias
 	IncludeInactive bool   // include revoked and expired suppressions
@@ -345,6 +352,9 @@ func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, pa
 		args  sqlArgs
 		where = []string{"s.id > " + args.add(cursor.ID)}
 	)
+	if len(filter.Teams) > 0 {
+		where = append(where, "s.team = ANY("+args.add(filter.Teams)+")")
+	}
 	if filter.ImageName != "" {
 		where = append(where, "s.image_name = "+args.add(filter.ImageName))
 	}

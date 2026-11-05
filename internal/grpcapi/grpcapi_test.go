@@ -42,6 +42,7 @@ func TestSuppressionLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	created, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{
+		Team:  "team",
 		Actor: "me",
 		Suppressions: []*v0sv1.NewSuppression{{
 			ImageName:       "repo/app",
@@ -56,15 +57,19 @@ func TestSuppressionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := created.GetResults()[0].GetSuppression()
-	if got.GetVulnerabilityId() != "CVE-1" || got.GetState() != v0sv1.SuppressionState_SUPPRESSION_STATE_NOT_AFFECTED ||
+	if got.GetTeam() != "team" || got.GetVulnerabilityId() != "CVE-1" || got.GetState() != v0sv1.SuppressionState_SUPPRESSION_STATE_NOT_AFFECTED ||
 		got.GetJustification() != v0sv1.Justification_JUSTIFICATION_CODE_NOT_REACHABLE || got.GetCreatedAt() == nil {
 		t.Errorf("created suppression = %v", got)
 	}
 
-	if _, err := s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Ids: []int64{got.GetId()}, Actor: "me", Reason: "fixed"}); err != nil {
+	_, err = s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Team: "other", Ids: []int64{got.GetId()}, Actor: "me", Reason: "fixed"})
+	if status.Code(err) != codes.NotFound {
+		t.Errorf("revoking as another team: err = %v, want NotFound", err)
+	}
+	if _, err := s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Team: "team", Ids: []int64{got.GetId()}, Actor: "me", Reason: "fixed"}); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Ids: []int64{got.GetId()}, Actor: "me", Reason: "fixed"})
+	_, err = s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Team: "team", Ids: []int64{got.GetId()}, Actor: "me", Reason: "fixed"})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Errorf("revoking twice: err = %v, want FailedPrecondition", err)
 	}
@@ -91,15 +96,22 @@ func TestErrorCodes(t *testing.T) {
 			_, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{PageToken: "%%%"})
 			return err
 		}},
-		{name: "unknown vulnerability in suppression", want: codes.InvalidArgument, call: func() error {
+		{name: "suppression without team", want: codes.InvalidArgument, call: func() error {
 			_, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
+				ImageName: "repo/app", Package: "pkg:npm/lodash", VulnerabilityId: "CVE-1",
+				State: v0sv1.SuppressionState_SUPPRESSION_STATE_FALSE_POSITIVE, Detail: "d",
+			}}})
+			return err
+		}},
+		{name: "unknown vulnerability in suppression", want: codes.InvalidArgument, call: func() error {
+			_, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{Team: "team", Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
 				ImageName: "repo/app", Package: "pkg:npm/x", VulnerabilityId: "CVE-404",
 				State: v0sv1.SuppressionState_SUPPRESSION_STATE_FALSE_POSITIVE, Detail: "d",
 			}}})
 			return err
 		}},
 		{name: "zero expiry is not never", want: codes.InvalidArgument, call: func() error {
-			_, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
+			_, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{Team: "team", Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
 				ImageName: "repo/app", Package: "pkg:npm/x", VulnerabilityId: "CVE-1",
 				State: v0sv1.SuppressionState_SUPPRESSION_STATE_FALSE_POSITIVE, Detail: "d",
 				ExpiresAt: timestamppb.New(time.Time{}),
@@ -115,7 +127,7 @@ func TestErrorCodes(t *testing.T) {
 			return err
 		}},
 		{name: "revoke unknown", want: codes.NotFound, call: func() error {
-			_, err := s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Ids: []int64{404}, Actor: "me", Reason: "r"})
+			_, err := s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Team: "team", Ids: []int64{404}, Actor: "me", Reason: "r"})
 			return err
 		}},
 		{name: "canceled", want: codes.Canceled, call: func() error {

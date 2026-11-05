@@ -31,22 +31,23 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Vulnerabilities exposes mechanical facts about vulnerabilities in running images.
+// Vulnerabilities exposes mechanical facts about vulnerabilities in the images of team workloads.
 // Nothing here is a judgement: no priority, no risk score.
 type VulnerabilityServiceClient interface {
-	// ListWorkloads lists running workloads, their images and SBOM/scan coverage.
+	// ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
 	ListWorkloads(ctx context.Context, in *ListWorkloadsRequest, opts ...grpc.CallOption) (*ListWorkloadsResponse, error)
 	// ListFindings lists findings for images matching the filter.
 	ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error)
 	// CountFindings counts findings matching the filter, grouped by one dimension.
-	// Under NAMESPACE and WORKLOAD, a finding counts once for every matching workload
-	// running its image, since one image can run in several workloads. A namespace
+	// Under TEAM and WORKLOAD, a finding counts once for every matching workload
+	// using its image, since one image can be used by several workloads, and is
+	// suppressed for a workload when the workload's team has suppressed it. A team
 	// count is the sum over its workloads. Under the other groupings each finding
-	// counts once.
+	// counts once, and is suppressed as in Finding.suppressed.
 	CountFindings(ctx context.Context, in *CountFindingsRequest, opts ...grpc.CallOption) (*CountFindingsResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
 	GetVulnerability(ctx context.Context, in *GetVulnerabilityRequest, opts ...grpc.CallOption) (*GetVulnerabilityResponse, error)
-	// SearchComponents finds packages in SBOMs of running images, whether or not they have findings.
+	// SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
 	SearchComponents(ctx context.Context, in *SearchComponentsRequest, opts ...grpc.CallOption) (*SearchComponentsResponse, error)
 	// ListFindingEvents lists findings appearing and resolving over time, oldest first.
 	// Pagination is best-effort under concurrent writes: an event committed while a
@@ -126,22 +127,23 @@ func (c *vulnerabilityServiceClient) ListFindingEvents(ctx context.Context, in *
 // All implementations must embed UnimplementedVulnerabilityServiceServer
 // for forward compatibility.
 //
-// Vulnerabilities exposes mechanical facts about vulnerabilities in running images.
+// Vulnerabilities exposes mechanical facts about vulnerabilities in the images of team workloads.
 // Nothing here is a judgement: no priority, no risk score.
 type VulnerabilityServiceServer interface {
-	// ListWorkloads lists running workloads, their images and SBOM/scan coverage.
+	// ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
 	ListWorkloads(context.Context, *ListWorkloadsRequest) (*ListWorkloadsResponse, error)
 	// ListFindings lists findings for images matching the filter.
 	ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error)
 	// CountFindings counts findings matching the filter, grouped by one dimension.
-	// Under NAMESPACE and WORKLOAD, a finding counts once for every matching workload
-	// running its image, since one image can run in several workloads. A namespace
+	// Under TEAM and WORKLOAD, a finding counts once for every matching workload
+	// using its image, since one image can be used by several workloads, and is
+	// suppressed for a workload when the workload's team has suppressed it. A team
 	// count is the sum over its workloads. Under the other groupings each finding
-	// counts once.
+	// counts once, and is suppressed as in Finding.suppressed.
 	CountFindings(context.Context, *CountFindingsRequest) (*CountFindingsResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
 	GetVulnerability(context.Context, *GetVulnerabilityRequest) (*GetVulnerabilityResponse, error)
-	// SearchComponents finds packages in SBOMs of running images, whether or not they have findings.
+	// SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
 	SearchComponents(context.Context, *SearchComponentsRequest) (*SearchComponentsResponse, error)
 	// ListFindingEvents lists findings appearing and resolving over time, oldest first.
 	// Pagination is best-effort under concurrent writes: an event committed while a

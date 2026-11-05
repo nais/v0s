@@ -6,22 +6,23 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/nais/v0s/api/v0s/v1;v0sv1";
 
-// Vulnerabilities exposes mechanical facts about vulnerabilities in running images.
+// Vulnerabilities exposes mechanical facts about vulnerabilities in the images of team workloads.
 // Nothing here is a judgement: no priority, no risk score.
 service VulnerabilityService {
-  // ListWorkloads lists running workloads, their images and SBOM/scan coverage.
+  // ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
   rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
   // ListFindings lists findings for images matching the filter.
   rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse);
   // CountFindings counts findings matching the filter, grouped by one dimension.
-  // Under NAMESPACE and WORKLOAD, a finding counts once for every matching workload
-  // running its image, since one image can run in several workloads. A namespace
+  // Under TEAM and WORKLOAD, a finding counts once for every matching workload
+  // using its image, since one image can be used by several workloads, and is
+  // suppressed for a workload when the workload's team has suppressed it. A team
   // count is the sum over its workloads. Under the other groupings each finding
-  // counts once.
+  // counts once, and is suppressed as in Finding.suppressed.
   rpc CountFindings(CountFindingsRequest) returns (CountFindingsResponse);
   // GetVulnerability returns the vulnerability record for an ID or alias.
   rpc GetVulnerability(GetVulnerabilityRequest) returns (GetVulnerabilityResponse);
-  // SearchComponents finds packages in SBOMs of running images, whether or not they have findings.
+  // SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
   rpc SearchComponents(SearchComponentsRequest) returns (SearchComponentsResponse);
   // ListFindingEvents lists findings appearing and resolving over time, oldest first.
   // Pagination is best-effort under concurrent writes: an event committed while a
@@ -94,23 +95,16 @@ message Image {
 }
 
 message Workload {
-  string cluster = 1;
-  string namespace = 2;
+  string environment = 1;
+  string team = 2;
   string name = 3;
-  // Kind of the pods' controlling owner, e.g. ReplicaSet or Job.
-  string owner_kind = 4;
-  repeated WorkloadContainer containers = 5;
-}
-
-message WorkloadContainer {
-  string name = 1;
-  Image image = 2;
+  Image image = 4;
 }
 
 // FindingFilter narrows findings. Empty fields do not filter. Repeated fields match any value.
 message FindingFilter {
-  repeated string namespaces = 1;
-  string cluster = 2;
+  repeated string teams = 1;
+  string environment = 2;
   string workload = 3;
   string image_name = 4;
   string image_digest = 5;
@@ -152,8 +146,11 @@ message Finding {
   Epss epss = 13;
   Kev kev = 14;
   google.protobuf.Timestamp first_seen_at = 15;
-  // The active suppression covering this finding, if any.
-  Suppression suppression = 16;
+  // Whether every team using the image within the filter has suppressed the finding.
+  // For a single team, whether that team has.
+  bool suppressed = 16;
+  // Active suppressions of the finding by teams using the image within the filter.
+  repeated Suppression suppressions = 17;
 }
 
 message Epss {
@@ -169,8 +166,8 @@ message Kev {
 }
 
 message ListWorkloadsRequest {
-  repeated string namespaces = 1;
-  string cluster = 2;
+  repeated string teams = 1;
+  string environment = 2;
   int32 page_size = 3;
   string page_token = 4;
 }
@@ -198,7 +195,7 @@ message CountFindingsRequest {
   enum GroupBy {
     GROUP_BY_UNSPECIFIED = 0;
     GROUP_BY_SEVERITY = 1;
-    GROUP_BY_NAMESPACE = 2;
+    GROUP_BY_TEAM = 2;
     GROUP_BY_WORKLOAD = 3;
     GROUP_BY_IMAGE = 4;
     GROUP_BY_VULNERABILITY = 5;
@@ -209,7 +206,7 @@ message CountFindingsResponse {
   repeated Bucket buckets = 1;
 
   message Bucket {
-    // Value of the grouped dimension. For WORKLOAD: "cluster/namespace/name". For IMAGE: "name@digest".
+    // Value of the grouped dimension. For WORKLOAD: "environment/team/name". For IMAGE: "name@digest".
     string key = 1;
     int64 count = 2;
   }
@@ -249,7 +246,7 @@ message Cvss {
 message SearchComponentsRequest {
   // Package key, full purl, or name prefix (case-insensitive) when it does not start with "pkg:".
   string query = 1;
-  repeated string namespaces = 2;
+  repeated string teams = 2;
   int32 page_size = 3;
   string page_token = 4;
 }
@@ -264,13 +261,13 @@ message ComponentMatch {
   string name = 2;
   string version = 3;
   Image image = 4;
-  // Workloads currently running the image, limited to the requested namespaces.
+  // Workloads currently using the image, limited to the requested teams.
   repeated WorkloadRef workloads = 5;
 }
 
 message WorkloadRef {
-  string cluster = 1;
-  string namespace = 2;
+  string environment = 1;
+  string team = 2;
   string name = 3;
 }
 
@@ -280,9 +277,9 @@ message ListFindingEventsRequest {
   string image_digest = 2;
   // Vulnerability ID or alias.
   string vulnerability_id = 3;
-  // Events for images that currently run in one of these namespaces. Matching
-  // uses current workload placement, not placement when the event was recorded.
-  repeated string namespaces = 4;
+  // Events for images that one of these teams currently uses. Matching uses
+  // current workloads, not the workloads when the event was recorded.
+  repeated string teams = 4;
   // Events created at or after this time.
   google.protobuf.Timestamp since = 5;
   int32 page_size = 6;
@@ -310,20 +307,23 @@ message FindingEvent {
   }
 }
 
+// A team's assessment of a vulnerability in a package in an image name. It applies
+// to the team's own workloads only: another team using the same image is not affected.
 message Suppression {
   int64 id = 1;
-  string image_name = 2;
-  string package_key = 3;
-  string vulnerability_id = 4;
-  SuppressionState state = 5;
-  Justification justification = 6;
-  string detail = 7;
-  string created_by = 8;
-  google.protobuf.Timestamp created_at = 9;
-  google.protobuf.Timestamp expires_at = 10;
-  google.protobuf.Timestamp revoked_at = 11;
-  string revoked_by = 12;
-  string revoke_reason = 13;
+  string team = 2;
+  string image_name = 3;
+  string package_key = 4;
+  string vulnerability_id = 5;
+  SuppressionState state = 6;
+  Justification justification = 7;
+  string detail = 8;
+  string created_by = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp expires_at = 11;
+  google.protobuf.Timestamp revoked_at = 12;
+  string revoked_by = 13;
+  string revoke_reason = 14;
 }
 
 message NewSuppression {
@@ -339,10 +339,12 @@ message NewSuppression {
 }
 
 message CreateSuppressionsRequest {
-  repeated NewSuppression suppressions = 1;
-  // Identity of the human the caller acts for. The caller is trusted to have authorized them.
-  string actor = 2;
-  bool dry_run = 3;
+  // The team whose assessment this is. The caller is trusted to have authorized the actor for it.
+  string team = 1;
+  repeated NewSuppression suppressions = 2;
+  // Identity of the human the caller acts for.
+  string actor = 3;
+  bool dry_run = 4;
 }
 
 message CreateSuppressionsResponse {
@@ -351,7 +353,7 @@ message CreateSuppressionsResponse {
   message CreatedSuppression {
     // Empty id on dry run.
     Suppression suppression = 1;
-    // Number of current findings the suppression matches.
+    // Number of current findings, on images the team uses, that the suppression matches.
     int64 matched_findings = 2;
     // Active suppression that this one replaces, if any.
     int64 replaces_id = 3;
@@ -359,9 +361,11 @@ message CreateSuppressionsResponse {
 }
 
 message RevokeSuppressionsRequest {
-  repeated int64 ids = 1;
-  string actor = 2;
-  string reason = 3;
+  // The team the suppressions belong to. An ID of another team is not found.
+  string team = 1;
+  repeated int64 ids = 2;
+  string actor = 3;
+  string reason = 4;
 }
 
 message RevokeSuppressionsResponse {
@@ -369,12 +373,13 @@ message RevokeSuppressionsResponse {
 }
 
 message ListSuppressionsRequest {
-  string image_name = 1;
-  string vulnerability_id = 2;
+  repeated string teams = 1;
+  string image_name = 2;
+  string vulnerability_id = 3;
   // Include revoked and expired suppressions.
-  bool include_inactive = 3;
-  int32 page_size = 4;
-  string page_token = 5;
+  bool include_inactive = 4;
+  int32 page_size = 5;
+  string page_token = 6;
 }
 
 message ListSuppressionsResponse {

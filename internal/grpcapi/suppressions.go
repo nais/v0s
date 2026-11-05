@@ -38,7 +38,7 @@ func (s *Server) CreateSuppressions(ctx context.Context, req *v0sv1.CreateSuppre
 		}
 		items = append(items, item)
 	}
-	created, err := s.db.CreateSuppressions(ctx, items, req.GetActor(), req.GetDryRun())
+	created, err := s.db.CreateSuppressions(ctx, req.GetTeam(), items, req.GetActor(), req.GetDryRun())
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
@@ -55,7 +55,7 @@ func (s *Server) CreateSuppressions(ctx context.Context, req *v0sv1.CreateSuppre
 
 // RevokeSuppressions implements SuppressionService.
 func (s *Server) RevokeSuppressions(ctx context.Context, req *v0sv1.RevokeSuppressionsRequest) (*v0sv1.RevokeSuppressionsResponse, error) {
-	revoked, err := s.db.RevokeSuppressions(ctx, req.GetIds(), req.GetActor(), req.GetReason())
+	revoked, err := s.db.RevokeSuppressions(ctx, req.GetTeam(), req.GetIds(), req.GetActor(), req.GetReason())
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
@@ -69,6 +69,7 @@ func (s *Server) RevokeSuppressions(ctx context.Context, req *v0sv1.RevokeSuppre
 // ListSuppressions implements SuppressionService.
 func (s *Server) ListSuppressions(ctx context.Context, req *v0sv1.ListSuppressionsRequest) (*v0sv1.ListSuppressionsResponse, error) {
 	filter := database.SuppressionFilter{
+		Teams:           req.GetTeams(),
 		ImageName:       req.GetImageName(),
 		VulnerabilityID: req.GetVulnerabilityId(),
 		IncludeInactive: req.GetIncludeInactive(),
@@ -87,6 +88,7 @@ func (s *Server) ListSuppressions(ctx context.Context, req *v0sv1.ListSuppressio
 func suppressionToProto(s database.Suppression) *v0sv1.Suppression {
 	return &v0sv1.Suppression{
 		Id:              s.ID,
+		Team:            s.Team,
 		ImageName:       s.ImageName,
 		PackageKey:      s.PackageKey,
 		VulnerabilityId: s.VulnerabilityID,

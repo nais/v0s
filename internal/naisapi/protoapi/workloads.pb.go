@@ -21,62 +21,14 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
-type WorkloadKind int32
-
-const (
-	WorkloadKind_WORKLOAD_KIND_UNSPECIFIED WorkloadKind = 0
-	WorkloadKind_APPLICATION               WorkloadKind = 1
-	WorkloadKind_JOB                       WorkloadKind = 2
-)
-
-// Enum value maps for WorkloadKind.
-var (
-	WorkloadKind_name = map[int32]string{
-		0: "WORKLOAD_KIND_UNSPECIFIED",
-		1: "APPLICATION",
-		2: "JOB",
-	}
-	WorkloadKind_value = map[string]int32{
-		"WORKLOAD_KIND_UNSPECIFIED": 0,
-		"APPLICATION":               1,
-		"JOB":                       2,
-	}
-)
-
-func (x WorkloadKind) Enum() *WorkloadKind {
-	p := new(WorkloadKind)
-	*p = x
-	return p
-}
-
-func (x WorkloadKind) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (WorkloadKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_workloads_proto_enumTypes[0].Descriptor()
-}
-
-func (WorkloadKind) Type() protoreflect.EnumType {
-	return &file_workloads_proto_enumTypes[0]
-}
-
-func (x WorkloadKind) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use WorkloadKind.Descriptor instead.
-func (WorkloadKind) EnumDescriptor() ([]byte, []int) {
-	return file_workloads_proto_rawDescGZIP(), []int{0}
-}
-
+// An application and a job cannot share a name in a team, so team and name identify a
+// workload within an environment.
 type WorkloadImage struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	TeamSlug string                 `protobuf:"bytes,1,opt,name=team_slug,json=teamSlug,proto3" json:"team_slug,omitempty"`
 	Name     string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Kind     WorkloadKind           `protobuf:"varint,3,opt,name=kind,proto3,enum=nais.api.protobuf.WorkloadKind" json:"kind,omitempty"`
 	// The workload's effective image reference, as deployed: a tag, a digest, or both.
-	Image         string `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`
+	Image         string `protobuf:"bytes,3,opt,name=image,proto3" json:"image,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -123,13 +75,6 @@ func (x *WorkloadImage) GetName() string {
 		return x.Name
 	}
 	return ""
-}
-
-func (x *WorkloadImage) GetKind() WorkloadKind {
-	if x != nil {
-		return x.Kind
-	}
-	return WorkloadKind_WORKLOAD_KIND_UNSPECIFIED
 }
 
 func (x *WorkloadImage) GetImage() string {
@@ -275,22 +220,17 @@ var File_workloads_proto protoreflect.FileDescriptor
 
 const file_workloads_proto_rawDesc = "" +
 	"\n" +
-	"\x0fworkloads.proto\x12\x11nais.api.protobuf\"\x8b\x01\n" +
+	"\x0fworkloads.proto\x12\x11nais.api.protobuf\"V\n" +
 	"\rWorkloadImage\x12\x1b\n" +
 	"\tteam_slug\x18\x01 \x01(\tR\bteamSlug\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\x123\n" +
-	"\x04kind\x18\x03 \x01(\x0e2\x1f.nais.api.protobuf.WorkloadKindR\x04kind\x12\x14\n" +
-	"\x05image\x18\x04 \x01(\tR\x05image\"}\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
+	"\x05image\x18\x03 \x01(\tR\x05image\"}\n" +
 	"\x19EnvironmentWorkloadImages\x12 \n" +
 	"\venvironment\x18\x01 \x01(\tR\venvironment\x12>\n" +
 	"\tworkloads\x18\x02 \x03(\v2 .nais.api.protobuf.WorkloadImageR\tworkloads\"\x1b\n" +
 	"\x19ListWorkloadImagesRequest\"n\n" +
 	"\x1aListWorkloadImagesResponse\x12P\n" +
-	"\fenvironments\x18\x01 \x03(\v2,.nais.api.protobuf.EnvironmentWorkloadImagesR\fenvironments*G\n" +
-	"\fWorkloadKind\x12\x1d\n" +
-	"\x19WORKLOAD_KIND_UNSPECIFIED\x10\x00\x12\x0f\n" +
-	"\vAPPLICATION\x10\x01\x12\a\n" +
-	"\x03JOB\x10\x022x\n" +
+	"\fenvironments\x18\x01 \x03(\v2,.nais.api.protobuf.EnvironmentWorkloadImagesR\fenvironments2x\n" +
 	"\tWorkloads\x12k\n" +
 	"\n" +
 	"ListImages\x12,.nais.api.protobuf.ListWorkloadImagesRequest\x1a-.nais.api.protobuf.ListWorkloadImagesResponse\"\x00B/Z-github.com/nais/v0s/internal/naisapi/protoapib\x06proto3"
@@ -307,26 +247,23 @@ func file_workloads_proto_rawDescGZIP() []byte {
 	return file_workloads_proto_rawDescData
 }
 
-var file_workloads_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
 var file_workloads_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_workloads_proto_goTypes = []any{
-	(WorkloadKind)(0),                  // 0: nais.api.protobuf.WorkloadKind
-	(*WorkloadImage)(nil),              // 1: nais.api.protobuf.WorkloadImage
-	(*EnvironmentWorkloadImages)(nil),  // 2: nais.api.protobuf.EnvironmentWorkloadImages
-	(*ListWorkloadImagesRequest)(nil),  // 3: nais.api.protobuf.ListWorkloadImagesRequest
-	(*ListWorkloadImagesResponse)(nil), // 4: nais.api.protobuf.ListWorkloadImagesResponse
+	(*WorkloadImage)(nil),              // 0: nais.api.protobuf.WorkloadImage
+	(*EnvironmentWorkloadImages)(nil),  // 1: nais.api.protobuf.EnvironmentWorkloadImages
+	(*ListWorkloadImagesRequest)(nil),  // 2: nais.api.protobuf.ListWorkloadImagesRequest
+	(*ListWorkloadImagesResponse)(nil), // 3: nais.api.protobuf.ListWorkloadImagesResponse
 }
 var file_workloads_proto_depIdxs = []int32{
-	0, // 0: nais.api.protobuf.WorkloadImage.kind:type_name -> nais.api.protobuf.WorkloadKind
-	1, // 1: nais.api.protobuf.EnvironmentWorkloadImages.workloads:type_name -> nais.api.protobuf.WorkloadImage
-	2, // 2: nais.api.protobuf.ListWorkloadImagesResponse.environments:type_name -> nais.api.protobuf.EnvironmentWorkloadImages
-	3, // 3: nais.api.protobuf.Workloads.ListImages:input_type -> nais.api.protobuf.ListWorkloadImagesRequest
-	4, // 4: nais.api.protobuf.Workloads.ListImages:output_type -> nais.api.protobuf.ListWorkloadImagesResponse
-	4, // [4:5] is the sub-list for method output_type
-	3, // [3:4] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0, // 0: nais.api.protobuf.EnvironmentWorkloadImages.workloads:type_name -> nais.api.protobuf.WorkloadImage
+	1, // 1: nais.api.protobuf.ListWorkloadImagesResponse.environments:type_name -> nais.api.protobuf.EnvironmentWorkloadImages
+	2, // 2: nais.api.protobuf.Workloads.ListImages:input_type -> nais.api.protobuf.ListWorkloadImagesRequest
+	3, // 3: nais.api.protobuf.Workloads.ListImages:output_type -> nais.api.protobuf.ListWorkloadImagesResponse
+	3, // [3:4] is the sub-list for method output_type
+	2, // [2:3] is the sub-list for method input_type
+	2, // [2:2] is the sub-list for extension type_name
+	2, // [2:2] is the sub-list for extension extendee
+	0, // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_workloads_proto_init() }
@@ -339,14 +276,13 @@ func file_workloads_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_workloads_proto_rawDesc), len(file_workloads_proto_rawDesc)),
-			NumEnums:      1,
+			NumEnums:      0,
 			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
 		GoTypes:           file_workloads_proto_goTypes,
 		DependencyIndexes: file_workloads_proto_depIdxs,
-		EnumInfos:         file_workloads_proto_enumTypes,
 		MessageInfos:      file_workloads_proto_msgTypes,
 	}.Build()
 	File_workloads_proto = out.File
