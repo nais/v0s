@@ -24,7 +24,9 @@ separate queue:
 - scan: images in use whose `scanned_db_version` differs from the loaded DB, unless a scan with that DB already failed
 - enrich: EPSS and KEV once a day, behind an advisory lock
 - vulndb: check the registry for a newer DB every hour
-- sync: every minute, the workloads from Nais API replace `workload_images`
+- sync: every minute, the workloads from Nais API replace `workloads`, per environment. A
+  workload listed twice with different images fails that environment's sync, which keeps
+  the previous snapshot rather than picking one image
 
 A crash loses nothing. On restart, the loops see the same desired state.
 
@@ -37,9 +39,9 @@ is unauthenticated and reached through NetworkPolicy, like its other internal
 clients. It needs no access to the clusters: no RBAC, no cluster credentials, and
 no watch streams through the API server proxies.
 
-`Workloads.ListImages` is not in nais/api upstream: the dev-nais pilot runs a
-local build of nais-api that adds it, and `third_party/naisapi` is a copy of its
-proto. The GraphQL API would have done without changing nais-api, but needs a
+`Workloads.ListImages` is not yet in nais/api upstream: it is proposed in nais/api#609,
+the dev-nais pilot runs a local build of nais-api with it, and `third_party/naisapi` is a
+copy of its proto. The GraphQL API would have done without changing nais-api, but needs a
 service account token, and creating one needs a team or admin role.
 
 This replaced watching Pods across clusters. The Pod watches cost cluster access
@@ -81,6 +83,13 @@ expired predecessor in the same transaction.
 
 There is no priority, risk score or top list. EPSS and KEV are fields on the
 finding. Counts are plain `GROUP BY` facets.
+
+## Everyone in the tenant can read everything
+
+Any user may see any team's findings, so a CVE can be traced to every team that
+has it. v0s has no per-user read access: its callers are trusted services, and
+team filters narrow a query, they do not restrict it. Only writes are scoped:
+a caller must authorize the actor for the team a suppression belongs to.
 
 ## Postgres-backed integration tests without Docker
 

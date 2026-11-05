@@ -20,7 +20,7 @@ func TestSuppressionMatching(t *testing.T) {
 		teamA = columns + "('team-a', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me', now(), NULL, NULL, '');"
 		teamB = columns + "('team-b', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me', now(), NULL, NULL, '');"
 		// Team b also uses team a's image sha256:a.
-		shared = "INSERT INTO workload_images (environment, team, workload, image_id) VALUES ('c1', 'team-b', 'shared', 1);"
+		shared = "INSERT INTO workloads (environment, team, name, image_id) VALUES ('c1', 'team-b', 'shared', 1);"
 	)
 
 	tests := []struct {
@@ -97,7 +97,7 @@ func TestCountFindingsPerTeamSuppression(t *testing.T) {
 	// Team a suppresses lodash in repo/app, and team b also uses team a's sha256:a.
 	exec(`INSERT INTO suppressions (team, image_name, package_key, vulnerability_id, state, detail, created_by)
 		VALUES ('team-a', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me');
-		INSERT INTO workload_images (environment, team, workload, image_id) VALUES ('c1', 'team-b', 'shared', 1);`)
+		INSERT INTO workloads (environment, team, name, image_id) VALUES ('c1', 'team-b', 'shared', 1);`)
 
 	got, err := db.CountFindings(context.Background(), database.FindingFilter{}, database.GroupByTeam)
 	if err != nil {
@@ -141,7 +141,7 @@ func TestCreateSuppressions(t *testing.T) {
 	// ListFindings by GHSA-1 matches both, so a suppression for it is ambiguous.
 	t.Run("rejects ID that is also an alias", func(t *testing.T) {
 		db, exec := newFixture(t)
-		exec(`INSERT INTO vulnerabilities (id) VALUES ('GHSA-1')`)
+		exec(`INSERT INTO vulnerabilities (id, db_version) VALUES ('GHSA-1', now())`)
 		item := lodashSuppression("accepted_risk")
 		item.VulnerabilityID = "GHSA-1"
 		if _, err := db.CreateSuppressions(ctx, "team-a", []database.NewSuppression{item}, "me", false); !errors.Is(err, database.ErrInvalid) {

@@ -54,7 +54,7 @@ func (db *DB) ClaimScan(ctx context.Context, dbVersion time.Time, lease time.Dur
 					AND (scanned_db_version IS NULL OR scanned_db_version < $1)
 					AND (scan_failed_db_version IS NULL OR scan_failed_db_version < $1)
 					AND (scan_lease_until IS NULL OR scan_lease_until <= now())
-					AND EXISTS (SELECT 1 FROM workload_images w WHERE w.image_id = images.id)
+					AND EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = images.id)
 				ORDER BY scanned_db_version NULLS FIRST, id
 				LIMIT 1
 				FOR UPDATE SKIP LOCKED
@@ -218,9 +218,8 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, 
 			"references" = excluded."references",
 			published_at = excluded.published_at,
 			modified_at = excluded.modified_at,
-			db_version = excluded.db_version,
-			updated_at = now()
-		WHERE v.db_version IS NULL OR v.db_version < excluded.db_version
+			db_version = excluded.db_version
+		WHERE v.db_version < excluded.db_version
 			OR (v.db_version = excluded.db_version
 				AND (v.title, v.description, v.severities, v.cvss, v."references", v.published_at, v.modified_at)
 				IS DISTINCT FROM (excluded.title, excluded.description, excluded.severities, excluded.cvss,

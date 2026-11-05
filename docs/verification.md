@@ -85,21 +85,24 @@ One instance in dev-nais: the data can be rebuilt from Nais API and the
 registries, and the chart configures no backups. Load and storage belong to v0s
 alone, and nothing we do can affect v13s.
 
-## What v0s needs before deploying
+## Built for the pilot
 
-- Dockerfile (distroless, nonroot).
-- Prometheus metrics on the probe listener, enough to answer the questions below:
-  - `v0s_scan_duration_seconds` histogram, `v0s_scans_total{result}`
-  - `v0s_fetches_total{result="found|not_found|error"}`
-  - `v0s_images{sbom="pending|fetched|missing|failed",scan="pending|current|failed"}` counted in the database at scrape time
-  - `v0s_trivy_db_version_timestamp_seconds`, `v0s_trivy_db_updates_total{result}`
-  - `v0s_enrichment_last_success_timestamp_seconds{feed}`
-  - `v0s_grpc_request_duration_seconds{method,code}`
-  - Go runtime and process collectors (memory, CPU, goroutines)
-- gRPC server reflection, so `grpcurl` works without the proto files.
-- A cap on scan attempts per image (open item from review 2): an SBOM that kills
-  the process must not crash-loop every replica. Count claims, record a failure
-  after three.
+The Dockerfile (distroless, nonroot), gRPC server reflection, and a cap of three
+scan attempts per image and DB version are in place, so an SBOM that kills the
+process cannot crash-loop every replica. Prometheus metrics on the probe listener:
+
+- `v0s_scan_duration_seconds` histogram, `v0s_scans_total{result}`
+- `v0s_fetches_total{result="found|not_found|error"}`
+- `v0s_images{sbom="pending|fetched|missing|failed",scan="pending|current|failed"}` counted in the database at scrape time
+- `v0s_trivy_db_version_timestamp_seconds`, `v0s_trivy_db_updates_total{result}`
+- `v0s_enrichment_last_success_timestamp_seconds{feed}`
+- `v0s_grpc_request_duration_seconds{method,code}`
+- Go runtime and process collectors (memory, CPU, goroutines)
+
+The dev-nais pilot runs ahead of the chart and Terraform: `deploy/dev-nais/management.yaml`
+is applied by hand and runs as v13s's KSA `v13s-sa`, so it needs no new Google service
+account. Until the first release the schema lives in one migration that is edited in
+place; an existing pilot database is reset by recreating its CNPG cluster.
 
 ## Verification
 
@@ -108,10 +111,11 @@ the session notes with the image/DB versions used.
 
 ### Output: findings per workload
 
-1. For every workload in the tenant, fetch findings from both systems and compare
-   on (image digest, package purl, canonical vulnerability ID):
-   - v0s: `grpcurl … v0s.v1.VulnerabilityService/ListFindings` per workload.
-   - v13s: `vulnz` with the same workload.
+1. Fetch findings from both systems and compare on (image digest, package purl,
+   canonical vulnerability ID):
+   - v0s: `grpcurl … v0s.v1.VulnerabilityService/ListFindings`; each finding lists
+     the workloads using its image.
+   - v13s: `vulnz` per workload.
    A small comparison script (kept with the session notes, not in this repo) prints
    matched / v0s-only / v13s-only per workload and severity, with v0s-only unfixed
    findings counted separately.
@@ -132,7 +136,7 @@ the session notes with the image/DB versions used.
 | Scenario | Expected |
 |---|---|
 | Deploy a new version of a test app | findings for the new digest within sync + fetch + scan time; old digest leaves the workload |
-| Delete the app | its images leave the workload set; image rows are collected after 30 days |
+| Delete the app | its images leave the workload set; image rows are collected after 7 days |
 | Image without attestation | `missing`, retried on a backoff, no retry storm |
 | Trivy DB update (about every 6 h) | every image rescanned once; `v0s_scans_total` rises by the image count, not more |
 | Two replicas | no image scanned twice for the same DB version |
@@ -155,7 +159,7 @@ passes.
 
 ## Order
 
-1. v0s: Dockerfile, metrics, reflection, attempt cap.
+1. v0s: Dockerfile, metrics, reflection, attempt cap. Done.
 2. Repo on GitHub and `gh-v0s`; CI publishes image and chart. The deploy job targets
    dev-nais management only (no ci-nais canary) and is switched on after step 3.
 3. Terraform (dev-nais) as a draft PR; read the Atlantis plan. nais-api with

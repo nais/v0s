@@ -62,7 +62,7 @@ func (db *DB) SearchComponents(ctx context.Context, filter ComponentFilter, page
 		where = append(where, "lower(c.name) LIKE "+args.add(likePrefix(strings.ToLower(filter.Query))))
 	}
 	if len(filter.Teams) > 0 {
-		workload = append(workload, "wi.team = ANY("+args.add(filter.Teams)+")")
+		workload = append(workload, "w.team = ANY("+args.add(filter.Teams)+")")
 	}
 	where = append(where, inUse(workload))
 	if page.Token != "" {
@@ -70,7 +70,14 @@ func (db *DB) SearchComponents(ctx context.Context, filter ComponentFilter, page
 	}
 	limit := page.limit()
 
-	rows, err := db.pool.Query(ctx, `
+	// The components and their workloads are read from one snapshot, so that they agree.
+	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, "", fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	rows, err := tx.Query(ctx, `
 		SELECT c.purl, c.package_key, c.name, c.version, `+imageColumns+`
 		FROM components c
 		JOIN images i ON i.id = c.image_id
@@ -101,38 +108,18 @@ func (db *DB) SearchComponents(ctx context.Context, filter ComponentFilter, page
 			return nil, "", err
 		}
 	}
-	if len(matches) == 0 {
-		return nil, "", nil
+	ids := make([]int64, len(matches))
+	for i, m := range matches {
+		ids[i] = m.Image.ID
 	}
-
-	imageIDs := make([]int64, 0, len(matches))
-	for _, m := range matches {
-		imageIDs = append(imageIDs, m.Image.ID)
-	}
-	args = nil
-	where = []string{"image_id = ANY(" + args.add(imageIDs) + ")"}
+	var wargs sqlArgs
+	var wconds []string
 	if len(filter.Teams) > 0 {
-		where = append(where, "team = ANY("+args.add(filter.Teams)+")")
+		wconds = append(wconds, "w.team = ANY("+wargs.add(filter.Teams)+")")
 	}
-	rows, err = db.pool.Query(ctx, `
-		SELECT image_id, environment, team, workload
-		FROM workload_images
-		WHERE `+and(where)+`
-		ORDER BY image_id, environment, team, workload`, args...)
+	workloads, err := imageWorkloads(ctx, tx, ids, wconds, wargs)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing component workloads: %w", err)
-	}
-	workloads := make(map[int64][]WorkloadRef)
-	var (
-		imageID int64
-		ref     WorkloadRef
-	)
-	_, err = pgx.ForEachRow(rows, []any{&imageID, &ref.Environment, &ref.Team, &ref.Name}, func() error {
-		workloads[imageID] = append(workloads[imageID], ref)
-		return nil
-	})
-	if err != nil {
-		return nil, "", fmt.Errorf("listing component workloads: %w", err)
+		return nil, "", err
 	}
 	for i := range matches {
 		matches[i].Workloads = workloads[matches[i].Image.ID]

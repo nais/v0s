@@ -7,11 +7,13 @@ import "google/protobuf/timestamp.proto";
 option go_package = "github.com/nais/v0s/api/v0s/v1;v0sv1";
 
 // Vulnerabilities exposes mechanical facts about vulnerabilities in the images of team workloads.
-// Nothing here is a judgement: no priority, no risk score.
+// Nothing here is a judgement: no priority, no risk score. Everything is readable by every
+// caller: team filters narrow a query, they do not restrict it.
 service VulnerabilityService {
   // ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
   rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
-  // ListFindings lists findings for images matching the filter.
+  // ListFindings lists findings for images matching the filter, each with the workloads
+  // using its image, so one call answers which workloads have a vulnerability.
   rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse);
   // CountFindings counts findings matching the filter, grouped by one dimension.
   // Under TEAM and WORKLOAD, a finding counts once for every matching workload
@@ -151,6 +153,8 @@ message Finding {
   bool suppressed = 16;
   // Active suppressions of the finding by teams using the image within the filter.
   repeated Suppression suppressions = 17;
+  // Workloads using the image within the filter, whether their team has suppressed the finding or not.
+  repeated WorkloadRef workloads = 18;
 }
 
 message Epss {

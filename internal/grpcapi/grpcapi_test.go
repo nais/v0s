@@ -29,7 +29,7 @@ func newServer(t *testing.T) *grpcapi.Server {
 	}
 	defer conn.Close(ctx)
 	_, err = conn.Exec(ctx, `
-		INSERT INTO vulnerabilities (id, title) VALUES ('CVE-1', 'bug');
+		INSERT INTO vulnerabilities (id, title, db_version) VALUES ('CVE-1', 'bug', now());
 		INSERT INTO vulnerability_aliases (alias, vulnerability_id) VALUES ('GHSA-1', 'CVE-1');`)
 	if err != nil {
 		t.Fatal(err)

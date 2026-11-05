@@ -32,11 +32,13 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // Vulnerabilities exposes mechanical facts about vulnerabilities in the images of team workloads.
-// Nothing here is a judgement: no priority, no risk score.
+// Nothing here is a judgement: no priority, no risk score. Everything is readable by every
+// caller: team filters narrow a query, they do not restrict it.
 type VulnerabilityServiceClient interface {
 	// ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
 	ListWorkloads(ctx context.Context, in *ListWorkloadsRequest, opts ...grpc.CallOption) (*ListWorkloadsResponse, error)
-	// ListFindings lists findings for images matching the filter.
+	// ListFindings lists findings for images matching the filter, each with the workloads
+	// using its image, so one call answers which workloads have a vulnerability.
 	ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error)
 	// CountFindings counts findings matching the filter, grouped by one dimension.
 	// Under TEAM and WORKLOAD, a finding counts once for every matching workload
@@ -128,11 +130,13 @@ func (c *vulnerabilityServiceClient) ListFindingEvents(ctx context.Context, in *
 // for forward compatibility.
 //
 // Vulnerabilities exposes mechanical facts about vulnerabilities in the images of team workloads.
-// Nothing here is a judgement: no priority, no risk score.
+// Nothing here is a judgement: no priority, no risk score. Everything is readable by every
+// caller: team filters narrow a query, they do not restrict it.
 type VulnerabilityServiceServer interface {
 	// ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
 	ListWorkloads(context.Context, *ListWorkloadsRequest) (*ListWorkloadsResponse, error)
-	// ListFindings lists findings for images matching the filter.
+	// ListFindings lists findings for images matching the filter, each with the workloads
+	// using its image, so one call answers which workloads have a vulnerability.
 	ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error)
 	// CountFindings counts findings matching the filter, grouped by one dimension.
 	// Under TEAM and WORKLOAD, a finding counts once for every matching workload

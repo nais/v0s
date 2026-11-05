@@ -15,7 +15,7 @@ import (
 // imageColumns are the images columns scanned by imageScan, qualified with the alias i.
 const imageColumns = `i.id, i.name, i.digest, i.sbom_state, i.sbom_error, i.scanned_at, i.scanned_db_version, i.scan_error`
 
-// ClaimSBOMFetches returns up to limit images that are in use (referenced by workload_images),
+// ClaimSBOMFetches returns up to limit images that are in use (referenced by workloads),
 // not fetched, and due (sbom_next_attempt_at <= now()). It leases them by moving
 // sbom_next_attempt_at to now()+lease. Concurrent callers never get the same image.
 func (db *DB) ClaimSBOMFetches(ctx context.Context, limit int, lease time.Duration) ([]v0s.Image, error) {
@@ -25,7 +25,7 @@ func (db *DB) ClaimSBOMFetches(ctx context.Context, limit int, lease time.Durati
 			SELECT id FROM images
 			WHERE sbom_state <> 'fetched'
 				AND sbom_next_attempt_at <= now()
-				AND EXISTS (SELECT 1 FROM workload_images w WHERE w.image_id = images.id)
+				AND EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = images.id)
 			ORDER BY sbom_next_attempt_at
 			LIMIT $1
 			FOR UPDATE SKIP LOCKED
@@ -73,7 +73,7 @@ func (db *DB) StoreSBOM(ctx context.Context, imageID int64, document []byte) err
 			return nil
 		}
 		if _, err := tx.Exec(ctx, `
-			UPDATE images SET sbom_state = 'fetched', sbom_error = '', sbom_fetched_at = now()
+			UPDATE images SET sbom_state = 'fetched', sbom_error = ''
 			WHERE id = $1`,
 			imageID,
 		); err != nil {
@@ -103,13 +103,13 @@ func (db *DB) RecordSBOMFailure(ctx context.Context, imageID int64, state v0s.SB
 	return nil
 }
 
-// DeleteUnusedImages deletes images not referenced by workload_images whose last_seen_at is older
+// DeleteUnusedImages deletes images not referenced by workloads whose last_seen_at is older
 // than unusedFor. Cascades to SBOMs, components and findings. Finding events are kept.
 func (db *DB) DeleteUnusedImages(ctx context.Context, unusedFor time.Duration) (int64, error) {
 	tag, err := db.pool.Exec(ctx, `
 		DELETE FROM images i
 		WHERE i.last_seen_at < now() - make_interval(secs => $1)
-			AND NOT EXISTS (SELECT 1 FROM workload_images w WHERE w.image_id = i.id)`,
+			AND NOT EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id)`,
 		unusedFor.Seconds(),
 	)
 	if err != nil {
@@ -128,7 +128,7 @@ type ImageStateCount struct {
 	Count int
 }
 
-// CountImageStates counts the in-use images (referenced by workload_images) by SBOM state and
+// CountImageStates counts the in-use images (referenced by workloads) by SBOM state and
 // scan state relative to dbVersion. A zero dbVersion means no DB is loaded: no image is current
 // or failed.
 func (db *DB) CountImageStates(ctx context.Context, dbVersion time.Time) ([]ImageStateCount, error) {
@@ -146,7 +146,7 @@ func (db *DB) CountImageStates(ctx context.Context, dbVersion time.Time) ([]Imag
 			END,
 			count(*)
 		FROM images i
-		WHERE EXISTS (SELECT 1 FROM workload_images w WHERE w.image_id = i.id)
+		WHERE EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id)
 		GROUP BY 1, 2`,
 		version,
 	)

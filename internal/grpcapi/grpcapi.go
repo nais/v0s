@@ -126,6 +126,7 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 			Kev:              kevToProto(f.KEV),
 			FirstSeenAt:      timestamp(f.FirstSeenAt),
 			Suppressed:       f.Suppressed,
+			Workloads:        workloadRefsToProto(f.Workloads),
 		}
 		for _, sup := range f.Suppressions {
 			pf.Suppressions = append(pf.Suppressions, suppressionToProto(sup))
@@ -209,17 +210,23 @@ func (s *Server) SearchComponents(ctx context.Context, req *v0sv1.SearchComponen
 	resp := &v0sv1.SearchComponentsResponse{Matches: make([]*v0sv1.ComponentMatch, 0, len(matches)), NextPageToken: next}
 	for _, m := range matches {
 		pm := &v0sv1.ComponentMatch{
-			Purl:    m.Component.PURL,
-			Name:    m.Component.Name,
-			Version: m.Component.Version,
-			Image:   imageToProto(m.Image),
-		}
-		for _, w := range m.Workloads {
-			pm.Workloads = append(pm.Workloads, &v0sv1.WorkloadRef{Environment: w.Environment, Team: w.Team, Name: w.Name})
+			Purl:      m.Component.PURL,
+			Name:      m.Component.Name,
+			Version:   m.Component.Version,
+			Image:     imageToProto(m.Image),
+			Workloads: workloadRefsToProto(m.Workloads),
 		}
 		resp.Matches = append(resp.Matches, pm)
 	}
 	return resp, nil
+}
+
+func workloadRefsToProto(ws []database.WorkloadRef) []*v0sv1.WorkloadRef {
+	out := make([]*v0sv1.WorkloadRef, 0, len(ws))
+	for _, w := range ws {
+		out = append(out, &v0sv1.WorkloadRef{Environment: w.Environment, Team: w.Team, Name: w.Name})
+	}
+	return out
 }
 
 // ListFindingEvents implements VulnerabilityService.

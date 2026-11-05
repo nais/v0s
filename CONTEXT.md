@@ -2,7 +2,7 @@
 
 **Tenant**
 : One Nais installation, for example `nav`. Each tenant runs one v0s. No data
-crosses tenants.
+crosses tenants. Within a tenant, everyone may see every team's findings.
 
 **Workload**
 : A team's Nais application or job, identified by `(environment, team, name)`,

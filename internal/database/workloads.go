@@ -12,17 +12,28 @@ import (
 // SyncWorkloadImages per environment.
 const environmentLockSpace = 0x7630_7345 // "v0sE"
 
-// SyncWorkloadImages makes ws the complete set of workload images for environment. It creates
-// missing images (sbom_state pending), bumps last_seen_at for every image in ws, and replaces
-// the environment's workload_images rows. Atomic.
+// SyncWorkloadImages makes ws the complete set of workloads for environment. It creates missing
+// images (sbom_state pending), bumps last_seen_at for every image in ws, and replaces the
+// environment's workloads. Atomic.
 //
-// Every element of ws must have Environment equal to environment.
+// Every element of ws must have Environment equal to environment. A workload listed twice
+// must have the same image both times.
 func (db *DB) SyncWorkloadImages(ctx context.Context, environment string, ws []v0s.WorkloadImage) error {
+	type key struct{ team, workload string }
+	seen := make(map[key]v0s.WorkloadImage, len(ws))
 	var teams, workloads, names, digests []string
 	for _, w := range ws {
 		if w.Environment != environment {
-			return fmt.Errorf("workload image %s/%s in environment %q, want %q", w.Team, w.Workload, w.Environment, environment)
+			return fmt.Errorf("workload %s/%s in environment %q, want %q", w.Team, w.Workload, w.Environment, environment)
 		}
+		k := key{w.Team, w.Workload}
+		if prev, ok := seen[k]; ok {
+			if prev != w {
+				return fmt.Errorf("workload %s/%s listed with images %s@%s and %s@%s", w.Team, w.Workload, prev.ImageName, prev.Digest, w.ImageName, w.Digest)
+			}
+			continue
+		}
+		seen[k] = w
 		teams = append(teams, w.Team)
 		workloads = append(workloads, w.Workload)
 		names = append(names, w.ImageName)
@@ -48,20 +59,18 @@ func (db *DB) SyncWorkloadImages(ctx context.Context, environment string, ws []v
 			return fmt.Errorf("upserting images: %w", err)
 		}
 
-		if _, err := tx.Exec(ctx, `DELETE FROM workload_images WHERE environment = $1`, environment); err != nil {
-			return fmt.Errorf("deleting workload images: %w", err)
+		if _, err := tx.Exec(ctx, `DELETE FROM workloads WHERE environment = $1`, environment); err != nil {
+			return fmt.Errorf("deleting workloads: %w", err)
 		}
 
-		// Nais API lists a workload once; ON CONFLICT drops a duplicate rather than failing the sync.
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO workload_images (environment, team, workload, image_id)
+			INSERT INTO workloads (environment, team, name, image_id)
 			SELECT $1, t.team, t.workload, i.id
 			FROM unnest($2::text[], $3::text[], $4::text[], $5::text[]) AS t (team, workload, name, digest)
-			JOIN images i ON i.name = t.name AND i.digest = t.digest
-			ON CONFLICT DO NOTHING`,
+			JOIN images i ON i.name = t.name AND i.digest = t.digest`,
 			environment, teams, workloads, names, digests,
 		); err != nil {
-			return fmt.Errorf("inserting workload images: %w", err)
+			return fmt.Errorf("inserting workloads: %w", err)
 		}
 		return nil
 	})

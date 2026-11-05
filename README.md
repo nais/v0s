@@ -25,6 +25,8 @@ the session notes (`~/ws/sessions/v13s-veien-videre`).
   matters. v0s exposes the inputs: severity and its source, CVSS, fix version,
   fix status, EPSS and KEV.
 - It does not write to any other system. Suppressions are owned here.
+- It does not restrict reads. Everyone in the tenant may see every team's findings;
+  team filters narrow a query. Only suppressions are scoped to a team.
 - It does not share data across tenants. There is one v0s per tenant.
 
 ## Principles

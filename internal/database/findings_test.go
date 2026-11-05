@@ -23,14 +23,14 @@ INSERT INTO images (id, name, digest, sbom_state) OVERRIDING SYSTEM VALUE VALUES
 	(1, 'repo/app', 'sha256:a', 'fetched'),
 	(2, 'repo/app', 'sha256:b', 'fetched'),
 	(3, 'repo/old', 'sha256:c', 'fetched');
-INSERT INTO workload_images (environment, team, workload, image_id) VALUES
+INSERT INTO workloads (environment, team, name, image_id) VALUES
 	('c1', 'team-a', 'app', 1),
 	('c1', 'team-a', 'worker', 1),
 	('c1', 'team-b', 'other', 2);
-INSERT INTO vulnerabilities (id, title, cvss) VALUES
-	('CVE-1', 'lodash bug', '{"nvd": {"v3_score": 7.5}, "ghsa": {"v3_score": 8.1}}'),
-	('CVE-2', 'express bug', '{}'),
-	('CVE-3', 'other bug', '{}');
+INSERT INTO vulnerabilities (id, title, cvss, db_version) VALUES
+	('CVE-1', 'lodash bug', '{"nvd": {"v3_score": 7.5}, "ghsa": {"v3_score": 8.1}}', now()),
+	('CVE-2', 'express bug', '{}', now()),
+	('CVE-3', 'other bug', '{}', now());
 INSERT INTO vulnerability_aliases (alias, vulnerability_id) VALUES
 	('GHSA-1', 'CVE-1'), ('GHSA-2', 'CVE-2'), ('GHSA-2', 'CVE-3');
 INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, fixed_version, status, severity) VALUES
@@ -124,6 +124,45 @@ func TestListFindingsFilters(t *testing.T) {
 			t.Errorf("err = %v, want ErrInvalid", err)
 		}
 	})
+}
+
+// Which workloads have a vulnerability is one call: each finding carries the
+// workloads using its image, within the filter.
+func TestListFindingsWorkloads(t *testing.T) {
+	db, _ := newFixture(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		name   string
+		filter database.FindingFilter
+		want   []string // "digest workloads..."
+	}{
+		{name: "all", filter: database.FindingFilter{VulnerabilityID: "GHSA-1"},
+			want: []string{"sha256:a c1/team-a/app c1/team-a/worker", "sha256:b c1/team-b/other"}},
+		{name: "team", filter: database.FindingFilter{VulnerabilityID: "CVE-1", Teams: []string{"team-b"}},
+			want: []string{"sha256:b c1/team-b/other"}},
+		{name: "workload", filter: database.FindingFilter{VulnerabilityID: "CVE-1", Workload: "worker"},
+			want: []string{"sha256:a c1/team-a/worker"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings, _, err := db.ListFindings(ctx, tt.filter, database.Page{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, f := range findings {
+				s := f.Image.Digest
+				for _, w := range f.Workloads {
+					s += " " + w.Environment + "/" + w.Team + "/" + w.Name
+				}
+				got = append(got, s)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("findings = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestListFindingsPagination(t *testing.T) {

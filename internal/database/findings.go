@@ -95,10 +95,10 @@ func (s *imageScan) image() v0s.Image {
 	return img
 }
 
-// teamSuppressed is a condition that the team of workload wi has an active
+// teamSuppressed is a condition that the team of workload w has an active
 // suppression of finding f in image i.
 const teamSuppressed = `EXISTS (SELECT 1 FROM suppressions s
-	WHERE s.team = wi.team AND s.image_name = i.name AND s.package_key = f.package_key AND s.vulnerability_id = f.vulnerability_id
+	WHERE s.team = w.team AND s.image_name = i.name AND s.package_key = f.package_key AND s.vulnerability_id = f.vulnerability_id
 		AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > now()))`
 
 // vulnerabilityMatch returns a condition matching column against idOrAlias as an ID or an alias.
@@ -135,7 +135,7 @@ const (
 )
 
 // FindingFilter narrows findings. Empty fields do not filter, and slices match any value.
-// Only images in use, that is referenced by workload_images, are considered.
+// Only images in use, that is referenced by workloads, are considered.
 type FindingFilter struct {
 	Teams           []string
 	Environment     string
@@ -151,7 +151,7 @@ type FindingFilter struct {
 }
 
 // conditions returns WHERE conditions on findings f and images i, and
-// conditions on workload_images wi that select the workloads to consider.
+// conditions on workloads w that select the workloads to consider.
 func (f FindingFilter) conditions(args *sqlArgs) (where, workload []string, err error) {
 	workload = f.workloadConditions(args)
 	if f.ImageName != "" {
@@ -191,30 +191,30 @@ func (f FindingFilter) conditions(args *sqlArgs) (where, workload []string, err 
 	return where, workload, nil
 }
 
-// workloadConditions returns conditions on workload_images wi that select the workloads to consider.
+// workloadConditions returns conditions on workloads w that select the workloads to consider.
 func (f FindingFilter) workloadConditions(args *sqlArgs) []string {
 	var workload []string
 	if len(f.Teams) > 0 {
-		workload = append(workload, "wi.team = ANY("+args.add(f.Teams)+")")
+		workload = append(workload, "w.team = ANY("+args.add(f.Teams)+")")
 	}
 	if f.Environment != "" {
-		workload = append(workload, "wi.environment = "+args.add(f.Environment))
+		workload = append(workload, "w.environment = "+args.add(f.Environment))
 	}
 	if f.Workload != "" {
-		workload = append(workload, "wi.workload = "+args.add(f.Workload))
+		workload = append(workload, "w.name = "+args.add(f.Workload))
 	}
 	return workload
 }
 
 // inUse returns a condition that image i is used by a workload matching the workload conditions.
 func inUse(workload []string) string {
-	return "EXISTS (SELECT 1 FROM workload_images wi WHERE wi.image_id = i.id AND " + and(workload) + ")"
+	return "EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id AND " + and(workload) + ")"
 }
 
 // unsuppressedUse returns a condition that image i is used by a workload matching
 // the workload conditions whose team has not suppressed finding f.
 func unsuppressedUse(workload []string) string {
-	return "EXISTS (SELECT 1 FROM workload_images wi WHERE wi.image_id = i.id AND " + and(workload) + " AND NOT " + teamSuppressed + ")"
+	return "EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id AND " + and(workload) + " AND NOT " + teamSuppressed + ")"
 }
 
 // findingInScope returns a condition that finding f in image i is used by a
@@ -232,8 +232,8 @@ func (f FindingFilter) findingInScope(workload []string) string {
 	}
 }
 
-// workloadInScope returns a condition, for a query joining workload_images wi,
-// that wi's team has suppressed finding f or not as f asks.
+// workloadInScope returns a condition, for a query joining workloads w,
+// that w's team has suppressed finding f or not as f asks.
 func (f FindingFilter) workloadInScope() string {
 	switch f.Suppressed {
 	case SuppressedInclude:
@@ -262,6 +262,8 @@ type ImageFinding struct {
 	EPSS        *v0s.EPSS
 	KEV         *v0s.KEV
 	FirstSeenAt time.Time
+	// Workloads are the workloads using the image within the filter, suppressed or not.
+	Workloads []WorkloadRef
 	// Suppressed is whether every team using the image within the filter has suppressed the finding.
 	Suppressed bool
 	// Suppressions are the active suppressions of the finding by teams using the image within the filter.
@@ -309,8 +311,8 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	ORDER BY f.image_id, f.vulnerability_id, f.purl
 	LIMIT ` + args.add(limit+1)
 
-	// The findings and their suppressions are read from one snapshot, so that a
-	// finding's suppressed flag agrees with its suppressions.
+	// The findings, their workloads and their suppressions are read from one
+	// snapshot, so that they agree with each other.
 	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return nil, "", fmt.Errorf("beginning transaction: %w", err)
@@ -363,7 +365,48 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	if err := addSuppressions(ctx, tx, filter, findings); err != nil {
 		return nil, "", err
 	}
+	ids := make([]int64, len(findings))
+	for i, fi := range findings {
+		ids[i] = fi.Image.ID
+	}
+	var wargs sqlArgs
+	workloads, err := imageWorkloads(ctx, tx, ids, filter.workloadConditions(&wargs), wargs)
+	if err != nil {
+		return nil, "", err
+	}
+	for i := range findings {
+		findings[i].Workloads = workloads[findings[i].Image.ID]
+	}
 	return findings, next, nil
+}
+
+// imageWorkloads returns the workloads using each of imageIDs that match the
+// workload conditions on w, whose placeholders are in args, ordered by environment, team and name.
+func imageWorkloads(ctx context.Context, q pgxQuerier, imageIDs []int64, workload []string, args sqlArgs) (map[int64][]WorkloadRef, error) {
+	if len(imageIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := q.Query(ctx, `
+		SELECT w.image_id, w.environment, w.team, w.name
+		FROM workloads w
+		WHERE w.image_id = ANY(`+args.add(imageIDs)+`) AND `+and(workload)+`
+		ORDER BY w.image_id, w.environment, w.team, w.name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing workloads of images: %w", err)
+	}
+	workloads := make(map[int64][]WorkloadRef)
+	var (
+		imageID int64
+		ref     WorkloadRef
+	)
+	_, err = pgx.ForEachRow(rows, []any{&imageID, &ref.Environment, &ref.Team, &ref.Name}, func() error {
+		workloads[imageID] = append(workloads[imageID], ref)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing workloads of images: %w", err)
+	}
+	return workloads, nil
 }
 
 // addSuppressions sets the active suppressions of each finding by the teams
@@ -389,8 +432,8 @@ func addSuppressions(ctx context.Context, tx pgx.Tx, filter FindingFilter, findi
 		FROM unnest(`+args.add(imageIDs)+`::bigint[], `+args.add(packageKeys)+`::text[], `+args.add(vulnIDs)+`::text[])
 			AS f (image_id, package_key, vulnerability_id)
 		JOIN images i ON i.id = f.image_id
-		JOIN workload_images wi ON wi.image_id = i.id AND `+and(workload)+`
-		JOIN suppressions s ON s.team = wi.team AND s.image_name = i.name
+		JOIN workloads w ON w.image_id = i.id AND `+and(workload)+`
+		JOIN suppressions s ON s.team = w.team AND s.image_name = i.name
 			AND s.package_key = f.package_key AND s.vulnerability_id = f.vulnerability_id
 			AND s.revoked_at IS NULL AND (s.expires_at IS NULL OR s.expires_at > now())
 		ORDER BY s.id`, args...)
@@ -489,9 +532,9 @@ func (db *DB) CountFindings(ctx context.Context, filter FindingFilter, groupBy G
 	case GroupBySeverity:
 		key = "f.severity"
 	case GroupByTeam:
-		key = "wi.team"
+		key = "w.team"
 	case GroupByWorkload:
-		key = "wi.environment || '/' || wi.team || '/' || wi.workload"
+		key = "w.environment || '/' || w.team || '/' || w.name"
 	case GroupByImage:
 		key = "i.name || '@' || i.digest"
 	case GroupByVulnerability:
@@ -507,7 +550,7 @@ func (db *DB) CountFindings(ctx context.Context, filter FindingFilter, groupBy G
 		query = `SELECT ` + key + `, count(*)
 		FROM findings f
 		JOIN images i ON i.id = f.image_id
-		JOIN workload_images wi ON wi.image_id = i.id AND ` + and(workload) + `
+		JOIN workloads w ON w.image_id = i.id AND ` + and(workload) + `
 		WHERE ` + and(where) + `
 		GROUP BY 1 ORDER BY 1`
 	} else {
@@ -650,8 +693,8 @@ func (db *DB) ListFindingEvents(ctx context.Context, filter FindingEventFilter, 
 		where = append(where, vulnerabilityMatch("ev.vulnerability_id", filter.VulnerabilityID, &args))
 	}
 	if len(filter.Teams) > 0 {
-		where = append(where, `EXISTS (SELECT 1 FROM images i JOIN workload_images wi ON wi.image_id = i.id
-			WHERE i.name = ev.image_name AND i.digest = ev.image_digest AND wi.team = ANY(`+args.add(filter.Teams)+`))`)
+		where = append(where, `EXISTS (SELECT 1 FROM images i JOIN workloads w ON w.image_id = i.id
+			WHERE i.name = ev.image_name AND i.digest = ev.image_digest AND w.team = ANY(`+args.add(filter.Teams)+`))`)
 	}
 	if !filter.Since.IsZero() {
 		where = append(where, "ev.created_at >= "+args.add(filter.Since))

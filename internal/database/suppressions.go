@@ -277,7 +277,7 @@ func createSuppression(ctx context.Context, tx pgx.Tx, s Suppression) (CreatedSu
 		SELECT count(*)
 		FROM findings f JOIN images i ON i.id = f.image_id
 		WHERE i.name = $2 AND f.package_key = $3 AND f.vulnerability_id = $4
-			AND EXISTS (SELECT 1 FROM workload_images wi WHERE wi.image_id = i.id AND wi.team = $1)`,
+			AND EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id AND w.team = $1)`,
 		s.Team, s.ImageName, s.PackageKey, s.VulnerabilityID).Scan(&created.MatchedFindings)
 	if err != nil {
 		return CreatedSuppression{}, fmt.Errorf("counting matched findings: %w", err)

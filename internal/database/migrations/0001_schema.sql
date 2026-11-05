@@ -1,9 +1,11 @@
+-- Until the first release this is the whole schema, edited in place: an existing database
+-- is recreated rather than migrated.
+
 -- Images are identified by repository name and manifest digest. Tags are not facts we keep.
 CREATE TABLE images (
     id                   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    name                 text        NOT NULL,
-    digest               text        NOT NULL,
-    created_at           timestamptz NOT NULL DEFAULT now(),
+    name                 text        NOT NULL CHECK (name <> ''),
+    digest               text        NOT NULL CHECK (digest <> ''),
     -- Bumped every time the image is observed in use. Used for garbage collection.
     last_seen_at         timestamptz NOT NULL DEFAULT now(),
 
@@ -13,7 +15,6 @@ CREATE TABLE images (
     -- Earliest time the fetch loop may (re)claim this image. Doubles as a lease.
     sbom_next_attempt_at timestamptz NOT NULL DEFAULT now(),
     sbom_error           text        NOT NULL DEFAULT '',
-    sbom_fetched_at      timestamptz,
 
     -- UpdatedAt of the vulnerability DB that produced the image's current findings.
     scanned_db_version   timestamptz,
@@ -42,16 +43,15 @@ CREATE TABLE sboms (
 -- Which image each team workload is deployed with, as listed by Nais API. An application
 -- and a job cannot share a name, so environment, team and name identify a workload.
 -- Replaced per environment on every sync.
-CREATE TABLE workload_images (
-    environment text        NOT NULL,
-    team        text        NOT NULL,
-    workload    text        NOT NULL,
-    image_id    bigint      NOT NULL REFERENCES images (id) ON DELETE CASCADE,
-    observed_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (environment, team, workload)
+CREATE TABLE workloads (
+    environment text   NOT NULL CHECK (environment <> ''),
+    team        text   NOT NULL CHECK (team <> ''),
+    name        text   NOT NULL CHECK (name <> ''),
+    image_id    bigint NOT NULL REFERENCES images (id) ON DELETE CASCADE,
+    PRIMARY KEY (environment, team, name)
 );
 
-CREATE INDEX workload_images_image ON workload_images (image_id);
+CREATE INDEX workloads_image ON workloads (image_id);
 
 -- Packages listed in an image's SBOM, with or without findings.
 CREATE TABLE components (
@@ -79,8 +79,7 @@ CREATE TABLE vulnerabilities (
     published_at timestamptz,
     modified_at  timestamptz,
     -- UpdatedAt of the vulnerability DB this row was taken from. Older DBs never overwrite it.
-    db_version   timestamptz,
-    updated_at   timestamptz NOT NULL DEFAULT now()
+    db_version   timestamptz NOT NULL
 );
 
 -- Other IDs for the same vulnerability (GHSA, distro advisories). An alias may map to several IDs.
@@ -129,6 +128,7 @@ CREATE TABLE finding_events (
 
 CREATE INDEX finding_events_created ON finding_events (created_at);
 CREATE INDEX finding_events_image ON finding_events (image_name, image_digest);
+CREATE INDEX finding_events_vulnerability ON finding_events (vulnerability_id);
 
 -- FIRST EPSS, latest published day only.
 CREATE TABLE epss (
@@ -151,9 +151,9 @@ CREATE TABLE kev (
 CREATE TABLE suppressions (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     team             text        NOT NULL CHECK (team <> ''),
-    image_name       text        NOT NULL,
-    package_key      text        NOT NULL,
-    vulnerability_id text        NOT NULL,
+    image_name       text        NOT NULL CHECK (image_name <> ''),
+    package_key      text        NOT NULL CHECK (package_key <> ''),
+    vulnerability_id text        NOT NULL CHECK (vulnerability_id <> ''),
     state            text        NOT NULL
         CHECK (state IN ('not_affected', 'false_positive', 'accepted_risk')),
     -- CycloneDX/VEX justification. Required for not_affected, forbidden otherwise.
