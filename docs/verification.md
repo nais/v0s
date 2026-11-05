@@ -47,7 +47,7 @@ v13s is untouched.
 
 ```
 management cluster (nais-system)
-  v0s (1 → 2 replicas) ── GraphQL, API key ──▶ nais-api (workloads of every environment)
+  v0s (1 → 2 replicas) ── gRPC Workloads.ListImages ──▶ nais-api :3001 (workloads of every environment)
    │  │  └─ tag lookups, attestations ──▶ registries (GAR, ghcr, Docker Hub)
    │  └─ Trivy DB ─────────▶ europe-north1-docker.pkg.dev/nais-io/github-ptc/aquasecurity/trivy-db:2
    ├─ EPSS/KEV ───────────▶ epss.empiricalsecurity.com, www.cisa.gov
@@ -66,7 +66,7 @@ The Trivy DB pull-through cache already exists and serves the same digest as
 | GitHub | public `nais/v0s` repo, workflow: test, build/push/sign image, push chart to `oci://europe-north1-docker.pkg.dev/nais-io/nais/feature`, `fasit-deploy` with targets `dev-nais` management only | new repo |
 | nais-io-terraform-modules | `gh-v0s` publisher service account for the repo | nais.io |
 | nais-terraform-modules | `modules/management/v0s.tf` behind `v0s_enabled` (default false): `v0s-sa` with Workload Identity and `artifactregistry.reader`, Fasit value `v0s_serviceaccount_email`; set `v0s_enabled = true` in `tenants/dev-nais` | dev-nais only (Atlantis plan must show no change elsewhere) |
-| Nais API | a service account without roles and a token, stored as the `v0s-nais-api` Secret (`token`) | per tenant |
+| nais/api | `Workloads.ListImages` on the internal gRPC API; in dev-nais a local build, not upstream | dev-nais only |
 | v0s | Dockerfile, chart (`charts/` with `Feature.yaml`), metrics, gRPC reflection | this repo |
 
 The chart follows v13s: one Deployment, own KSA
@@ -158,8 +158,8 @@ passes.
 1. v0s: Dockerfile, metrics, reflection, attempt cap.
 2. Repo on GitHub and `gh-v0s`; CI publishes image and chart. The deploy job targets
    dev-nais management only (no ci-nais canary) and is switched on after step 3.
-3. Terraform (dev-nais) as a draft PR; read the Atlantis plan. A Nais API service
-   account and token in dev-nais.
+3. Terraform (dev-nais) as a draft PR; read the Atlantis plan. nais-api with
+   `Workloads.ListImages` in dev-nais.
 4. Deploy to dev-nais with one replica; run the output checks.
 5. Two replicas; run the behaviour checks; one week of performance data.
 6. nav in shadow mode, all environments.

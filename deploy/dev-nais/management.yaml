@@ -61,13 +61,8 @@ spec:
                 secretKeyRef:
                   name: v0s-db-app
                   key: uri
-            - name: NAIS_API_URL
-              value: http://nais-api/graphql
-            - name: NAIS_API_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: v0s-nais-api
-                  key: token
+            - name: NAIS_API_GRPC_ADDRESS
+              value: nais-api:3001
             - name: GITHUB_ORGANIZATIONS
               value: nais,navikt
             - name: AUTH_AUDIENCE
@@ -157,13 +152,13 @@ spec:
               cnpg.io/cluster: v0s-db
       ports:
         - port: 5432
-    # Nais API, the inventory of workloads; its Service maps port 80 to 3000.
+    # Nais API's internal gRPC API, the inventory of workloads.
     - to:
         - podSelector:
             matchLabels:
               app: nais-api
       ports:
-        - port: 3000
+        - port: 3001
     - to:
         - ipBlock:
             cidr: 169.254.169.254/32

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package nais.api.protobuf;
+
+// A copy of nais/api pkg/apiclient/protoapi/schema/workloads.proto, from a local
+// nais/api build that is not upstream.
+option go_package = "github.com/nais/v0s/internal/naisapi/protoapi";
+
+enum WorkloadKind {
+  WORKLOAD_KIND_UNSPECIFIED = 0;
+  APPLICATION = 1;
+  JOB = 2;
+}
+
+message WorkloadImage {
+  string team_slug = 1;
+  string name = 2;
+  WorkloadKind kind = 3;
+  // The workload's effective image reference, as deployed: a tag, a digest, or both.
+  string image = 4;
+}
+
+message EnvironmentWorkloadImages {
+  string environment = 1;
+  repeated WorkloadImage workloads = 2;
+}
+
+service Workloads {
+  // ListImages returns the image of every application and job, by environment. It is not
+  // paginated, so that the result is one consistent snapshot. Only environments whose
+  // caches are synced are included, and an included environment's list is complete.
+  rpc ListImages(ListWorkloadImagesRequest) returns (ListWorkloadImagesResponse) {}
+}
+
+message ListWorkloadImagesRequest {}
+
+message ListWorkloadImagesResponse {
+  repeated EnvironmentWorkloadImages environments = 1;
+}

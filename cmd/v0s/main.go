@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/grpcapi"
 	"github.com/nais/v0s/internal/naisapi"
+	"github.com/nais/v0s/internal/naisapi/protoapi"
 	"github.com/nais/v0s/internal/reconcile"
 	"github.com/nais/v0s/internal/scan"
 )
@@ -38,8 +40,7 @@ type config struct {
 	listenAddr      string
 	probeAddr       string
 	databaseURL     string
-	naisAPIURL      string
-	naisAPIToken    string
+	naisAPIAddress  string
 	githubOrgs      []string
 	authAudience    string
 	serviceAccounts []string
@@ -52,8 +53,7 @@ func loadConfig() (config, error) {
 		listenAddr:      env("LISTEN_ADDR", ":50051"),
 		probeAddr:       env("PROBE_ADDR", ":8080"),
 		databaseURL:     env("DATABASE_URL", ""),
-		naisAPIURL:      env("NAIS_API_URL", ""),
-		naisAPIToken:    env("NAIS_API_TOKEN", ""),
+		naisAPIAddress:  env("NAIS_API_GRPC_ADDRESS", ""),
 		githubOrgs:      list(env("GITHUB_ORGANIZATIONS", "")),
 		authAudience:    env("AUTH_AUDIENCE", ""),
 		serviceAccounts: list(env("AUTHORIZED_SERVICE_ACCOUNTS", "")),
@@ -63,8 +63,7 @@ func loadConfig() (config, error) {
 	var missing []string
 	for name, v := range map[string]bool{
 		"DATABASE_URL":                c.databaseURL != "",
-		"NAIS_API_URL":                c.naisAPIURL != "",
-		"NAIS_API_TOKEN":              c.naisAPIToken != "",
+		"NAIS_API_GRPC_ADDRESS":       c.naisAPIAddress != "",
 		"GITHUB_ORGANIZATIONS":        len(c.githubOrgs) > 0,
 		"AUTH_AUDIENCE":               c.authAudience != "",
 		"AUTHORIZED_SERVICE_ACCOUNTS": len(c.serviceAccounts) > 0,
@@ -128,7 +127,14 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("creating attestation fetcher: %w", err)
 	}
-	inventory := naisapi.New(cfg.naisAPIURL, cfg.naisAPIToken, &http.Client{Timeout: time.Minute},
+	// Nais API's internal gRPC API is plaintext and unauthenticated; NetworkPolicy limits who
+	// reaches it.
+	naisAPIConn, err := grpc.NewClient(cfg.naisAPIAddress, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("creating Nais API client: %w", err)
+	}
+	defer naisAPIConn.Close()
+	inventory := naisapi.New(protoapi.NewWorkloadsClient(naisAPIConn),
 		naisapi.RegistryResolver{Keychain: authn.NewMultiKeychain(authn.DefaultKeychain, google.Keychain, github.Keychain)}, log)
 
 	lis, err := net.Listen("tcp", cfg.listenAddr)

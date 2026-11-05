@@ -2,6 +2,7 @@
 
 generate:
 	buf generate
+	buf generate third_party/naisapi --template buf.gen.naisapi.yaml
 
 check:
 	buf lint

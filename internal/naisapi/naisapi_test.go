@@ -2,23 +2,21 @@ package naisapi_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/go-containerregistry/pkg/name"
+	"google.golang.org/grpc"
 
 	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/naisapi"
+	"github.com/nais/v0s/internal/naisapi/protoapi"
 )
 
 const (
@@ -44,63 +42,54 @@ func (r *fakeResolver) Digest(_ context.Context, ref name.Tag) (string, error) {
 	return "", errors.New("registry unavailable")
 }
 
-// serve returns a Nais API answering every query with response, checking the API key.
-func serve(t *testing.T, status int, response string) string {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
-			t.Errorf("Authorization = %q, want the API key", got)
-		}
-		var req struct {
-			Query     string         `json:"query"`
-			Variables map[string]any `json:"variables"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !strings.Contains(req.Query, "environments") {
-			t.Errorf("request is not an environments query: %v", err)
-		}
-		w.WriteHeader(status)
-		_, _ = io.WriteString(w, response)
-	}))
-	t.Cleanup(srv.Close)
-	return srv.URL
+// fakeClient answers ListImages with resp or err.
+type fakeClient struct {
+	resp *protoapi.ListWorkloadImagesResponse
+	err  error
 }
 
-func newInventory(url string, resolver naisapi.Resolver) *naisapi.Inventory {
-	return naisapi.New(url, "secret", http.DefaultClient, resolver, slog.New(slog.NewTextHandler(io.Discard, nil)))
+func (c fakeClient) ListImages(context.Context, *protoapi.ListWorkloadImagesRequest, ...grpc.CallOption) (*protoapi.ListWorkloadImagesResponse, error) {
+	return c.resp, c.err
 }
 
-func environments(envs ...string) string {
-	return `{"data":{"environments":{"nodes":[` + strings.Join(envs, ",") + `]}}}`
+func newInventory(client protoapi.WorkloadsClient, resolver naisapi.Resolver) *naisapi.Inventory {
+	return naisapi.New(client, resolver, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
-func env(name string, workloads ...string) string {
-	return `{"name":"` + name + `","workloads":{"pageInfo":{"hasNextPage":false},"nodes":[` + strings.Join(workloads, ",") + `]}}`
+func environments(envs ...*protoapi.EnvironmentWorkloadImages) fakeClient {
+	return fakeClient{resp: &protoapi.ListWorkloadImagesResponse{Environments: envs}}
 }
 
-func workload(kind, team, name, image, tag, digest string) string {
-	d := "null"
-	if digest != "" {
-		d = `"` + digest + `"`
-	}
-	return `{"__typename":"` + kind + `","name":"` + name + `","team":{"slug":"` + team + `"},"image":{"name":"` + image + `","tag":"` + tag + `","digest":` + d + `}}`
+func env(name string, workloads ...*protoapi.WorkloadImage) *protoapi.EnvironmentWorkloadImages {
+	return &protoapi.EnvironmentWorkloadImages{Environment: name, Workloads: workloads}
 }
+
+func workload(kind protoapi.WorkloadKind, team, name, image string) *protoapi.WorkloadImage {
+	return &protoapi.WorkloadImage{Kind: kind, TeamSlug: team, Name: name, Image: image}
+}
+
+const (
+	app = protoapi.WorkloadKind_APPLICATION
+	job = protoapi.WorkloadKind_JOB
+)
 
 func TestSnapshot(t *testing.T) {
-	url := serve(t, http.StatusOK, environments(
+	client := environments(
 		env("dev",
-			workload("Application", "team", "pinned", "europe-north1-docker.pkg.dev/p/team/pinned", "1", digestA),
-			workload("Job", "team", "tagged", "ghcr.io/nais/tagged", "2026-10-30", ""),
-			workload("Application", "team", "hub", "redis", "7", ""),
-			workload("Application", "team", "broken", "", "", ""),
+			workload(app, "team", "pinned", "europe-north1-docker.pkg.dev/p/team/pinned:1@"+digestA),
+			workload(job, "team", "tagged", "ghcr.io/nais/tagged:2026-10-30"),
+			workload(app, "team", "hub", "redis:7"),
+			workload(app, "team", "broken", ""),
+			workload(protoapi.WorkloadKind_WORKLOAD_KIND_UNSPECIFIED, "team", "unknown", "redis:7"),
 		),
 		env("prod"),
-	))
+	)
 	resolver := &fakeResolver{digests: map[string]string{
 		"ghcr.io/nais/tagged:2026-10-30":  digestB,
 		"index.docker.io/library/redis:7": digestC,
 	}}
 
-	got, err := newInventory(url, resolver).Snapshot(context.Background())
+	got, err := newInventory(client, resolver).Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -117,24 +106,19 @@ func TestSnapshot(t *testing.T) {
 		t.Errorf("Snapshot =\n%+v\nwant\n%+v", got, want)
 	}
 	if slices.Contains(resolver.calls, "europe-north1-docker.pkg.dev/p/team/pinned:1") {
-		t.Error("resolved a tag although Nais API gave the digest")
+		t.Error("resolved a tag although the image reference has a digest")
 	}
 }
 
 func TestSnapshotIncomplete(t *testing.T) {
-	tests := []struct {
-		name     string
-		status   int
-		response string
-	}{
-		{name: "GraphQL error", status: http.StatusOK, response: `{"errors":[{"message":"unauthorized"}],"data":null}`},
-		{name: "partial data", status: http.StatusOK, response: `{"errors":[{"message":"timeout"}],"data":{"environments":{"nodes":[` + env("dev") + `]}}}`},
-		{name: "HTTP error", status: http.StatusServiceUnavailable, response: `not ready`},
-		{name: "truncated environment", status: http.StatusOK, response: strings.Replace(environments(env("dev")), `"hasNextPage":false`, `"hasNextPage":true`, 1)},
+	tests := map[string]fakeClient{
+		"unavailable":              {err: errors.New("connection refused")},
+		"environment twice":        environments(env("dev"), env("dev")),
+		"environment without name": environments(env("")),
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := newInventory(serve(t, tt.status, tt.response), &fakeResolver{}).Snapshot(context.Background())
+	for name, client := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := newInventory(client, &fakeResolver{}).Snapshot(context.Background())
 			if err == nil {
 				t.Errorf("Snapshot = %v, want an error", got)
 			}
@@ -143,11 +127,9 @@ func TestSnapshotIncomplete(t *testing.T) {
 }
 
 func TestTagResolution(t *testing.T) {
-	url := serve(t, http.StatusOK, environments(env("dev",
-		workload("Application", "team", "app", "ghcr.io/nais/app", "latest", ""),
-	)))
+	client := environments(env("dev", workload(app, "team", "app", "ghcr.io/nais/app:latest")))
 	resolver := &fakeResolver{digests: map[string]string{"ghcr.io/nais/app:latest": digestA}}
-	inv := newInventory(url, resolver)
+	inv := newInventory(client, resolver)
 	now := time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC)
 	inv.SetNow(func() time.Time { return now })
 
@@ -187,7 +169,7 @@ func TestTagResolution(t *testing.T) {
 		t.Errorf("registry failing: digest %q, want the last known %q", got, digestB)
 	}
 
-	fresh := newInventory(url, resolver)
+	fresh := newInventory(client, resolver)
 	got, err := fresh.Snapshot(context.Background())
 	if err != nil {
 		t.Fatal(err)

@@ -31,10 +31,16 @@ A crash loses nothing. On restart, the loops see the same desired state.
 ## Workloads from Nais API, not from the clusters
 
 Nais API already watches every cluster of the tenant, including on-prem ones,
-and serves applications and jobs with their effective image. v0s reads them with
-one GraphQL query per sync, authenticated with a Nais API service account token.
-It needs no access to the clusters: no RBAC, no cluster credentials, and no
-watch streams through the API server proxies.
+and knows every application and job with its effective image. v0s reads them with
+one call per sync to `Workloads.ListImages` on Nais API's internal gRPC API, which
+is unauthenticated and reached through NetworkPolicy, like its other internal
+clients. It needs no access to the clusters: no RBAC, no cluster credentials, and
+no watch streams through the API server proxies.
+
+`Workloads.ListImages` is not in nais/api upstream: the dev-nais pilot runs a
+local build of nais-api that adds it, and `third_party/naisapi` is a copy of its
+proto. The GraphQL API would have done without changing nais-api, but needs a
+service account token, and creating one needs a team or admin role.
 
 This replaced watching Pods across clusters. The Pod watches cost cluster access
 and RBAC per cluster, and broke every 60 seconds on the HAProxy in front of the
@@ -44,9 +50,9 @@ teams can act on: a workload scaled to zero still has its image.
 About three quarters of nav's workloads carry a digest from deploy. For the rest
 v0s resolves the tag with a registry `HEAD` and reuses the digest for an hour,
 or longer while the registry fails. A workload whose tag has never been resolved
-is left out until it is. Nais API serves only once its caches are synced, and
-v0s skips a sync on any error, so a partial answer is never taken for an empty
-tenant.
+is left out until it is. Nais API lists only environments whose caches are
+synced, and v0s skips a sync on any error, so a partial answer is never taken
+for an empty tenant.
 
 ## Suppressions are owned here, keyed on package key
 
