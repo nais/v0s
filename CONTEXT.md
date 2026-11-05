@@ -5,9 +5,11 @@
 crosses tenants.
 
 **Workload**
-: A Nais application or job. A workload is identified by
+: A team's Nais application or job. A workload is identified by
 `(environment, namespace, name)`, as Nais API reports it. The namespace is the
-team. The `cluster` column holds the environment name.
+team. The `cluster` column holds the environment name. The platform's own
+workloads in `nais-system` are out of scope: Nais API leaves them out, and the
+platform has its own tools for them.
 
 **Image**
 : A container image identified by repository name plus manifest digest, for

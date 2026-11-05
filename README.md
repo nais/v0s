@@ -1,8 +1,8 @@
 # v0s
 
-v0s reports which known vulnerabilities affect the container images of the Nais
-workloads (applications and jobs) in a tenant. It reports mechanical facts and no
-judgements.
+v0s reports which known vulnerabilities affect the container images of the teams'
+Nais workloads (applications and jobs) in a tenant. It reports mechanical facts and no
+judgements. The platform's own workloads in `nais-system` are not covered.
 
 It replaces v13s together with Dependency-Track. The motivation is recorded in
 the session notes (`~/ws/sessions/v13s-veien-videre`).

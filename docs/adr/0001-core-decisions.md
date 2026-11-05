@@ -47,6 +47,10 @@ and RBAC per cluster, and broke every 60 seconds on the HAProxy in front of the
 API servers. Reporting the deployed image instead of the running one is what
 teams can act on: a workload scaled to zero still has its image.
 
+Only teams' workloads are in scope. Nais API leaves out `nais-system`, and v0s
+follows it: the platform's own workloads get their own tooling rather than
+sharing a team-facing service.
+
 About three quarters of nav's workloads carry a digest from deploy. For the rest
 v0s resolves the tag with a registry `HEAD` and reuses the digest for an hour,
 or longer while the registry fails. A workload whose tag has never been resolved
