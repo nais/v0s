@@ -6,40 +6,34 @@ import "google/protobuf/timestamp.proto";
 
 option go_package = "github.com/nais/v0s/api/v0s/v1;v0sv1";
 
+// The API has no authentication. NetworkPolicy limits who reaches it, and callers are trusted
+// services: they decide what their users may see and authorize suppression changes.
+
 // Vulnerabilities exposes mechanical facts about vulnerabilities in the images of team workloads.
 // Nothing here is a judgement: no priority, no risk score. Everything is readable by every
 // caller: team filters narrow a query, they do not restrict it.
 service VulnerabilityService {
   // ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
   rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
-  // ListFindings lists findings for images matching the filter, each with the workloads
-  // using its image, so one call answers which workloads have a vulnerability.
+  // ListFindings lists the findings of workloads. A finding in an image used by several
+  // workloads is listed once for each of them.
   rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse);
-  // CountFindings counts findings matching the filter, grouped by one dimension.
-  // Under TEAM and WORKLOAD, a finding counts once for every matching workload
-  // using its image, since one image can be used by several workloads, and is
-  // suppressed for a workload when the workload's team has suppressed it. A team
-  // count is the sum over its workloads. Under the other groupings each finding
-  // counts once, and is suppressed as in Finding.suppressed.
+  // CountFindings counts findings as ListFindings lists them, grouped by one dimension.
   rpc CountFindings(CountFindingsRequest) returns (CountFindingsResponse);
   // GetVulnerability returns the vulnerability record for an ID or alias.
   rpc GetVulnerability(GetVulnerabilityRequest) returns (GetVulnerabilityResponse);
   // SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
   rpc SearchComponents(SearchComponentsRequest) returns (SearchComponentsResponse);
-  // ListFindingEvents lists findings appearing and resolving over time, oldest first.
-  // Pagination is best-effort under concurrent writes: an event committed while a
-  // client pages may be skipped if a later event was already returned.
-  rpc ListFindingEvents(ListFindingEventsRequest) returns (ListFindingEventsResponse);
 }
 
-// Suppressions manages human assessments of findings.
+// Suppressions manages teams' current assessments of findings. Only the current state is kept;
+// the caller keeps the history of changes if it wants one.
 service SuppressionService {
-  // CreateSuppressions creates suppressions atomically. With dry_run, nothing is written,
-  // but the response still reports what each suppression would match.
-  rpc CreateSuppressions(CreateSuppressionsRequest) returns (CreateSuppressionsResponse);
-  // RevokeSuppressions revokes unrevoked suppressions atomically, expired or not.
-  rpc RevokeSuppressions(RevokeSuppressionsRequest) returns (RevokeSuppressionsResponse);
-  // ListSuppressions lists suppressions, including revoked and expired ones when asked.
+  // SetSuppressions sets suppressions atomically, replacing any with the same key.
+  rpc SetSuppressions(SetSuppressionsRequest) returns (SetSuppressionsResponse);
+  // DeleteSuppressions deletes suppressions atomically. Deleting one that does not exist is not an error.
+  rpc DeleteSuppressions(DeleteSuppressionsRequest) returns (DeleteSuppressionsResponse);
+  // ListSuppressions lists suppressions.
   rpc ListSuppressions(ListSuppressionsRequest) returns (ListSuppressionsResponse);
 }
 
@@ -52,15 +46,17 @@ enum Severity {
   SEVERITY_CRITICAL = 5;
 }
 
-enum SBOMState {
-  SBOM_STATE_UNSPECIFIED = 0;
-  // Not fetched yet.
-  SBOM_STATE_PENDING = 1;
-  SBOM_STATE_FETCHED = 2;
-  // No attestation found for the image.
-  SBOM_STATE_MISSING = 3;
-  // Fetching or verifying failed.
-  SBOM_STATE_FAILED = 4;
+// How far an image has got towards having findings.
+enum ImageStatus {
+  IMAGE_STATUS_UNSPECIFIED = 0;
+  // The SBOM is not fetched or the image not scanned yet.
+  IMAGE_STATUS_PENDING = 1;
+  // Scanned; the findings are those of scanned_db_version.
+  IMAGE_STATUS_SCANNED = 2;
+  // No attested SBOM was found for the image.
+  IMAGE_STATUS_NO_SBOM = 3;
+  // Fetching, verifying or scanning failed; see error.
+  IMAGE_STATUS_FAILED = 4;
 }
 
 enum SuppressionState {
@@ -70,37 +66,29 @@ enum SuppressionState {
   SUPPRESSION_STATE_ACCEPTED_RISK = 3;
 }
 
-// Justification follows the CycloneDX/VEX vocabulary. Required for NOT_AFFECTED only.
-enum Justification {
-  JUSTIFICATION_UNSPECIFIED = 0;
-  JUSTIFICATION_CODE_NOT_PRESENT = 1;
-  JUSTIFICATION_CODE_NOT_REACHABLE = 2;
-  JUSTIFICATION_REQUIRES_CONFIGURATION = 3;
-  JUSTIFICATION_REQUIRES_DEPENDENCY = 4;
-  JUSTIFICATION_REQUIRES_ENVIRONMENT = 5;
-  JUSTIFICATION_PROTECTED_BY_COMPILER = 6;
-  JUSTIFICATION_PROTECTED_AT_RUNTIME = 7;
-  JUSTIFICATION_PROTECTED_AT_PERIMETER = 8;
-  JUSTIFICATION_PROTECTED_BY_MITIGATING_CONTROL = 9;
-}
-
 message Image {
+  reserved 3, 4, 7;
   string name = 1;
   string digest = 2;
-  SBOMState sbom_state = 3;
-  // Set when sbom_state is MISSING or FAILED.
-  string sbom_error = 4;
+  ImageStatus status = 8;
+  // Why the last fetch or scan failed. Also set on a SCANNED image whose rescan with a newer
+  // vulnerability DB failed; its findings are still those of scanned_db_version.
+  string error = 9;
   google.protobuf.Timestamp scanned_at = 5;
   // UpdatedAt of the vulnerability DB used for the last scan.
   google.protobuf.Timestamp scanned_db_version = 6;
-  string scan_error = 7;
 }
 
 message Workload {
   string environment = 1;
   string team = 2;
   string name = 3;
+  // The image as deployed, e.g. "ghcr.io/navikt/app:1.2.3". A caller that knows a newer
+  // reference can tell that v0s has not seen the deploy yet.
+  string image_reference = 5;
+  // The image image_reference resolved to. Unset if it could not be resolved; see resolve_error.
   Image image = 4;
+  string resolve_error = 6;
 }
 
 // FindingFilter narrows findings. Empty fields do not filter. Repeated fields match any value.
@@ -130,31 +118,29 @@ enum SuppressedFilter {
   SUPPRESSED_FILTER_ONLY = 3;
 }
 
+// A vulnerability in a package in a workload's image.
 message Finding {
-  Image image = 1;
-  string vulnerability_id = 2;
-  string purl = 3;
-  string package_key = 4;
-  string installed_version = 5;
-  string fixed_version = 6;
+  WorkloadRef workload = 1;
+  Image image = 2;
+  string vulnerability_id = 3;
+  string purl = 4;
+  string package_key = 5;
+  string installed_version = 6;
+  string fixed_version = 7;
   // Trivy fix status: affected, fixed, will_not_fix, fix_deferred, end_of_life, under_investigation, unknown.
-  string status = 7;
-  Severity severity = 8;
-  string severity_source = 9;
-  string data_source = 10;
-  string title = 11;
+  string status = 8;
+  // Severity as the source named in severity_source rates it.
+  Severity severity = 9;
+  string severity_source = 10;
+  // Advisory source that produced the match, e.g. "ghsa", "alpine".
+  string data_source = 11;
+  string title = 12;
   // Highest CVSS v3 base score across sources, 0 if none.
-  double cvss_score = 12;
-  Epss epss = 13;
-  Kev kev = 14;
-  google.protobuf.Timestamp first_seen_at = 15;
-  // Whether every team using the image within the filter has suppressed the finding.
-  // For a single team, whether that team has.
-  bool suppressed = 16;
-  // Active suppressions of the finding by teams using the image within the filter.
-  repeated Suppression suppressions = 17;
-  // Workloads using the image within the filter, whether their team has suppressed the finding or not.
-  repeated WorkloadRef workloads = 18;
+  double cvss_score = 13;
+  Epss epss = 14;
+  Kev kev = 15;
+  // The workload's team's suppression of the finding, unset if not suppressed.
+  Suppression suppression = 16;
 }
 
 message Epss {
@@ -188,6 +174,7 @@ message ListFindingsRequest {
 }
 
 message ListFindingsResponse {
+  // Ordered by workload, vulnerability ID and purl.
   repeated Finding findings = 1;
   string next_page_token = 2;
 }
@@ -275,118 +262,72 @@ message WorkloadRef {
   string name = 3;
 }
 
-// ListFindingEventsRequest narrows finding events. Empty fields do not filter.
-message ListFindingEventsRequest {
-  string image_name = 1;
-  string image_digest = 2;
-  // Vulnerability ID or alias.
-  string vulnerability_id = 3;
-  // Events for images that one of these teams currently uses. Matching uses
-  // current workloads, not the workloads when the event was recorded.
-  repeated string teams = 4;
-  // Events created at or after this time.
-  google.protobuf.Timestamp since = 5;
-  int32 page_size = 6;
-  string page_token = 7;
-}
-
-message ListFindingEventsResponse {
-  repeated FindingEvent events = 1;
-  string next_page_token = 2;
-}
-
-message FindingEvent {
-  string image_name = 1;
-  string image_digest = 2;
-  string vulnerability_id = 3;
-  string purl = 4;
-  Kind kind = 5;
-  google.protobuf.Timestamp db_version = 6;
-  google.protobuf.Timestamp created_at = 7;
-
-  enum Kind {
-    KIND_UNSPECIFIED = 0;
-    KIND_APPEARED = 1;
-    KIND_RESOLVED = 2;
-  }
-}
-
-// A team's assessment of a vulnerability in a package in an image name. It applies
-// to the team's own workloads only: another team using the same image is not affected.
-message Suppression {
-  int64 id = 1;
-  string team = 2;
-  string image_name = 3;
-  string package_key = 4;
-  string vulnerability_id = 5;
-  SuppressionState state = 6;
-  Justification justification = 7;
-  string detail = 8;
-  string created_by = 9;
-  google.protobuf.Timestamp created_at = 10;
-  google.protobuf.Timestamp expires_at = 11;
-  google.protobuf.Timestamp revoked_at = 12;
-  string revoked_by = 13;
-  string revoke_reason = 14;
-}
-
-message NewSuppression {
+// Identifies a team's suppression.
+message SuppressionKey {
   string image_name = 1;
   // Package key or full purl. Version, qualifiers and subpath are dropped.
   string package = 2;
   // Vulnerability ID or alias. Must resolve to exactly one vulnerability.
   string vulnerability_id = 3;
-  SuppressionState state = 4;
-  Justification justification = 5;
+}
+
+// A team's assessment of a vulnerability in a package in an image name. It applies to the
+// team's own workloads only, whatever the image version: another team using the same image
+// is not affected.
+message Suppression {
+  reserved 9;
+  string team = 1;
+  string image_name = 2;
+  string package_key = 3;
+  string vulnerability_id = 4;
+  SuppressionState state = 5;
+  // Why, in the team's words.
   string detail = 6;
-  google.protobuf.Timestamp expires_at = 7;
+  string updated_by = 7;
+  google.protobuf.Timestamp updated_at = 8;
 }
 
-message CreateSuppressionsRequest {
-  // The team whose assessment this is. The caller is trusted to have authorized the actor for it.
+message NewSuppression {
+  reserved 4;
+  SuppressionKey key = 1;
+  SuppressionState state = 2;
+  string detail = 3;
+}
+
+message SetSuppressionsRequest {
+  // The team whose assessments these are. The caller has authorized the actor for it.
   string team = 1;
-  repeated NewSuppression suppressions = 2;
   // Identity of the human the caller acts for.
-  string actor = 3;
-  bool dry_run = 4;
+  string actor = 2;
+  repeated NewSuppression suppressions = 3;
 }
 
-message CreateSuppressionsResponse {
-  repeated CreatedSuppression results = 1;
-
-  message CreatedSuppression {
-    // Empty id on dry run.
-    Suppression suppression = 1;
-    // Number of current findings, on images the team uses, that the suppression matches.
-    int64 matched_findings = 2;
-    // Active suppression that this one replaces, if any.
-    int64 replaces_id = 3;
-  }
+message SetSuppressionsResponse {
+  repeated Suppression suppressions = 1;
 }
 
-message RevokeSuppressionsRequest {
-  // The team the suppressions belong to. An ID of another team is not found.
+message DeleteSuppressionsRequest {
+  // The team the suppressions belong to. The caller has authorized the actor for it.
   string team = 1;
-  repeated int64 ids = 2;
-  string actor = 3;
-  string reason = 4;
+  repeated SuppressionKey keys = 2;
 }
 
-message RevokeSuppressionsResponse {
-  repeated Suppression revoked = 1;
+message DeleteSuppressionsResponse {
+  // The suppressions that existed and were deleted.
+  repeated Suppression deleted = 1;
 }
 
 message ListSuppressionsRequest {
   repeated string teams = 1;
   string image_name = 2;
+  // Vulnerability ID or alias.
   string vulnerability_id = 3;
-  // Include revoked and expired suppressions.
-  bool include_inactive = 4;
-  int32 page_size = 5;
-  string page_token = 6;
+  int32 page_size = 4;
+  string page_token = 5;
 }
 
 message ListSuppressionsResponse {
+  // Ordered by team, image name, package key and vulnerability ID.
   repeated Suppression suppressions = 1;
   string next_page_token = 2;
 }

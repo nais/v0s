@@ -36,13 +36,13 @@ import (
 var ErrNoDB = errors.New("no vulnerability DB loaded")
 
 // Scanner matches SBOMs against a local Trivy vulnerability DB and keeps that DB up to date.
+// Scans may run concurrently with each other and with Update, but Update must not run
+// concurrently with itself.
 type Scanner struct {
 	dir   string
 	repos []string
 	log   *slog.Logger
 
-	// updateMu serializes Update and guards digest.
-	updateMu sync.Mutex
 	// digest is the manifest digest of the DB artifact last swapped in or rejected as
 	// not newer. A failed installation leaves it unchanged, so the artifact is retried.
 	digest string

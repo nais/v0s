@@ -6,26 +6,26 @@ CREATE TABLE images (
     id                   bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name                 text        NOT NULL CHECK (name <> ''),
     digest               text        NOT NULL CHECK (digest <> ''),
-    -- Bumped every time the image is observed in use. Used for garbage collection.
-    last_seen_at         timestamptz NOT NULL DEFAULT now(),
 
     sbom_state           text        NOT NULL DEFAULT 'pending'
         CHECK (sbom_state IN ('pending', 'fetched', 'missing', 'failed')),
-    sbom_attempts        integer     NOT NULL DEFAULT 0,
-    -- Earliest time the fetch loop may (re)claim this image. Doubles as a lease.
+    -- Earliest time the fetch loop may try this image again.
     sbom_next_attempt_at timestamptz NOT NULL DEFAULT now(),
-    sbom_error           text        NOT NULL DEFAULT '',
+    -- Verified CycloneDX JSON, gzip-compressed, set once when fetched. Kept so rescans never
+    -- refetch; Postgres stores it out of line, so reading other columns does not touch it.
+    sbom                 bytea
+        CHECK ((sbom IS NOT NULL) = (sbom_state = 'fetched')),
+    -- Why the last fetch or, once fetched, the last scan failed. Cleared by a successful one.
+    error                text        NOT NULL DEFAULT '',
 
     -- UpdatedAt of the vulnerability DB that produced the image's current findings.
     scanned_db_version   timestamptz,
     scanned_at           timestamptz,
-    -- Last failed scan and the DB version it used. Cleared by a successful scan. The image is
-    -- not rescanned until a DB newer than scan_failed_db_version is loaded.
-    scan_error           text        NOT NULL DEFAULT '',
+    -- DB version of the last failed scan. Cleared by a successful scan. The image is not
+    -- rescanned until a DB newer than scan_failed_db_version is loaded.
     scan_failed_db_version timestamptz,
-    scan_lease_until     timestamptz,
-    -- Claims without a recorded result, counted for scan_attempts_db_version only. Reset by a
-    -- successful or failed scan. ClaimScan gives up on an image after maxScanAttempts.
+    -- Scans started without a recorded result, counted for scan_attempts_db_version only. Reset
+    -- by a successful or failed scan. NextScan gives up on an image after maxScanAttempts.
     scan_attempts        integer     NOT NULL DEFAULT 0,
     scan_attempts_db_version timestamptz,
 
@@ -34,20 +34,19 @@ CREATE TABLE images (
 
 CREATE INDEX images_sbom_due ON images (sbom_next_attempt_at) WHERE sbom_state <> 'fetched';
 
--- Verified CycloneDX JSON, gzip-compressed. Kept so rescans never refetch.
-CREATE TABLE sboms (
-    image_id bigint PRIMARY KEY REFERENCES images (id) ON DELETE CASCADE,
-    document bytea NOT NULL
-);
-
 -- Which image each team workload is deployed with, as listed by Nais API. An application
 -- and a job cannot share a name, so environment, team and name identify a workload.
--- Replaced per environment on every sync.
+-- image_reference is the image as deployed; image_id is the image it resolved to, or NULL if it
+-- could not be resolved, with resolve_error saying why.
+-- Replaced per environment on every sync. Images no workload uses are deleted after each sync.
 CREATE TABLE workloads (
-    environment text   NOT NULL CHECK (environment <> ''),
-    team        text   NOT NULL CHECK (team <> ''),
-    name        text   NOT NULL CHECK (name <> ''),
-    image_id    bigint NOT NULL REFERENCES images (id) ON DELETE CASCADE,
+    environment     text   NOT NULL CHECK (environment <> ''),
+    team            text   NOT NULL CHECK (team <> ''),
+    name            text   NOT NULL CHECK (name <> ''),
+    image_reference text   NOT NULL,
+    image_id        bigint REFERENCES images (id) ON DELETE CASCADE,
+    resolve_error   text   NOT NULL DEFAULT '',
+    CHECK ((image_id IS NULL) = (resolve_error <> '')),
     PRIMARY KEY (environment, team, name)
 );
 
@@ -107,28 +106,11 @@ CREATE TABLE findings (
     severity_source   text        NOT NULL DEFAULT '',
     -- Advisory source that produced the match, e.g. "ghsa", "alpine".
     data_source       text        NOT NULL DEFAULT '',
-    first_seen_at     timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (image_id, vulnerability_id, purl)
 );
 
 CREATE INDEX findings_vulnerability ON findings (vulnerability_id);
 CREATE INDEX findings_suppression_key ON findings (package_key, vulnerability_id);
-
--- Changes in findings between scans. No foreign keys: history outlives images.
-CREATE TABLE finding_events (
-    id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    image_name       text        NOT NULL,
-    image_digest     text        NOT NULL,
-    vulnerability_id text        NOT NULL,
-    purl             text        NOT NULL,
-    kind             text        NOT NULL CHECK (kind IN ('appeared', 'resolved')),
-    db_version       timestamptz NOT NULL,
-    created_at       timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE INDEX finding_events_created ON finding_events (created_at);
-CREATE INDEX finding_events_image ON finding_events (image_name, image_digest);
-CREATE INDEX finding_events_vulnerability ON finding_events (vulnerability_id);
 
 -- FIRST EPSS, latest published day only.
 CREATE TABLE epss (
@@ -146,32 +128,17 @@ CREATE TABLE kev (
     known_ransomware_campaign boolean NOT NULL
 );
 
--- Human assessments, each by one team about its own workloads: another team using the
--- same image is not affected. Append-only: rows are only ever updated to revoke them.
+-- Each team's current assessments of findings in its own workloads: another team using the
+-- same image is not affected. Only the current state is kept; Nais API logs the changes.
 CREATE TABLE suppressions (
-    id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     team             text        NOT NULL CHECK (team <> ''),
     image_name       text        NOT NULL CHECK (image_name <> ''),
     package_key      text        NOT NULL CHECK (package_key <> ''),
     vulnerability_id text        NOT NULL CHECK (vulnerability_id <> ''),
     state            text        NOT NULL
         CHECK (state IN ('not_affected', 'false_positive', 'accepted_risk')),
-    -- CycloneDX/VEX justification. Required for not_affected, forbidden otherwise.
-    justification    text        NOT NULL DEFAULT '',
     detail           text        NOT NULL CHECK (detail <> ''),
-    created_by       text        NOT NULL CHECK (created_by <> ''),
-    created_at       timestamptz NOT NULL DEFAULT now(),
-    expires_at       timestamptz,
-    revoked_at       timestamptz,
-    revoked_by       text        NOT NULL DEFAULT '',
-    revoke_reason    text        NOT NULL DEFAULT '',
-    CHECK ((state = 'not_affected') = (justification <> '')),
-    CHECK (justification IN ('', 'code_not_present', 'code_not_reachable', 'requires_configuration',
-                             'requires_dependency', 'requires_environment', 'protected_by_compiler',
-                             'protected_at_runtime', 'protected_at_perimeter', 'protected_by_mitigating_control')),
-    CHECK (expires_at IS NULL OR expires_at > created_at),
-    CHECK ((revoked_at IS NULL) = (revoked_by = ''))
+    updated_by       text        NOT NULL CHECK (updated_by <> ''),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (team, image_name, package_key, vulnerability_id)
 );
-
-CREATE UNIQUE INDEX suppressions_one_unrevoked
-    ON suppressions (team, image_name, package_key, vulnerability_id) WHERE revoked_at IS NULL;

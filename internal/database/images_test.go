@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sync"
 	"testing"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 	"github.com/nais/v0s/internal/database/databasetest"
 )
 
-func TestClaimSBOMFetches(t *testing.T) {
+func TestDueSBOMFetches(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
 
@@ -30,67 +29,17 @@ func TestClaimSBOMFetches(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tests := []struct {
-		name string
-		want []string
-	}{
-		{name: "due images in use", want: []string{"due pending ", "missing-due missing no attestation"}},
-		{name: "leased", want: nil},
+	images, err := db.DueSBOMFetches(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			images, err := db.ClaimSBOMFetches(ctx, 10, time.Minute)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var got []string
-			for _, img := range images {
-				got = append(got, fmt.Sprintf("%s %s %s", img.Name, img.SBOMState, img.SBOMError))
-			}
-			slices.Sort(got)
-			if !slices.Equal(got, tt.want) {
-				t.Errorf("claimed %q, want %q", got, tt.want)
-			}
-		})
+	var got []string
+	for _, img := range images {
+		got = append(got, fmt.Sprintf("%s %s %s", img.Name, img.SBOMState, img.Error))
 	}
-}
-
-func TestClaimSBOMFetchesConcurrently(t *testing.T) {
-	ctx := context.Background()
-	db := databasetest.New(t)
-
-	var names []string
-	for i := range 50 {
-		names = append(names, fmt.Sprintf("img-%d", i))
-	}
-	runImages(t, db, "c1", names...)
-
-	var (
-		wg      sync.WaitGroup
-		claimed [2][]v0s.Image
-		errs    [2]error
-	)
-	for i := range claimed {
-		wg.Go(func() { claimed[i], errs[i] = db.ClaimSBOMFetches(ctx, 30, time.Minute) })
-	}
-	wg.Wait()
-	for _, err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	seen := map[int64]bool{}
-	for _, images := range claimed {
-		for _, img := range images {
-			if seen[img.ID] {
-				t.Errorf("image %s claimed twice", img.Name)
-			}
-			seen[img.ID] = true
-		}
-	}
-	if len(seen) != len(names) {
-		t.Errorf("claimed %d images, want %d", len(seen), len(names))
+	slices.Sort(got)
+	if want := []string{"due pending ", "missing-due missing no attestation"}; !slices.Equal(got, want) {
+		t.Errorf("due %q, want %q", got, want)
 	}
 }
 
@@ -104,9 +53,9 @@ func TestStoreSBOMKeepsFirst(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	job, ok, err := db.ClaimScan(ctx, time.Now(), time.Minute)
+	job, ok, err := db.NextScan(ctx, time.Now())
 	if err != nil || !ok {
-		t.Fatalf("ClaimScan = %t, %v, want a job", ok, err)
+		t.Fatalf("NextScan = %t, %v, want a job", ok, err)
 	}
 	if got := string(job.SBOM); got != "first" {
 		t.Errorf("SBOM = %q, want %q", got, "first")
@@ -117,17 +66,16 @@ func TestDeleteUnusedImages(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
 
-	ids := runImages(t, db, "c1", "used-old", "unused-old", "unused-recent")
-	runImages(t, db, "c1", "used-old")
-	if err := db.StoreSBOM(ctx, ids["unused-old"], []byte("{}")); err != nil {
+	ids := runImages(t, db, "c1", "used", "unused")
+	if err := db.StoreSBOM(ctx, ids["unused"], []byte("{}")); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.StoreScan(ctx, ids["unused-old"], time.Now(), scanResult("CVE-1 pkg:x/a")); err != nil {
+	if err := db.StoreScan(ctx, ids["unused"], time.Now(), scanResult("CVE-1 pkg:x/a")); err != nil {
 		t.Fatal(err)
 	}
-	exec(t, db, `UPDATE images SET last_seen_at = now() - interval '2 days' WHERE name LIKE '%-old'`)
+	runImages(t, db, "c1", "used")
 
-	n, err := db.DeleteUnusedImages(ctx, 24*time.Hour)
+	n, err := db.DeleteUnusedImages(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,12 +83,22 @@ func TestDeleteUnusedImages(t *testing.T) {
 		t.Errorf("deleted %d images, want 1", n)
 	}
 	got := queryStrings(t, db, `SELECT name FROM images ORDER BY name`)
-	if want := []string{"unused-recent", "used-old"}; !slices.Equal(got, want) {
+	if want := []string{"used"}; !slices.Equal(got, want) {
 		t.Errorf("images = %q, want %q", got, want)
 	}
-	got = queryStrings(t, db, `SELECT image_name || ' ' || vulnerability_id FROM finding_events`)
-	if want := []string{"unused-old CVE-1"}; !slices.Equal(got, want) {
-		t.Errorf("finding events = %q, want %q", got, want)
+	if got := queryStrings(t, db, `SELECT vulnerability_id FROM findings`); len(got) != 0 {
+		t.Errorf("findings of deleted image = %q, want none", got)
+	}
+
+	// A fetch or scan that was running when the image was deleted records nothing.
+	if err := db.StoreSBOM(ctx, ids["unused"], []byte("{}")); err != nil {
+		t.Errorf("StoreSBOM of deleted image: %v", err)
+	}
+	if err := db.StoreScan(ctx, ids["unused"], time.Now().Add(time.Hour), scanResult("CVE-1 pkg:x/a")); err != nil {
+		t.Errorf("StoreScan of deleted image: %v", err)
+	}
+	if got := queryStrings(t, db, `SELECT name FROM images ORDER BY name`); !slices.Equal(got, []string{"used"}) {
+		t.Errorf("images after storing for a deleted one = %q, want only used", got)
 	}
 }
 
@@ -150,6 +108,7 @@ func workloadImage(environment, workload, name string) v0s.WorkloadImage {
 		Environment: environment,
 		Team:        "team",
 		Workload:    workload,
+		Reference:   name + ":1",
 		ImageName:   name,
 		Digest:      "sha256:" + name,
 	}

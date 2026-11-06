@@ -11,18 +11,20 @@ Whether v0s can replace both v13s and Dependency-Track. Agreed boundaries:
 - **Correct means classified, not equal to DT.** DT is not ground truth. Every
   critical/high difference is classified by hand: v0s wrong, v13s/DT wrong, or a
   defensible source difference.
-- **Facts, not judgments.** v0s serves facts; priority tiers, risk score and
-  URGENT (with ingress exposure) are computed in nais-api later. nais-api and
-  Console are not changed in the PoC: we verify the findings and the API that
-  serves them, and the consumers follow from a solid facts API.
+- **Facts, not judgments.** Nais does not judge severity or priority. Priority
+  tiers, risk score, its trend and the top list are dropped, also from Console.
+  Severity is the advisory source's. Ingress exposure is a workload fact nais-api
+  already has. nais-api and Console are not changed in the PoC: we verify the
+  findings and the API that serves them, and the consumers follow from a solid
+  facts API.
 - **Unfixed findings are shown** with their status (affected, will_not_fix,
   fix_deferred). DT hides them (`ignore_unfixed`), so the comparison reports
   them separately.
 - **Inventory is what is deployed**: the images of Nais applications and jobs as
   Nais API reports them, whether or not they run right now, so apps scaled to zero
   and jobs between runs are included, as in v13s.
-- **History** is derived from finding events (appeared/resolved), not from
-  materialized summaries.
+- **No history.** Trend graphs and mean time to fix are dropped; v0s serves
+  current state only.
 - **Suppressions**: only new ones through the v0s API. Moving v13s's
   suppressions (versioned purl to versionless key) comes later.
 - **SBOM gaps** (customer SBOMs without OS packages, binaries outside a package
@@ -72,9 +74,9 @@ The Trivy DB pull-through cache already exists and serves the same digest as
 The chart follows v13s: one Deployment, own KSA
 `v0s-sa`, NetworkPolicy plus FQDNNetworkPolicy listing the hosts above,
 read-only root filesystem with an `emptyDir` (sizeLimit 4Gi) for the Trivy DB,
-ServiceMonitor, gRPC ingress. Access is the existing Google ID-token check; the
-allowed service accounts are `v0s-sa` itself (people impersonate it, as with
-v13s's `vulnz`) and later the nais-api account.
+ServiceMonitor. The API has no authentication: NetworkPolicy admits only
+`nais-system`, as for Nais API's internal gRPC API. People reach it with
+`kubectl port-forward`.
 
 Postgres: the chart depends on `nais-postgresql` (helm-charts `charts/`, published
 to `oci://europe-north1-docker.pkg.dev/nais-io/nais/chart`), which adds a
@@ -113,8 +115,8 @@ the session notes with the image/DB versions used.
 
 1. Fetch findings from both systems and compare on (image digest, package purl,
    canonical vulnerability ID):
-   - v0s: `grpcurl … v0s.v1.VulnerabilityService/ListFindings`; each finding lists
-     the workloads using its image.
+   - v0s: `grpcurl … v0s.v1.VulnerabilityService/ListFindings`; one finding per
+     workload.
    - v13s: `vulnz` per workload.
    A small comparison script (kept with the session notes, not in this repo) prints
    matched / v0s-only / v13s-only per workload and severity, with v0s-only unfixed
@@ -122,12 +124,14 @@ the session notes with the image/DB versions used.
 2. Inspect every critical/high difference by hand and classify it: v0s wrong,
    v13s/DT wrong (for example a withdrawn advisory or package misattribution), or a
    defensible source difference. Done when no critical/high difference is unclassified.
-3. Coverage: share of workload images with a verified SBOM, and the reasons for the
-   rest (`missing`, `failed`), compared with v13s for the same images.
+3. Coverage: share of workloads whose image is `scanned`, and the reasons for the
+   rest (unresolved image, `no_sbom`, `failed`, `pending`), compared with v13s for the
+   same workloads.
 4. Package search: look up a package known to run (e.g. `pkg:golang/stdlib`) and one
    with no finding; both must list the workloads using it.
-5. Suppressions: dry-run, create, list, revoke new suppressions through grpcurl on a
-   real finding; the finding's suppression state and counts change accordingly.
+5. Suppressions: set, replace, list and delete new suppressions through grpcurl on a
+   real finding; the finding's suppression and the counts change accordingly, for the
+   team's own workloads only.
 6. SBOM gaps: count images whose SBOM has no OS packages, and runtime binaries that
    the SBOM misses (spot-check with a direct image scan).
 
@@ -136,11 +140,11 @@ the session notes with the image/DB versions used.
 | Scenario | Expected |
 |---|---|
 | Deploy a new version of a test app | findings for the new digest within sync + fetch + scan time; old digest leaves the workload |
-| Delete the app | its images leave the workload set; image rows are collected after 7 days |
+| Delete the app | its image and findings are deleted at the next sync, unless another workload uses it |
 | Image without attestation | `missing`, retried on a backoff, no retry storm |
 | Trivy DB update (about every 6 h) | every image rescanned once; `v0s_scans_total` rises by the image count, not more |
-| Two replicas | no image scanned twice for the same DB version |
-| Kill a pod during a scan | the image is picked up again after the lease; no lost or duplicated findings |
+| Two replicas | one fetches and scans, both serve the API; no image scanned twice for the same DB version |
+| Kill a pod during a scan | another replica, or the restarted pod, scans the image again; no lost or duplicated findings |
 | Postgres pod restart, Nais API or registry unreachable, EPSS/KEV feed down | loops log and retry; stored data stays; `/healthz` reflects the database only |
 
 ### Performance
@@ -150,7 +154,7 @@ Measured from v0s metrics and the CNPG PodMonitor, recorded per tenant:
 - cold start: pod start → DB downloaded → backlog (`pending`) at zero;
 - per-scan duration p50/p99 and peak memory (`container_memory_working_set_bytes`);
 - full rescan after a DB update: duration, CPU, Postgres CPU/IO;
-- database size after a week, and growth per rescan (finding events);
+- database size after a week, and growth per rescan;
 - gRPC latency for `ListFindings`, `CountFindings` and `SearchComponents` with real filters.
 
 dev-nais is small; it verifies correctness and behaviour, not scale. Scale is

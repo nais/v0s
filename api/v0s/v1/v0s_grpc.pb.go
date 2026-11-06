@@ -19,12 +19,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VulnerabilityService_ListWorkloads_FullMethodName     = "/v0s.v1.VulnerabilityService/ListWorkloads"
-	VulnerabilityService_ListFindings_FullMethodName      = "/v0s.v1.VulnerabilityService/ListFindings"
-	VulnerabilityService_CountFindings_FullMethodName     = "/v0s.v1.VulnerabilityService/CountFindings"
-	VulnerabilityService_GetVulnerability_FullMethodName  = "/v0s.v1.VulnerabilityService/GetVulnerability"
-	VulnerabilityService_SearchComponents_FullMethodName  = "/v0s.v1.VulnerabilityService/SearchComponents"
-	VulnerabilityService_ListFindingEvents_FullMethodName = "/v0s.v1.VulnerabilityService/ListFindingEvents"
+	VulnerabilityService_ListWorkloads_FullMethodName    = "/v0s.v1.VulnerabilityService/ListWorkloads"
+	VulnerabilityService_ListFindings_FullMethodName     = "/v0s.v1.VulnerabilityService/ListFindings"
+	VulnerabilityService_CountFindings_FullMethodName    = "/v0s.v1.VulnerabilityService/CountFindings"
+	VulnerabilityService_GetVulnerability_FullMethodName = "/v0s.v1.VulnerabilityService/GetVulnerability"
+	VulnerabilityService_SearchComponents_FullMethodName = "/v0s.v1.VulnerabilityService/SearchComponents"
 )
 
 // VulnerabilityServiceClient is the client API for VulnerabilityService service.
@@ -37,24 +36,15 @@ const (
 type VulnerabilityServiceClient interface {
 	// ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
 	ListWorkloads(ctx context.Context, in *ListWorkloadsRequest, opts ...grpc.CallOption) (*ListWorkloadsResponse, error)
-	// ListFindings lists findings for images matching the filter, each with the workloads
-	// using its image, so one call answers which workloads have a vulnerability.
+	// ListFindings lists the findings of workloads. A finding in an image used by several
+	// workloads is listed once for each of them.
 	ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error)
-	// CountFindings counts findings matching the filter, grouped by one dimension.
-	// Under TEAM and WORKLOAD, a finding counts once for every matching workload
-	// using its image, since one image can be used by several workloads, and is
-	// suppressed for a workload when the workload's team has suppressed it. A team
-	// count is the sum over its workloads. Under the other groupings each finding
-	// counts once, and is suppressed as in Finding.suppressed.
+	// CountFindings counts findings as ListFindings lists them, grouped by one dimension.
 	CountFindings(ctx context.Context, in *CountFindingsRequest, opts ...grpc.CallOption) (*CountFindingsResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
 	GetVulnerability(ctx context.Context, in *GetVulnerabilityRequest, opts ...grpc.CallOption) (*GetVulnerabilityResponse, error)
 	// SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
 	SearchComponents(ctx context.Context, in *SearchComponentsRequest, opts ...grpc.CallOption) (*SearchComponentsResponse, error)
-	// ListFindingEvents lists findings appearing and resolving over time, oldest first.
-	// Pagination is best-effort under concurrent writes: an event committed while a
-	// client pages may be skipped if a later event was already returned.
-	ListFindingEvents(ctx context.Context, in *ListFindingEventsRequest, opts ...grpc.CallOption) (*ListFindingEventsResponse, error)
 }
 
 type vulnerabilityServiceClient struct {
@@ -115,16 +105,6 @@ func (c *vulnerabilityServiceClient) SearchComponents(ctx context.Context, in *S
 	return out, nil
 }
 
-func (c *vulnerabilityServiceClient) ListFindingEvents(ctx context.Context, in *ListFindingEventsRequest, opts ...grpc.CallOption) (*ListFindingEventsResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ListFindingEventsResponse)
-	err := c.cc.Invoke(ctx, VulnerabilityService_ListFindingEvents_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 // VulnerabilityServiceServer is the server API for VulnerabilityService service.
 // All implementations must embed UnimplementedVulnerabilityServiceServer
 // for forward compatibility.
@@ -135,24 +115,15 @@ func (c *vulnerabilityServiceClient) ListFindingEvents(ctx context.Context, in *
 type VulnerabilityServiceServer interface {
 	// ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
 	ListWorkloads(context.Context, *ListWorkloadsRequest) (*ListWorkloadsResponse, error)
-	// ListFindings lists findings for images matching the filter, each with the workloads
-	// using its image, so one call answers which workloads have a vulnerability.
+	// ListFindings lists the findings of workloads. A finding in an image used by several
+	// workloads is listed once for each of them.
 	ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error)
-	// CountFindings counts findings matching the filter, grouped by one dimension.
-	// Under TEAM and WORKLOAD, a finding counts once for every matching workload
-	// using its image, since one image can be used by several workloads, and is
-	// suppressed for a workload when the workload's team has suppressed it. A team
-	// count is the sum over its workloads. Under the other groupings each finding
-	// counts once, and is suppressed as in Finding.suppressed.
+	// CountFindings counts findings as ListFindings lists them, grouped by one dimension.
 	CountFindings(context.Context, *CountFindingsRequest) (*CountFindingsResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
 	GetVulnerability(context.Context, *GetVulnerabilityRequest) (*GetVulnerabilityResponse, error)
 	// SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
 	SearchComponents(context.Context, *SearchComponentsRequest) (*SearchComponentsResponse, error)
-	// ListFindingEvents lists findings appearing and resolving over time, oldest first.
-	// Pagination is best-effort under concurrent writes: an event committed while a
-	// client pages may be skipped if a later event was already returned.
-	ListFindingEvents(context.Context, *ListFindingEventsRequest) (*ListFindingEventsResponse, error)
 	mustEmbedUnimplementedVulnerabilityServiceServer()
 }
 
@@ -177,9 +148,6 @@ func (UnimplementedVulnerabilityServiceServer) GetVulnerability(context.Context,
 }
 func (UnimplementedVulnerabilityServiceServer) SearchComponents(context.Context, *SearchComponentsRequest) (*SearchComponentsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SearchComponents not implemented")
-}
-func (UnimplementedVulnerabilityServiceServer) ListFindingEvents(context.Context, *ListFindingEventsRequest) (*ListFindingEventsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ListFindingEvents not implemented")
 }
 func (UnimplementedVulnerabilityServiceServer) mustEmbedUnimplementedVulnerabilityServiceServer() {}
 func (UnimplementedVulnerabilityServiceServer) testEmbeddedByValue()                              {}
@@ -292,24 +260,6 @@ func _VulnerabilityService_SearchComponents_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _VulnerabilityService_ListFindingEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ListFindingEventsRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(VulnerabilityServiceServer).ListFindingEvents(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: VulnerabilityService_ListFindingEvents_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(VulnerabilityServiceServer).ListFindingEvents(ctx, req.(*ListFindingEventsRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 // VulnerabilityService_ServiceDesc is the grpc.ServiceDesc for VulnerabilityService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -337,18 +287,14 @@ var VulnerabilityService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "SearchComponents",
 			Handler:    _VulnerabilityService_SearchComponents_Handler,
 		},
-		{
-			MethodName: "ListFindingEvents",
-			Handler:    _VulnerabilityService_ListFindingEvents_Handler,
-		},
 	},
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "v0s/v1/v0s.proto",
 }
 
 const (
-	SuppressionService_CreateSuppressions_FullMethodName = "/v0s.v1.SuppressionService/CreateSuppressions"
-	SuppressionService_RevokeSuppressions_FullMethodName = "/v0s.v1.SuppressionService/RevokeSuppressions"
+	SuppressionService_SetSuppressions_FullMethodName    = "/v0s.v1.SuppressionService/SetSuppressions"
+	SuppressionService_DeleteSuppressions_FullMethodName = "/v0s.v1.SuppressionService/DeleteSuppressions"
 	SuppressionService_ListSuppressions_FullMethodName   = "/v0s.v1.SuppressionService/ListSuppressions"
 )
 
@@ -356,14 +302,14 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Suppressions manages human assessments of findings.
+// Suppressions manages teams' current assessments of findings. Only the current state is kept;
+// the caller keeps the history of changes if it wants one.
 type SuppressionServiceClient interface {
-	// CreateSuppressions creates suppressions atomically. With dry_run, nothing is written,
-	// but the response still reports what each suppression would match.
-	CreateSuppressions(ctx context.Context, in *CreateSuppressionsRequest, opts ...grpc.CallOption) (*CreateSuppressionsResponse, error)
-	// RevokeSuppressions revokes unrevoked suppressions atomically, expired or not.
-	RevokeSuppressions(ctx context.Context, in *RevokeSuppressionsRequest, opts ...grpc.CallOption) (*RevokeSuppressionsResponse, error)
-	// ListSuppressions lists suppressions, including revoked and expired ones when asked.
+	// SetSuppressions sets suppressions atomically, replacing any with the same key.
+	SetSuppressions(ctx context.Context, in *SetSuppressionsRequest, opts ...grpc.CallOption) (*SetSuppressionsResponse, error)
+	// DeleteSuppressions deletes suppressions atomically. Deleting one that does not exist is not an error.
+	DeleteSuppressions(ctx context.Context, in *DeleteSuppressionsRequest, opts ...grpc.CallOption) (*DeleteSuppressionsResponse, error)
+	// ListSuppressions lists suppressions.
 	ListSuppressions(ctx context.Context, in *ListSuppressionsRequest, opts ...grpc.CallOption) (*ListSuppressionsResponse, error)
 }
 
@@ -375,20 +321,20 @@ func NewSuppressionServiceClient(cc grpc.ClientConnInterface) SuppressionService
 	return &suppressionServiceClient{cc}
 }
 
-func (c *suppressionServiceClient) CreateSuppressions(ctx context.Context, in *CreateSuppressionsRequest, opts ...grpc.CallOption) (*CreateSuppressionsResponse, error) {
+func (c *suppressionServiceClient) SetSuppressions(ctx context.Context, in *SetSuppressionsRequest, opts ...grpc.CallOption) (*SetSuppressionsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(CreateSuppressionsResponse)
-	err := c.cc.Invoke(ctx, SuppressionService_CreateSuppressions_FullMethodName, in, out, cOpts...)
+	out := new(SetSuppressionsResponse)
+	err := c.cc.Invoke(ctx, SuppressionService_SetSuppressions_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *suppressionServiceClient) RevokeSuppressions(ctx context.Context, in *RevokeSuppressionsRequest, opts ...grpc.CallOption) (*RevokeSuppressionsResponse, error) {
+func (c *suppressionServiceClient) DeleteSuppressions(ctx context.Context, in *DeleteSuppressionsRequest, opts ...grpc.CallOption) (*DeleteSuppressionsResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(RevokeSuppressionsResponse)
-	err := c.cc.Invoke(ctx, SuppressionService_RevokeSuppressions_FullMethodName, in, out, cOpts...)
+	out := new(DeleteSuppressionsResponse)
+	err := c.cc.Invoke(ctx, SuppressionService_DeleteSuppressions_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -409,14 +355,14 @@ func (c *suppressionServiceClient) ListSuppressions(ctx context.Context, in *Lis
 // All implementations must embed UnimplementedSuppressionServiceServer
 // for forward compatibility.
 //
-// Suppressions manages human assessments of findings.
+// Suppressions manages teams' current assessments of findings. Only the current state is kept;
+// the caller keeps the history of changes if it wants one.
 type SuppressionServiceServer interface {
-	// CreateSuppressions creates suppressions atomically. With dry_run, nothing is written,
-	// but the response still reports what each suppression would match.
-	CreateSuppressions(context.Context, *CreateSuppressionsRequest) (*CreateSuppressionsResponse, error)
-	// RevokeSuppressions revokes unrevoked suppressions atomically, expired or not.
-	RevokeSuppressions(context.Context, *RevokeSuppressionsRequest) (*RevokeSuppressionsResponse, error)
-	// ListSuppressions lists suppressions, including revoked and expired ones when asked.
+	// SetSuppressions sets suppressions atomically, replacing any with the same key.
+	SetSuppressions(context.Context, *SetSuppressionsRequest) (*SetSuppressionsResponse, error)
+	// DeleteSuppressions deletes suppressions atomically. Deleting one that does not exist is not an error.
+	DeleteSuppressions(context.Context, *DeleteSuppressionsRequest) (*DeleteSuppressionsResponse, error)
+	// ListSuppressions lists suppressions.
 	ListSuppressions(context.Context, *ListSuppressionsRequest) (*ListSuppressionsResponse, error)
 	mustEmbedUnimplementedSuppressionServiceServer()
 }
@@ -428,11 +374,11 @@ type SuppressionServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedSuppressionServiceServer struct{}
 
-func (UnimplementedSuppressionServiceServer) CreateSuppressions(context.Context, *CreateSuppressionsRequest) (*CreateSuppressionsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method CreateSuppressions not implemented")
+func (UnimplementedSuppressionServiceServer) SetSuppressions(context.Context, *SetSuppressionsRequest) (*SetSuppressionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetSuppressions not implemented")
 }
-func (UnimplementedSuppressionServiceServer) RevokeSuppressions(context.Context, *RevokeSuppressionsRequest) (*RevokeSuppressionsResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method RevokeSuppressions not implemented")
+func (UnimplementedSuppressionServiceServer) DeleteSuppressions(context.Context, *DeleteSuppressionsRequest) (*DeleteSuppressionsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteSuppressions not implemented")
 }
 func (UnimplementedSuppressionServiceServer) ListSuppressions(context.Context, *ListSuppressionsRequest) (*ListSuppressionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSuppressions not implemented")
@@ -458,38 +404,38 @@ func RegisterSuppressionServiceServer(s grpc.ServiceRegistrar, srv SuppressionSe
 	s.RegisterService(&SuppressionService_ServiceDesc, srv)
 }
 
-func _SuppressionService_CreateSuppressions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CreateSuppressionsRequest)
+func _SuppressionService_SetSuppressions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetSuppressionsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SuppressionServiceServer).CreateSuppressions(ctx, in)
+		return srv.(SuppressionServiceServer).SetSuppressions(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SuppressionService_CreateSuppressions_FullMethodName,
+		FullMethod: SuppressionService_SetSuppressions_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SuppressionServiceServer).CreateSuppressions(ctx, req.(*CreateSuppressionsRequest))
+		return srv.(SuppressionServiceServer).SetSuppressions(ctx, req.(*SetSuppressionsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SuppressionService_RevokeSuppressions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(RevokeSuppressionsRequest)
+func _SuppressionService_DeleteSuppressions_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSuppressionsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SuppressionServiceServer).RevokeSuppressions(ctx, in)
+		return srv.(SuppressionServiceServer).DeleteSuppressions(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SuppressionService_RevokeSuppressions_FullMethodName,
+		FullMethod: SuppressionService_DeleteSuppressions_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SuppressionServiceServer).RevokeSuppressions(ctx, req.(*RevokeSuppressionsRequest))
+		return srv.(SuppressionServiceServer).DeleteSuppressions(ctx, req.(*DeleteSuppressionsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -520,12 +466,12 @@ var SuppressionService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*SuppressionServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "CreateSuppressions",
-			Handler:    _SuppressionService_CreateSuppressions_Handler,
+			MethodName: "SetSuppressions",
+			Handler:    _SuppressionService_SetSuppressions_Handler,
 		},
 		{
-			MethodName: "RevokeSuppressions",
-			Handler:    _SuppressionService_RevokeSuppressions_Handler,
+			MethodName: "DeleteSuppressions",
+			Handler:    _SuppressionService_DeleteSuppressions_Handler,
 		},
 		{
 			MethodName: "ListSuppressions",

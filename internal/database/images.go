@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -13,28 +12,24 @@ import (
 )
 
 // imageColumns are the images columns scanned by imageScan, qualified with the alias i.
-const imageColumns = `i.id, i.name, i.digest, i.sbom_state, i.sbom_error, i.scanned_at, i.scanned_db_version, i.scan_error`
+const imageColumns = `i.id, i.name, i.digest, i.sbom_state, i.error, i.scanned_at, i.scanned_db_version`
 
-// ClaimSBOMFetches returns up to limit images that are in use (referenced by workloads),
-// not fetched, and due (sbom_next_attempt_at <= now()). It leases them by moving
-// sbom_next_attempt_at to now()+lease. Concurrent callers never get the same image.
-func (db *DB) ClaimSBOMFetches(ctx context.Context, limit int, lease time.Duration) ([]v0s.Image, error) {
+// DueSBOMFetches returns up to limit images that are in use (referenced by workloads), not
+// fetched, and due (sbom_next_attempt_at <= now()), oldest due first. Only one caller at a time
+// may fetch: an image is returned again until its fetch is recorded.
+func (db *DB) DueSBOMFetches(ctx context.Context, limit int) ([]v0s.Image, error) {
 	rows, err := db.pool.Query(ctx, `
-		UPDATE images i SET sbom_next_attempt_at = now() + make_interval(secs => $2)
-		WHERE i.id IN (
-			SELECT id FROM images
-			WHERE sbom_state <> 'fetched'
-				AND sbom_next_attempt_at <= now()
-				AND EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = images.id)
-			ORDER BY sbom_next_attempt_at
-			LIMIT $1
-			FOR UPDATE SKIP LOCKED
-		)
-		RETURNING `+imageColumns,
-		limit, lease.Seconds(),
+		SELECT `+imageColumns+`
+		FROM images i
+		WHERE i.sbom_state <> 'fetched'
+			AND i.sbom_next_attempt_at <= now()
+			AND EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id)
+		ORDER BY i.sbom_next_attempt_at, i.id
+		LIMIT $1`,
+		limit,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("claiming sbom fetches: %w", err)
+		return nil, fmt.Errorf("listing due sbom fetches: %w", err)
 	}
 	images, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (v0s.Image, error) {
 		var img imageScan
@@ -42,14 +37,14 @@ func (db *DB) ClaimSBOMFetches(ctx context.Context, limit int, lease time.Durati
 		return img.image(), err
 	})
 	if err != nil {
-		return nil, fmt.Errorf("claiming sbom fetches: %w", err)
+		return nil, fmt.Errorf("listing due sbom fetches: %w", err)
 	}
 	return images, nil
 }
 
 // StoreSBOM stores the verified SBOM (gzip-compressed) and marks the image fetched. It is
 // write-once: if the image's SBOM is already fetched, the stored document is kept, since findings
-// and components were derived from it.
+// and components were derived from it. A deleted image is left alone.
 func (db *DB) StoreSBOM(ctx context.Context, imageID int64, document []byte) error {
 	var buf bytes.Buffer
 	zw := gzip.NewWriter(&buf)
@@ -60,30 +55,14 @@ func (db *DB) StoreSBOM(ctx context.Context, imageID int64, document []byte) err
 		return fmt.Errorf("compressing sbom: %w", err)
 	}
 
-	return pgx.BeginFunc(ctx, db.pool, func(tx pgx.Tx) error {
-		var state v0s.SBOMState
-		err := tx.QueryRow(ctx, `SELECT sbom_state FROM images WHERE id = $1 FOR UPDATE`, imageID).Scan(&state)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("storing sbom: image %d not found", imageID)
-		}
-		if err != nil {
-			return fmt.Errorf("locking image %d: %w", imageID, err)
-		}
-		if state == v0s.SBOMFetched {
-			return nil
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE images SET sbom_state = 'fetched', sbom_error = ''
-			WHERE id = $1`,
-			imageID,
-		); err != nil {
-			return fmt.Errorf("marking sbom fetched: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO sboms (image_id, document) VALUES ($1, $2)`, imageID, buf.Bytes()); err != nil {
-			return fmt.Errorf("storing sbom: %w", err)
-		}
-		return nil
-	})
+	if _, err := db.pool.Exec(ctx, `
+		UPDATE images SET sbom = $2, sbom_state = 'fetched', error = ''
+		WHERE id = $1 AND sbom IS NULL`,
+		imageID, buf.Bytes(),
+	); err != nil {
+		return fmt.Errorf("storing sbom: %w", err)
+	}
+	return nil
 }
 
 // RecordSBOMFailure marks the image missing or failed with a message and the next attempt time.
@@ -94,7 +73,7 @@ func (db *DB) RecordSBOMFailure(ctx context.Context, imageID int64, state v0s.SB
 	}
 	if _, err := db.pool.Exec(ctx, `
 		UPDATE images
-		SET sbom_state = $2, sbom_error = $3, sbom_next_attempt_at = $4, sbom_attempts = sbom_attempts + 1
+		SET sbom_state = $2, error = $3, sbom_next_attempt_at = $4
 		WHERE id = $1 AND sbom_state <> 'fetched'`,
 		imageID, string(state), msg, retryAt,
 	); err != nil {
@@ -103,15 +82,11 @@ func (db *DB) RecordSBOMFailure(ctx context.Context, imageID int64, state v0s.SB
 	return nil
 }
 
-// DeleteUnusedImages deletes images not referenced by workloads whose last_seen_at is older
-// than unusedFor. Cascades to SBOMs, components and findings. Finding events are kept.
-func (db *DB) DeleteUnusedImages(ctx context.Context, unusedFor time.Duration) (int64, error) {
+// DeleteUnusedImages deletes the images no workload uses, with their components and findings.
+// It must not run concurrently with SyncWorkloadImages, which could reference an image being deleted.
+func (db *DB) DeleteUnusedImages(ctx context.Context) (int64, error) {
 	tag, err := db.pool.Exec(ctx, `
-		DELETE FROM images i
-		WHERE i.last_seen_at < now() - make_interval(secs => $1)
-			AND NOT EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id)`,
-		unusedFor.Seconds(),
-	)
+		DELETE FROM images i WHERE NOT EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id)`)
 	if err != nil {
 		return 0, fmt.Errorf("deleting unused images: %w", err)
 	}
@@ -123,7 +98,7 @@ type ImageStateCount struct {
 	SBOM v0s.SBOMState
 	// Scan is "" if the SBOM is not fetched. Otherwise it is "current" if the image is scanned
 	// with the DB version counted against or newer, "failed" if scanning with that version or
-	// newer failed, and "pending" if ClaimScan would still claim it.
+	// newer failed, and "pending" if NextScan would still hand it out.
 	Scan  string
 	Count int
 }

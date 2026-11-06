@@ -34,22 +34,57 @@ type Image struct {
 	Name             string
 	Digest           string
 	SBOMState        SBOMState
-	SBOMError        string
 	ScannedAt        time.Time // zero if never scanned
 	ScannedDBVersion time.Time // zero if never scanned
-	ScanError        string
+	// Error says why the last fetch or, once fetched, the last scan failed.
+	Error string
 }
 
 // Ref returns the image reference by digest, e.g. "repo/name@sha256:…".
 func (i Image) Ref() string { return i.Name + "@" + i.Digest }
 
-// WorkloadImage records that a workload is deployed with an image.
+// ImageStatus is how far an image has got towards having findings.
+type ImageStatus string
+
+// Image statuses.
+const (
+	ImagePending ImageStatus = "pending" // SBOM not fetched or image not scanned yet
+	ImageScanned ImageStatus = "scanned"
+	ImageNoSBOM  ImageStatus = "no_sbom" // no attested SBOM found
+	ImageFailed  ImageStatus = "failed"  // fetching, verifying or scanning failed
+)
+
+// Status returns how far the image has got. A scanned image stays scanned when a rescan with a
+// newer DB fails; Error then says why.
+func (i Image) Status() ImageStatus {
+	switch {
+	case i.SBOMState == SBOMMissing:
+		return ImageNoSBOM
+	case i.SBOMState == SBOMFailed:
+		return ImageFailed
+	case i.SBOMState != SBOMFetched:
+		return ImagePending
+	case !i.ScannedAt.IsZero():
+		return ImageScanned
+	case i.Error != "":
+		return ImageFailed
+	default:
+		return ImagePending
+	}
+}
+
+// WorkloadImage records the image a workload is deployed with.
 type WorkloadImage struct {
 	Environment string
 	Team        string
 	Workload    string
-	ImageName   string
-	Digest      string
+	// Reference is the image as deployed, e.g. "ghcr.io/navikt/app:1.2.3".
+	Reference string
+	// ImageName and Digest identify the image Reference resolved to. Both are empty if it could
+	// not be resolved, and ResolveError says why.
+	ImageName    string
+	Digest       string
+	ResolveError string
 }
 
 // Component is a package listed in an SBOM.

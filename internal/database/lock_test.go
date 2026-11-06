@@ -12,34 +12,29 @@ import (
 func TestWithLock(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
-
-	ran, err := db.WithLock(ctx, "gc", func(ctx context.Context) error {
-		tests := []struct {
-			name    string
-			lock    string
-			wantRan bool
-		}{
-			{name: "same name is held", lock: "gc", wantRan: false},
-			{name: "other name is free", lock: "enrich", wantRan: true},
+	ran := func(name string) bool {
+		t.Helper()
+		var ran bool
+		if err := db.WithLock(ctx, name, func(context.Context) error { ran = true; return nil }); err != nil {
+			t.Fatal(err)
 		}
-		for _, tt := range tests {
-			ran, err := db.WithLock(ctx, tt.lock, func(context.Context) error { return nil })
-			if err != nil {
-				t.Fatalf("%s: %v", tt.name, err)
-			}
-			if ran != tt.wantRan {
-				t.Errorf("%s: ran = %t, want %t", tt.name, ran, tt.wantRan)
-			}
+		return ran
+	}
+
+	err := db.WithLock(ctx, "sync", func(context.Context) error {
+		if ran("sync") {
+			t.Error("ran while the same lock was held")
+		}
+		if !ran("scan") {
+			t.Error("did not run while another lock was held")
 		}
 		return nil
 	})
-	if err != nil || !ran {
-		t.Fatalf("WithLock = %t, %v, want true, nil", ran, err)
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	ran, err = db.WithLock(ctx, "gc", func(context.Context) error { return nil })
-	if err != nil || !ran {
-		t.Errorf("WithLock after release = %t, %v, want true, nil", ran, err)
+	if !ran("sync") {
+		t.Error("did not run after the lock was released")
 	}
 }
 
@@ -54,8 +49,7 @@ func TestWithLockSinglePoolConnection(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	ran, err := db.WithLock(ctx, "gc", func(ctx context.Context) error { return db.Ping(ctx) })
-	if err != nil || !ran {
-		t.Errorf("WithLock using the pool = %t, %v, want true, nil", ran, err)
+	if err := db.WithLock(ctx, "sync", db.Ping); err != nil {
+		t.Errorf("WithLock using the pool: %v", err)
 	}
 }

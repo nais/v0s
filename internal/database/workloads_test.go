@@ -3,10 +3,10 @@ package database_test
 import (
 	"context"
 	"slices"
-	"sync"
 	"testing"
 
 	"github.com/nais/v0s"
+	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/database/databasetest"
 )
 
@@ -77,32 +77,35 @@ func TestSyncWorkloadImages(t *testing.T) {
 	}
 }
 
-func TestSyncWorkloadImagesConcurrently(t *testing.T) {
+// A workload whose image could not be resolved is stored and listed without an image, so that
+// it is visible as a coverage gap rather than missing.
+func TestUnresolvedWorkload(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
-	// Slow down inserts so that both syncs are in flight at the same time.
-	exec(t, db, `
-		CREATE FUNCTION slow() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_sleep(0.5); RETURN NULL; END $$;
-		CREATE TRIGGER slow BEFORE INSERT ON workloads FOR EACH STATEMENT EXECUTE FUNCTION slow();`)
 
-	var (
-		wg   sync.WaitGroup
-		errs [2]error
-	)
-	for i, name := range []string{"img-x", "img-y"} {
-		wg.Go(func() {
-			errs[i] = db.SyncWorkloadImages(ctx, "c1", []v0s.WorkloadImage{workloadImage("c1", name, name)})
-		})
+	resolved := workloadImage("dev", "a", "img-a")
+	unresolved := v0s.WorkloadImage{
+		Environment: "dev", Team: "team", Workload: "b",
+		Reference: "registry/img-b:latest", ResolveError: "tag not found",
 	}
-	wg.Wait()
-	for _, err := range errs {
-		if err != nil {
-			t.Fatal(err)
-		}
+	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{resolved, unresolved}); err != nil {
+		t.Fatal(err)
 	}
 
-	got := queryStrings(t, db, `SELECT w.name FROM workloads w ORDER BY 1`)
-	if len(got) != 1 {
-		t.Errorf("workload images = %q, want one of the two snapshots", got)
+	got, _, err := db.ListWorkloads(ctx, database.WorkloadFilter{}, database.Page{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListWorkloads = %+v, want two workloads", got)
+	}
+	if a := got[0]; a.Image == nil || a.Image.Name != "img-a" || a.ImageReference != resolved.Reference || a.ResolveError != "" {
+		t.Errorf("resolved workload = %+v, want image img-a and reference %q", a, resolved.Reference)
+	}
+	if b := got[1]; b.Image != nil || b.ImageReference != unresolved.Reference || b.ResolveError != unresolved.ResolveError {
+		t.Errorf("unresolved workload = %+v, want no image, reference %q and error %q", b, unresolved.Reference, unresolved.ResolveError)
+	}
+	if images := queryStrings(t, db, `SELECT name FROM images`); !slices.Equal(images, []string{"img-a"}) {
+		t.Errorf("images = %q, want only img-a", images)
 	}
 }

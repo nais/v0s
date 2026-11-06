@@ -7,16 +7,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
-	"google.golang.org/grpc/status"
 
 	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/database/databasetest"
@@ -37,7 +36,7 @@ func TestProbeHandlerServesMetrics(t *testing.T) {
 	db := databasetest.New(t)
 	reg := prometheus.NewRegistry()
 	reconcile.NewMetrics(reg, db, fakeScanner{})
-	srv := httptest.NewServer(newProbeHandler(db, reg, slog.New(slog.NewTextHandler(io.Discard, nil))))
+	srv := httptest.NewServer(newProbeHandler(db, reg, slog.New(slog.DiscardHandler)))
 	defer srv.Close()
 
 	resp, err := http.Get(srv.URL + "/metrics")
@@ -57,9 +56,9 @@ func TestProbeHandlerServesMetrics(t *testing.T) {
 	}
 }
 
-func TestReflectionRequiresAuthentication(t *testing.T) {
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	srv := newGRPCServer(nil, prometheus.NewRegistry(), "v0s", []string{"console@nais-io"}, log)
+func TestReflectionListsServices(t *testing.T) {
+	log := slog.New(slog.DiscardHandler)
+	srv := newGRPCServer(nil, prometheus.NewRegistry(), log)
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -81,8 +80,18 @@ func TestReflectionRequiresAuthentication(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := stream.Recv(); status.Code(err) != codes.Unauthenticated {
-		t.Errorf("reflection without a token: %v, want Unauthenticated", err)
+	resp, err := stream.Recv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, s := range resp.GetListServicesResponse().GetService() {
+		got = append(got, s.GetName())
+	}
+	for _, want := range []string{"v0s.v1.VulnerabilityService", "v0s.v1.SuppressionService"} {
+		if !slices.Contains(got, want) {
+			t.Errorf("services = %q, want %s among them", got, want)
+		}
 	}
 }
 

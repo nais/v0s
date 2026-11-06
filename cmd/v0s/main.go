@@ -27,7 +27,6 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/nais/v0s/internal/attest"
-	"github.com/nais/v0s/internal/auth"
 	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/grpcapi"
 	"github.com/nais/v0s/internal/naisapi"
@@ -37,36 +36,30 @@ import (
 )
 
 type config struct {
-	listenAddr      string
-	probeAddr       string
-	databaseURL     string
-	naisAPIAddress  string
-	githubOrgs      []string
-	authAudience    string
-	serviceAccounts []string
-	trivyDBDir      string
-	trivyDBRepos    []string
+	listenAddr     string
+	probeAddr      string
+	databaseURL    string
+	naisAPIAddress string
+	githubOrgs     []string
+	trivyDBDir     string
+	trivyDBRepos   []string
 }
 
 func loadConfig() (config, error) {
 	c := config{
-		listenAddr:      env("LISTEN_ADDR", ":50051"),
-		probeAddr:       env("PROBE_ADDR", ":8080"),
-		databaseURL:     env("DATABASE_URL", ""),
-		naisAPIAddress:  env("NAIS_API_GRPC_ADDRESS", ""),
-		githubOrgs:      list(env("GITHUB_ORGANIZATIONS", "")),
-		authAudience:    env("AUTH_AUDIENCE", ""),
-		serviceAccounts: list(env("AUTHORIZED_SERVICE_ACCOUNTS", "")),
-		trivyDBDir:      env("TRIVY_DB_DIR", "/var/cache/v0s/trivy-db"),
-		trivyDBRepos:    list(env("TRIVY_DB_REPOSITORIES", "mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2")),
+		listenAddr:     env("LISTEN_ADDR", ":50051"),
+		probeAddr:      env("PROBE_ADDR", ":8080"),
+		databaseURL:    env("DATABASE_URL", ""),
+		naisAPIAddress: env("NAIS_API_GRPC_ADDRESS", ""),
+		githubOrgs:     list(env("GITHUB_ORGANIZATIONS", "")),
+		trivyDBDir:     env("TRIVY_DB_DIR", "/var/cache/v0s/trivy-db"),
+		trivyDBRepos:   list(env("TRIVY_DB_REPOSITORIES", "mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2")),
 	}
 	var missing []string
 	for name, v := range map[string]bool{
-		"DATABASE_URL":                c.databaseURL != "",
-		"NAIS_API_GRPC_ADDRESS":       c.naisAPIAddress != "",
-		"GITHUB_ORGANIZATIONS":        len(c.githubOrgs) > 0,
-		"AUTH_AUDIENCE":               c.authAudience != "",
-		"AUTHORIZED_SERVICE_ACCOUNTS": len(c.serviceAccounts) > 0,
+		"DATABASE_URL":          c.databaseURL != "",
+		"NAIS_API_GRPC_ADDRESS": c.naisAPIAddress != "",
+		"GITHUB_ORGANIZATIONS":  len(c.githubOrgs) > 0,
 	} {
 		if !v {
 			missing = append(missing, name)
@@ -99,7 +92,7 @@ func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(log)
 	if err := run(log); err != nil {
-		log.Error("exiting", "error", err)
+		log.With("err", err).Error("exiting")
 		os.Exit(1)
 	}
 }
@@ -144,7 +137,7 @@ func run(log *slog.Logger) error {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
-	srv := newGRPCServer(db, reg, cfg.authAudience, cfg.serviceAccounts, log)
+	srv := newGRPCServer(db, reg, log)
 	probes := &http.Server{Addr: cfg.probeAddr, Handler: newProbeHandler(db, reg, log), ReadHeaderTimeout: 5 * time.Second}
 
 	r := &reconcile.Reconciler{
@@ -161,7 +154,7 @@ func run(log *slog.Logger) error {
 	go func() { r.Run(ctx); errc <- nil }()
 	go func() { errc <- srv.Serve(lis) }()
 	go func() { errc <- probes.ListenAndServe() }()
-	log.Info("started", "addr", cfg.listenAddr)
+	log.With("addr", cfg.listenAddr).Info("started")
 
 	// Stop on a signal or when any part exits, then wait for the rest.
 	pending := 3
@@ -183,9 +176,9 @@ func run(log *slog.Logger) error {
 	return err
 }
 
-// newGRPCServer returns the authenticated API server, with reflection, recording request durations
-// in reg.
-func newGRPCServer(db *database.DB, reg prometheus.Registerer, audience string, serviceAccounts []string, log *slog.Logger) *grpc.Server {
+// newGRPCServer returns the API server, with reflection, recording request durations in reg. It
+// has no authentication: NetworkPolicy limits who reaches it.
+func newGRPCServer(db *database.DB, reg prometheus.Registerer, log *slog.Logger) *grpc.Server {
 	duration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "v0s_grpc_request_duration_seconds",
 		Help:    "Duration of unary gRPC requests by method and status code.",
@@ -193,12 +186,9 @@ func newGRPCServer(db *database.DB, reg prometheus.Registerer, audience string, 
 	}, []string{"method", "code"})
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
-			durationInterceptor(duration), // first, so that rejected requests are measured too
+			durationInterceptor(duration),
 			grpcapi.RecoveryInterceptor(log),
-			auth.UnaryInterceptor(audience, serviceAccounts, log),
 		),
-		// Reflection is a streaming RPC: this keeps it behind the same authentication as the API.
-		grpc.StreamInterceptor(auth.StreamInterceptor(audience, serviceAccounts, log)),
 	)
 	grpcapi.New(db, log).Register(srv)
 	reflection.Register(srv)
@@ -215,8 +205,7 @@ func durationInterceptor(h *prometheus.HistogramVec) grpc.UnaryServerInterceptor
 	}
 }
 
-// newProbeHandler serves the probes and the metrics in reg. They are plain HTTP, outside the
-// authenticated gRPC server.
+// newProbeHandler serves the probes and the metrics in reg, over plain HTTP.
 func newProbeHandler(db *database.DB, reg *prometheus.Registry, log *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {

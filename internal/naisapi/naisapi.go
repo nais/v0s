@@ -23,9 +23,6 @@ const (
 	listTimeout = time.Minute
 	// resolveTimeout bounds one registry lookup, so that a hanging registry cannot stall the sync.
 	resolveTimeout = 30 * time.Second
-	// resolveTTL is how long a tag's digest is reused before the registry is asked again, so
-	// that a moved tag is noticed.
-	resolveTTL = time.Hour
 	// resolveConcurrency bounds concurrent registry requests.
 	resolveConcurrency = 8
 )
@@ -35,36 +32,22 @@ type Resolver interface {
 	Digest(ctx context.Context, ref name.Tag) (string, error)
 }
 
-// Inventory reads workload images from Nais API. It caches resolved tags; it is safe for
-// concurrent use.
+// Inventory reads workload images from Nais API. It resolves each tag once, and is not safe
+// for concurrent use.
 type Inventory struct {
 	client   protoapi.WorkloadsClient
 	resolver Resolver
 	log      *slog.Logger
-	now      func() time.Time
-
-	mu   sync.Mutex
-	tags map[string]resolved // by normalized tag reference
-}
-
-type resolved struct {
-	digest string
-	at     time.Time
+	digests  map[string]string // by normalized tag reference
 }
 
 // New returns an Inventory that lists workloads through client.
 func New(client protoapi.WorkloadsClient, resolver Resolver, log *slog.Logger) *Inventory {
-	return &Inventory{
-		client:   client,
-		resolver: resolver,
-		log:      log,
-		now:      time.Now,
-		tags:     map[string]resolved{},
-	}
+	return &Inventory{client: client, resolver: resolver, log: log, digests: map[string]string{}}
 }
 
 // Snapshot returns the complete set of workload images in each environment Nais API has
-// synced. A workload whose image tag cannot be resolved, and has never been, is left out.
+// synced. A workload whose image cannot be resolved to a digest is included with the reason.
 func (inv *Inventory) Snapshot(ctx context.Context) (map[string][]v0s.WorkloadImage, error) {
 	listCtx, cancel := context.WithTimeout(ctx, listTimeout)
 	resp, err := inv.client.ListImages(listCtx, &protoapi.ListWorkloadImagesRequest{})
@@ -88,37 +71,32 @@ func (inv *Inventory) Snapshot(ctx context.Context) (map[string][]v0s.WorkloadIm
 			}
 		}
 	}
-	digests := inv.resolve(ctx, tags)
+	digests, errs := inv.resolve(ctx, tags)
 
 	out := make(map[string][]v0s.WorkloadImage, len(envs))
 	for _, env := range envs {
-		if env.GetEnvironment() == "" {
-			return nil, errors.New("listing workload images in Nais API: environment without a name")
-		}
-		if _, dup := out[env.GetEnvironment()]; dup {
-			return nil, fmt.Errorf("listing workload images in Nais API: environment %q twice", env.GetEnvironment())
-		}
 		images := []v0s.WorkloadImage{}
 		for _, w := range env.GetWorkloads() {
-			wlog := inv.log.With("environment", env.GetEnvironment(), "team", w.GetTeamSlug(), "workload", w.GetName())
-			ref, err := parseImage(w.GetImage())
-			if err != nil {
-				wlog.With("err", err).Warn("skipping workload with unparsable image")
-				continue
-			}
-			digest := ref.Identifier()
-			if tag, ok := ref.(name.Tag); ok {
-				if digest, ok = digests[tag.Name()]; !ok {
-					continue // resolve logged it
-				}
-			}
-			images = append(images, v0s.WorkloadImage{
+			wi := v0s.WorkloadImage{
 				Environment: env.GetEnvironment(),
 				Team:        w.GetTeamSlug(),
 				Workload:    w.GetName(),
-				ImageName:   repository(ref.Context()),
-				Digest:      digest,
-			})
+				Reference:   w.GetImage(),
+			}
+			ref, err := parseImage(w.GetImage())
+			switch {
+			case err != nil:
+				wi.ResolveError = err.Error()
+			case errs[ref.Name()] != nil:
+				wi.ResolveError = errs[ref.Name()].Error()
+			default:
+				wi.ImageName = repository(ref.Context())
+				wi.Digest = ref.Identifier()
+				if _, ok := ref.(name.Tag); ok {
+					wi.Digest = digests[ref.Name()]
+				}
+			}
+			images = append(images, wi)
 		}
 		out[env.GetEnvironment()] = images
 	}
@@ -141,26 +119,21 @@ func repository(r name.Repository) string {
 	return r.Name()
 }
 
-// resolve returns the digest of every tag it can. A tag resolved within resolveTTL is not
-// looked up again; a failed lookup falls back to the last known digest. Tags not in tags are
-// forgotten.
-func (inv *Inventory) resolve(ctx context.Context, tags []name.Tag) map[string]string {
-	now := inv.now()
-	inv.mu.Lock()
-	cached := inv.tags
-	inv.mu.Unlock()
-
+// resolve returns the digest of every tag it can, and the error of every tag it cannot. A tag
+// is looked up in the registry once and its digest kept while the tag is in use, so a tag moved
+// in the registry is not noticed. A failed lookup is retried on the next call.
+func (inv *Inventory) resolve(ctx context.Context, tags []name.Tag) (map[string]string, map[string]error) {
 	var (
 		mu      sync.Mutex
-		next    = make(map[string]resolved, len(tags))
 		digests = make(map[string]string, len(tags))
+		errs    = map[string]error{}
 		wg      sync.WaitGroup
 		sem     = make(chan struct{}, resolveConcurrency)
 	)
 	for _, tag := range tags {
 		key := tag.Name() // normalized: redis:7 and docker.io/library/redis:7 are one tag
-		if c, ok := cached[key]; ok && now.Sub(c.at) < resolveTTL {
-			next[key], digests[key] = c, c.digest
+		if digest, ok := inv.digests[key]; ok {
+			digests[key] = digest
 			continue
 		}
 		wg.Go(func() {
@@ -171,23 +144,17 @@ func (inv *Inventory) resolve(ctx context.Context, tags []name.Tag) map[string]s
 			cancel()
 			mu.Lock()
 			defer mu.Unlock()
-			switch c, ok := cached[key]; {
-			case err == nil:
-				next[key], digests[key] = resolved{digest: digest, at: now}, digest
-			case ok:
-				inv.log.With("image", key, "err", err).Warn("resolving image tag; using last known digest")
-				next[key], digests[key] = c, c.digest
-			default:
-				inv.log.With("image", key, "err", err).Warn("resolving image tag; skipping its workloads")
+			if err != nil {
+				inv.log.With("image", key, "err", err).Warn("resolving image tag")
+				errs[key] = fmt.Errorf("resolving %s: %w", key, err)
+				return
 			}
+			digests[key] = digest
 		})
 	}
 	wg.Wait()
-
-	inv.mu.Lock()
-	inv.tags = next
-	inv.mu.Unlock()
-	return digests
+	inv.digests = digests
+	return digests, errs
 }
 
 // RegistryResolver resolves tags with a HEAD request to the registry.

@@ -1,7 +1,8 @@
 // Package reconcile runs the loops that move images from observed to scanned.
 //
 // Every loop is level-triggered: it reads what needs doing from Postgres, does it,
-// and sleeps. Replicas share the work through leased claims, so any number may run.
+// and sleeps. Loops that write take a cluster-wide lock, so with several replicas
+// one does the work and the others only serve the API.
 package reconcile
 
 import (
@@ -24,18 +25,15 @@ import (
 )
 
 const (
-	syncInterval    = time.Minute
-	fetchInterval   = 10 * time.Second
-	scanInterval    = 10 * time.Second
-	dbInterval      = time.Hour
-	enrichInterval  = 24 * time.Hour
-	gcInterval      = time.Hour
-	fetchBatch      = 16
-	lease           = 5 * time.Minute
-	retryMissing    = 6 * time.Hour
-	retryFailed     = 30 * time.Minute
-	unusedRetention = 7 * 24 * time.Hour
-	retryLoop       = 5 * time.Minute
+	syncInterval   = time.Minute
+	fetchInterval  = 10 * time.Second
+	scanInterval   = 10 * time.Second
+	dbInterval     = time.Hour
+	enrichInterval = 24 * time.Hour
+	fetchBatch     = 16
+	retryMissing   = 6 * time.Hour
+	retryFailed    = 30 * time.Minute
+	retryLoop      = 5 * time.Minute
 )
 
 // Inventory reports the workload images in each environment.
@@ -80,7 +78,6 @@ func (r *Reconciler) Run(ctx context.Context) {
 		{"scan", scanInterval, r.scan},
 		{"vulndb", dbInterval, r.updateDB},
 		{"enrich", enrichInterval, r.enrich},
-		{"gc", gcInterval, r.gc},
 	}
 	var wg sync.WaitGroup
 	for _, l := range loops {
@@ -95,7 +92,7 @@ func every(ctx context.Context, interval time.Duration, log *slog.Logger, fn fun
 	for {
 		wait := interval
 		if err := fn(ctx); err != nil && ctx.Err() == nil {
-			log.Error("loop failed", "error", err)
+			log.With("err", err).Error("loop failed")
 			wait = min(interval, retryLoop)
 		}
 		select {
@@ -106,43 +103,58 @@ func every(ctx context.Context, interval time.Duration, log *slog.Logger, fn fun
 	}
 }
 
-// sync writes each environment's snapshot. Environments missing from the snapshot keep their
-// stored workloads, as do all environments if the snapshot fails.
+// sync writes each environment's snapshot, then deletes the images no workload uses. Environments
+// missing from the snapshot keep their stored workloads, as do all environments if the snapshot
+// fails.
 func (r *Reconciler) sync(ctx context.Context) error {
-	envs, err := r.Inventory.Snapshot(ctx)
-	if err != nil {
-		return fmt.Errorf("reading workloads: %w", err)
-	}
-	var errs []error
-	for _, env := range slices.Sorted(maps.Keys(envs)) {
-		if err := r.DB.SyncWorkloadImages(ctx, env, envs[env]); err != nil {
-			errs = append(errs, err)
+	return r.DB.WithLock(ctx, "sync", func(ctx context.Context) error {
+		envs, err := r.Inventory.Snapshot(ctx)
+		if err != nil {
+			return fmt.Errorf("reading workloads: %w", err)
 		}
-	}
-	return errors.Join(errs...)
+		var errs []error
+		for _, env := range slices.Sorted(maps.Keys(envs)) {
+			if err := r.DB.SyncWorkloadImages(ctx, env, envs[env]); err != nil {
+				errs = append(errs, err)
+			}
+		}
+		n, err := r.DB.DeleteUnusedImages(ctx)
+		if n > 0 {
+			r.Log.With("count", n).Info("deleted unused images")
+		}
+		return errors.Join(append(errs, err)...)
+	})
 }
 
 // fetch drains due SBOM fetches, fetching each batch concurrently.
 func (r *Reconciler) fetch(ctx context.Context) error {
-	for ctx.Err() == nil {
-		images, err := r.DB.ClaimSBOMFetches(ctx, fetchBatch, lease)
-		if err != nil || len(images) == 0 {
-			return err
+	return r.DB.WithLock(ctx, "fetch", func(ctx context.Context) error {
+		for ctx.Err() == nil {
+			images, err := r.DB.DueSBOMFetches(ctx, fetchBatch)
+			if err != nil || len(images) == 0 {
+				return err
+			}
+			errs := make([]error, len(images))
+			var wg sync.WaitGroup
+			for i, img := range images {
+				wg.Go(func() { errs[i] = r.fetchOne(ctx, img) })
+			}
+			wg.Wait()
+			// An unrecorded fetch would be due again at once.
+			if err := errors.Join(errs...); err != nil {
+				return err
+			}
 		}
-		var wg sync.WaitGroup
-		for _, img := range images {
-			wg.Go(func() { r.fetchOne(ctx, img) })
-		}
-		wg.Wait()
-	}
-	return nil
+		return nil
+	})
 }
 
-func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image) {
-	log := r.Log.With("image", img.Ref())
+// fetchOne fetches the image's SBOM and records the outcome. It returns an error only if the
+// outcome could not be recorded.
+func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image) error {
 	doc, err := r.Fetcher.Fetch(ctx, img.Ref())
 	if ctx.Err() != nil {
-		return // the lease expires and another attempt follows
+		return nil // the image stays due
 	}
 	switch {
 	case errors.Is(err, attest.ErrNotFound):
@@ -150,40 +162,45 @@ func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image) {
 		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMMissing, err.Error(), time.Now().Add(retryMissing))
 	case err != nil:
 		r.Metrics.fetches.WithLabelValues("error").Inc()
-		log.Warn("fetching SBOM", "error", err)
+		r.Log.With("image", img.Ref(), "err", err).Warn("fetching SBOM")
 		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMFailed, err.Error(), time.Now().Add(retryFailed))
 	default:
 		r.Metrics.fetches.WithLabelValues("found").Inc()
 		err = r.DB.StoreSBOM(ctx, img.ID, doc)
 	}
 	if err != nil {
-		log.Error("recording SBOM fetch", "error", err)
+		return fmt.Errorf("recording SBOM fetch of %s: %w", img.Ref(), err)
 	}
+	return nil
 }
 
-// scan drains images not yet scanned with the loaded DB.
+// scan drains images not yet scanned with the loaded DB, one at a time.
 func (r *Reconciler) scan(ctx context.Context) error {
 	version := r.Scanner.DBVersion()
 	if version.IsZero() {
 		return nil
 	}
-	// One claim at a time, so that no claimed job waits behind others while its lease runs out.
-	for ctx.Err() == nil {
-		job, ok, err := r.DB.ClaimScan(ctx, version, lease)
-		if err != nil || !ok {
-			return err
+	return r.DB.WithLock(ctx, "scan", func(ctx context.Context) error {
+		for ctx.Err() == nil {
+			job, ok, err := r.DB.NextScan(ctx, version)
+			if err != nil || !ok {
+				return err
+			}
+			if err := r.scanOne(ctx, job); err != nil {
+				return err
+			}
 		}
-		r.scanOne(ctx, job)
-	}
-	return nil
+		return nil
+	})
 }
 
-func (r *Reconciler) scanOne(ctx context.Context, j database.ScanJob) {
-	log := r.Log.With("image", j.Image.Ref())
+// scanOne scans the job's SBOM and records the outcome. It returns an error if no outcome was
+// recorded, since NextScan would hand out the same image again at once.
+func (r *Reconciler) scanOne(ctx context.Context, j database.ScanJob) error {
 	start := time.Now()
 	res, version, err := r.Scanner.Scan(ctx, j.SBOM)
 	if ctx.Err() != nil {
-		return
+		return nil
 	}
 	r.Metrics.scanDuration.Observe(time.Since(start).Seconds())
 	result := "ok"
@@ -191,12 +208,12 @@ func (r *Reconciler) scanOne(ctx context.Context, j database.ScanJob) {
 		result = "error"
 	}
 	r.Metrics.scans.WithLabelValues(result).Inc()
+	log := r.Log.With("image", j.Image.Ref(), "db_version", version)
 	switch {
 	case err != nil && version.IsZero():
-		log.Warn("scanning without a vulnerability DB", "error", err)
-		return // the lease expires and another attempt follows
+		return fmt.Errorf("scanning %s without a vulnerability DB: %w", j.Image.Ref(), err)
 	case err != nil:
-		log.Warn("scanning", "error", err, "db_version", version)
+		log.With("err", err).Warn("scanning")
 		err = r.DB.RecordScanFailure(ctx, j.Image.ID, version, err.Error())
 	default:
 		err = r.DB.StoreScan(ctx, j.Image.ID, version, res)
@@ -204,13 +221,14 @@ func (r *Reconciler) scanOne(ctx context.Context, j database.ScanJob) {
 		if errors.As(err, &pgErr) && (strings.HasPrefix(pgErr.Code, "22") || strings.HasPrefix(pgErr.Code, "23")) {
 			// The result itself is rejected (data exception or constraint violation), so
 			// retrying with the same DB cannot help.
-			log.Warn("storing scan", "error", err, "db_version", version)
+			log.With("err", err).Warn("storing scan")
 			err = r.DB.RecordScanFailure(ctx, j.Image.ID, version, err.Error())
 		}
 	}
 	if err != nil {
-		log.Error("recording scan", "error", err)
+		return fmt.Errorf("recording scan of %s: %w", j.Image.Ref(), err)
 	}
+	return nil
 }
 
 func (r *Reconciler) updateDB(ctx context.Context) error {
@@ -220,16 +238,15 @@ func (r *Reconciler) updateDB(ctx context.Context) error {
 		r.Metrics.dbUpdates.WithLabelValues("error").Inc()
 	case updated:
 		r.Metrics.dbUpdates.WithLabelValues("updated").Inc()
-		r.Log.Info("vulnerability DB updated", "version", r.Scanner.DBVersion())
 	default:
 		r.Metrics.dbUpdates.WithLabelValues("unchanged").Inc()
 	}
 	return err
 }
 
-// enrich replaces the EPSS and KEV tables. One replica does it at a time.
+// enrich replaces the EPSS and KEV tables.
 func (r *Reconciler) enrich(ctx context.Context) error {
-	_, err := r.DB.WithLock(ctx, "enrich", func(ctx context.Context) error {
+	return r.DB.WithLock(ctx, "enrich", func(ctx context.Context) error {
 		epss, err := enrich.FetchEPSS(ctx, r.HTTP, enrich.DefaultEPSSURL)
 		if err != nil {
 			return err
@@ -248,16 +265,4 @@ func (r *Reconciler) enrich(ctx context.Context) error {
 		r.Metrics.enrichmentSuccess.WithLabelValues("kev").SetToCurrentTime()
 		return nil
 	})
-	return err
-}
-
-func (r *Reconciler) gc(ctx context.Context) error {
-	_, err := r.DB.WithLock(ctx, "gc", func(ctx context.Context) error {
-		n, err := r.DB.DeleteUnusedImages(ctx, unusedRetention)
-		if n > 0 {
-			r.Log.Info("deleted unused images", "count", n)
-		}
-		return err
-	})
-	return err
 }

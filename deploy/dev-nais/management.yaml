@@ -65,10 +65,6 @@ spec:
               value: nais-api:3001
             - name: GITHUB_ORGANIZATIONS
               value: nais,navikt
-            - name: AUTH_AUDIENCE
-              value: v0s
-            - name: AUTHORIZED_SERVICE_ACCOUNTS
-              value: v13s-sa@nais-management-7178.iam.gserviceaccount.com
             - name: TRIVY_DB_REPOSITORIES
               value: europe-north1-docker.pkg.dev/nais-io/github-ptc/aquasecurity/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
             # Sigstore caches its TUF trust root under $HOME/.sigstore.
@@ -134,7 +130,8 @@ spec:
       targetPort: http
 ---
 # nais-system denies egress by default; default-allow-apiserver-and-dns covers DNS
-# and the management cluster's own API server.
+# and the management cluster's own API server. The API has no authentication, so
+# ingress is limited to nais-system, as for nais-api.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -144,7 +141,12 @@ spec:
   podSelector:
     matchLabels:
       app: v0s
-  policyTypes: [Egress]
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: nais-system
   egress:
     - to:
         - podSelector:

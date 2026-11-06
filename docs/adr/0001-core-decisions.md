@@ -16,19 +16,25 @@ takes a write lock, and scans hold a read lock.
 
 ## Level-triggered loops, no job queue
 
-Each loop reads the desired state from Postgres, claims work with
-`FOR UPDATE SKIP LOCKED`, and writes the result back. There is no River and no
-separate queue:
+Each loop reads the desired state from Postgres, does the work, and writes the
+result back. There is no River and no separate queue. Each loop that writes runs
+behind a cluster-wide advisory lock, so with several replicas one does the work
+and the others only serve the API. Scans take milliseconds, so one worker keeps
+up, and without parallel workers there are no leases to expire and no scan
+running twice:
 
 - fetch: images whose SBOM is not yet fetched, or due for a retry
 - scan: images in use whose `scanned_db_version` differs from the loaded DB, unless a scan with that DB already failed
-- enrich: EPSS and KEV once a day, behind an advisory lock
-- vulndb: check the registry for a newer DB every hour
-- sync: every minute, the workloads from Nais API replace `workloads`, per environment. A
-  workload listed twice with different images fails that environment's sync, which keeps
-  the previous snapshot rather than picking one image
+- enrich: EPSS and KEV once a day
+- vulndb: check the registry for a newer DB every hour, on every replica, since each holds its own copy
+- sync: every minute, the workloads from Nais API replace `workloads`, per environment, and the
+  images no workload uses any more are deleted with their SBOMs and findings. A workload
+  listed twice with different images fails that environment's sync, which keeps the
+  previous snapshot rather than picking one image
 
-A crash loses nothing. On restart, the loops see the same desired state.
+A crash loses nothing. On restart, the loops see the same desired state. A scan
+that kills the process is retried, and given up for that DB version after three
+attempts.
 
 ## Workloads from Nais API, not from the clusters
 
@@ -54,11 +60,17 @@ follows it: the platform's own workloads get their own tooling rather than
 sharing a team-facing service.
 
 About three quarters of nav's workloads carry a digest from deploy. For the rest
-v0s resolves the tag with a registry `HEAD` and reuses the digest for an hour,
-or longer while the registry fails. A workload whose tag has never been resolved
-is left out until it is. Nais API lists only environments whose caches are
-synced, and v0s skips a sync on any error, so a partial answer is never taken
-for an empty tenant.
+v0s resolves the tag with a registry `HEAD` once, and keeps the digest while the
+tag is in use. A workload whose image cannot be resolved (or parsed) is stored
+without an image and with the reason, and the lookup is retried on the next sync.
+Nais API lists only environments whose caches are synced, and v0s skips a sync
+on any error, so a partial answer is never taken for an empty tenant.
+
+Tags moved in the registry are not handled. Pushing a new image to an existing
+tag (`latest`, say) does not change the workload in Nais API, and v0s keeps the
+digest it resolved first, until it restarts. The cache is per process, so with
+more than one replica a moved tag can make the workload's digest alternate
+between replicas. Teams that want current results deploy a new tag or a digest.
 
 ## Suppressions are owned here, per team, keyed on package key
 
@@ -69,27 +81,39 @@ name can be shared by several teams, and one team's assessment must not change
 what another team sees. The caller then only has to authorize the actor for one
 team, which is how Nais API authorizes everything else.
 
-The cost is that whether a finding is suppressed depends on whose view it is:
-per workload it is the workload team's decision, and once per finding it takes
-every team using the image within the request. For one team, the usual request,
-the two agree.
+A finding belongs to one workload, so whether it is suppressed is that
+workload's team's decision, with no special case for images shared by teams.
 
-Rows are append-only. Changing an assessment means revoking the old row and
-inserting a new one. A partial unique index allows at most one unrevoked row per
-key. Expiry is evaluated at read time, and creating a suppression revokes an
-expired predecessor in the same transaction.
+Only the current assessment is kept: setting one replaces the previous one, and
+deleting it removes it. Nais API already logs who changed what, so v0s keeps no
+history of its own. An assessment has a state and a reason in the team's words;
+the VEX justification vocabulary is left out until something consumes it.
+There is no expiry: v13s has none and no one has asked for it, and without it
+whether a finding is suppressed does not depend on the time it is read.
 
 ## Facts only
 
-There is no priority, risk score or top list. EPSS and KEV are fields on the
-finding. Counts are plain `GROUP BY` facets.
+Nais does not judge severity or priority, neither here nor downstream. There is
+no priority tier, risk score or top list. Severity is the advisory source's, with
+the source named; EPSS and KEV are fields on the finding. Counts are plain
+`GROUP BY` facets.
 
-## Everyone in the tenant can read everything
+## Current state, no history
+
+v0s serves the findings as they are now. There are no trend graphs or
+time-to-fix metrics to feed, so there are no finding events, summary snapshots
+or first-seen times, and images are deleted as soon as no workload uses them.
+
+## Everyone in the tenant can read everything; no authentication
 
 Any user may see any team's findings, so a CVE can be traced to every team that
 has it. v0s has no per-user read access: its callers are trusted services, and
 team filters narrow a query, they do not restrict it. Only writes are scoped:
 a caller must authorize the actor for the team a suppression belongs to.
+
+The API has no authentication, like Nais API's internal gRPC API: NetworkPolicy
+lets only `nais-system` reach it. The cost is that anything running there can
+set or delete suppressions in any team's name.
 
 ## Postgres-backed integration tests without Docker
 

@@ -47,10 +47,6 @@ func (s *Server) toStatus(ctx context.Context, err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, database.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
-	case errors.Is(err, database.ErrAlreadyRevoked):
-		return status.Error(codes.FailedPrecondition, err.Error())
-	case errors.Is(err, database.ErrConflict):
-		return status.Error(codes.Aborted, err.Error())
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, "request canceled")
 	case errors.Is(err, context.DeadlineExceeded):
@@ -92,7 +88,11 @@ func (s *Server) ListWorkloads(ctx context.Context, req *v0sv1.ListWorkloadsRequ
 	}
 	resp := &v0sv1.ListWorkloadsResponse{Workloads: make([]*v0sv1.Workload, 0, len(workloads)), NextPageToken: next}
 	for _, w := range workloads {
-		resp.Workloads = append(resp.Workloads, &v0sv1.Workload{Environment: w.Environment, Team: w.Team, Name: w.Name, Image: imageToProto(w.Image)})
+		pw := &v0sv1.Workload{Environment: w.Environment, Team: w.Team, Name: w.Name, ImageReference: w.ImageReference, ResolveError: w.ResolveError}
+		if w.Image != nil {
+			pw.Image = imageToProto(*w.Image)
+		}
+		resp.Workloads = append(resp.Workloads, pw)
 	}
 	return resp, nil
 }
@@ -110,6 +110,7 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 	resp := &v0sv1.ListFindingsResponse{Findings: make([]*v0sv1.Finding, 0, len(findings)), NextPageToken: next}
 	for _, f := range findings {
 		pf := &v0sv1.Finding{
+			Workload:         &v0sv1.WorkloadRef{Environment: f.Workload.Environment, Team: f.Workload.Team, Name: f.Workload.Name},
 			Image:            imageToProto(f.Image),
 			VulnerabilityId:  f.Finding.VulnerabilityID,
 			Purl:             f.Finding.PURL,
@@ -124,12 +125,9 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 			CvssScore:        f.CVSSScore,
 			Epss:             epssToProto(f.EPSS),
 			Kev:              kevToProto(f.KEV),
-			FirstSeenAt:      timestamp(f.FirstSeenAt),
-			Suppressed:       f.Suppressed,
-			Workloads:        workloadRefsToProto(f.Workloads),
 		}
-		for _, sup := range f.Suppressions {
-			pf.Suppressions = append(pf.Suppressions, suppressionToProto(sup))
+		if f.Suppression != nil {
+			pf.Suppression = suppressionToProto(*f.Suppression)
 		}
 		resp.Findings = append(resp.Findings, pf)
 	}
@@ -229,36 +227,6 @@ func workloadRefsToProto(ws []database.WorkloadRef) []*v0sv1.WorkloadRef {
 	return out
 }
 
-// ListFindingEvents implements VulnerabilityService.
-func (s *Server) ListFindingEvents(ctx context.Context, req *v0sv1.ListFindingEventsRequest) (*v0sv1.ListFindingEventsResponse, error) {
-	filter := database.FindingEventFilter{
-		ImageName:       req.GetImageName(),
-		ImageDigest:     req.GetImageDigest(),
-		VulnerabilityID: req.GetVulnerabilityId(),
-		Teams:           req.GetTeams(),
-	}
-	if req.GetSince() != nil {
-		filter.Since = req.GetSince().AsTime()
-	}
-	events, next, err := s.db.ListFindingEvents(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
-	if err != nil {
-		return nil, s.toStatus(ctx, err)
-	}
-	resp := &v0sv1.ListFindingEventsResponse{Events: make([]*v0sv1.FindingEvent, 0, len(events)), NextPageToken: next}
-	for _, e := range events {
-		resp.Events = append(resp.Events, &v0sv1.FindingEvent{
-			ImageName:       e.ImageName,
-			ImageDigest:     e.ImageDigest,
-			VulnerabilityId: e.VulnerabilityID,
-			Purl:            e.PURL,
-			Kind:            v0sv1.FindingEvent_Kind(v0sv1.FindingEvent_Kind_value["KIND_"+strings.ToUpper(e.Kind)]),
-			DbVersion:       timestamp(e.DBVersion),
-			CreatedAt:       timestamp(e.CreatedAt),
-		})
-	}
-	return resp, nil
-}
-
 func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
 	filter := database.FindingFilter{
 		Teams:           f.GetTeams(),
@@ -295,11 +263,10 @@ func imageToProto(img v0s.Image) *v0sv1.Image {
 	return &v0sv1.Image{
 		Name:             img.Name,
 		Digest:           img.Digest,
-		SbomState:        v0sv1.SBOMState(v0sv1.SBOMState_value["SBOM_STATE_"+strings.ToUpper(string(img.SBOMState))]),
-		SbomError:        img.SBOMError,
+		Status:           v0sv1.ImageStatus(v0sv1.ImageStatus_value["IMAGE_STATUS_"+strings.ToUpper(string(img.Status()))]),
+		Error:            img.Error,
 		ScannedAt:        timestamp(img.ScannedAt),
 		ScannedDbVersion: timestamp(img.ScannedDBVersion),
-		ScanError:        img.ScanError,
 	}
 }
 

@@ -20,13 +20,15 @@ is not part of the identity.
 : The one image a workload is deployed with, whether or not it runs
 right now: apps scaled to zero and jobs between runs keep their image. Taken
 from the workload's effective image in Nais API; a tag is resolved to its digest
-in the registry, and re-resolved hourly so that a moved tag is noticed.
+in the registry once. A tag moved in the registry afterwards is not noticed.
+A workload whose image cannot be resolved is kept without an image, with the
+reason, so that it shows as a coverage gap instead of disappearing.
 Platform sidecars (texas, wonderwall, Cloud SQL proxy) are not part of it.
 
 **SBOM**
 : The CycloneDX document attested to an image with cosign, signed by the
 team's GitHub Actions workflow. v0s stores the verified SBOM so that it can
-rescan without fetching it again.
+rescan without fetching it again, until no workload uses the image.
 
 **Component**
 : A package listed in an SBOM, identified by its purl. Components are stored
@@ -41,10 +43,17 @@ version is the `UpdatedAt` from the DB metadata.
 : Matching one image's SBOM against one vulnerability DB version. A scan is
 pure: the same SBOM and DB version give the same findings.
 
+**Image status**
+: How far an image has got towards findings: `pending` (SBOM not fetched or
+image not scanned yet), `scanned`, `no_sbom` (no attestation found) or `failed`
+(fetching, verifying or scanning failed). An image without findings is clean
+only if it is `scanned`.
+
 **Finding**
-: The fact that a vulnerability affects one component of one image according to
-one DB version. A finding has a severity, a severity source, a fix status, and a
-fixed version if one is known.
+: The fact that a vulnerability affects one component of a workload's image
+according to one DB version. A finding has a severity, a severity source, a fix
+status, and a fixed version if one is known. An image used by several workloads
+has its findings once per workload: that is what is listed and counted.
 
 **Vulnerability ID**
 : The ID Trivy reports for a finding, usually a CVE. Alias IDs (GHSA, distro
@@ -56,19 +65,12 @@ advisory IDs) resolve to this ID.
 version bumps.
 
 **Suppression**
-: A team's assessment that a vulnerability does not apply to a package in an
-image name, keyed by `(team, image name, package key, vulnerability ID)`. It
-applies to the team's own workloads only: another team using the same image is
-not affected. It has a VEX state, an optional justification, an author, an
-optional expiry, and can be revoked. Rows are never updated except to revoke
-them. A suppression is active when it is not revoked and has not expired.
+: A team's current assessment that a vulnerability does not matter for a package
+in an image name, keyed by `(team, image name, package key, vulnerability ID)`.
+It applies to the team's own workloads only: another team using the same image
+is not affected. It has a state (not affected, false positive or accepted risk),
+a reason in the team's words, and who last set it. Setting it again replaces
+it; deleting it removes it. v0s keeps no history of changes: Nais API logs them.
 
 **Suppressed**
-: A finding is suppressed for a workload when the workload's team has an active
-suppression of it. Where findings are listed or counted once rather than per
-workload, a finding is suppressed when every team using its image, within the
-requested teams, has suppressed it.
-
-**Finding event**
-: A recorded change in the findings for an image: `appeared` or `resolved`.
-History of human assessments lives in the suppression rows themselves.
+: A finding is suppressed when its workload's team has a suppression of it.

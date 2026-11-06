@@ -80,61 +80,63 @@ func (Severity) EnumDescriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{0}
 }
 
-type SBOMState int32
+// How far an image has got towards having findings.
+type ImageStatus int32
 
 const (
-	SBOMState_SBOM_STATE_UNSPECIFIED SBOMState = 0
-	// Not fetched yet.
-	SBOMState_SBOM_STATE_PENDING SBOMState = 1
-	SBOMState_SBOM_STATE_FETCHED SBOMState = 2
-	// No attestation found for the image.
-	SBOMState_SBOM_STATE_MISSING SBOMState = 3
-	// Fetching or verifying failed.
-	SBOMState_SBOM_STATE_FAILED SBOMState = 4
+	ImageStatus_IMAGE_STATUS_UNSPECIFIED ImageStatus = 0
+	// The SBOM is not fetched or the image not scanned yet.
+	ImageStatus_IMAGE_STATUS_PENDING ImageStatus = 1
+	// Scanned; the findings are those of scanned_db_version.
+	ImageStatus_IMAGE_STATUS_SCANNED ImageStatus = 2
+	// No attested SBOM was found for the image.
+	ImageStatus_IMAGE_STATUS_NO_SBOM ImageStatus = 3
+	// Fetching, verifying or scanning failed; see error.
+	ImageStatus_IMAGE_STATUS_FAILED ImageStatus = 4
 )
 
-// Enum value maps for SBOMState.
+// Enum value maps for ImageStatus.
 var (
-	SBOMState_name = map[int32]string{
-		0: "SBOM_STATE_UNSPECIFIED",
-		1: "SBOM_STATE_PENDING",
-		2: "SBOM_STATE_FETCHED",
-		3: "SBOM_STATE_MISSING",
-		4: "SBOM_STATE_FAILED",
+	ImageStatus_name = map[int32]string{
+		0: "IMAGE_STATUS_UNSPECIFIED",
+		1: "IMAGE_STATUS_PENDING",
+		2: "IMAGE_STATUS_SCANNED",
+		3: "IMAGE_STATUS_NO_SBOM",
+		4: "IMAGE_STATUS_FAILED",
 	}
-	SBOMState_value = map[string]int32{
-		"SBOM_STATE_UNSPECIFIED": 0,
-		"SBOM_STATE_PENDING":     1,
-		"SBOM_STATE_FETCHED":     2,
-		"SBOM_STATE_MISSING":     3,
-		"SBOM_STATE_FAILED":      4,
+	ImageStatus_value = map[string]int32{
+		"IMAGE_STATUS_UNSPECIFIED": 0,
+		"IMAGE_STATUS_PENDING":     1,
+		"IMAGE_STATUS_SCANNED":     2,
+		"IMAGE_STATUS_NO_SBOM":     3,
+		"IMAGE_STATUS_FAILED":      4,
 	}
 )
 
-func (x SBOMState) Enum() *SBOMState {
-	p := new(SBOMState)
+func (x ImageStatus) Enum() *ImageStatus {
+	p := new(ImageStatus)
 	*p = x
 	return p
 }
 
-func (x SBOMState) String() string {
+func (x ImageStatus) String() string {
 	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
 }
 
-func (SBOMState) Descriptor() protoreflect.EnumDescriptor {
+func (ImageStatus) Descriptor() protoreflect.EnumDescriptor {
 	return file_v0s_v1_v0s_proto_enumTypes[1].Descriptor()
 }
 
-func (SBOMState) Type() protoreflect.EnumType {
+func (ImageStatus) Type() protoreflect.EnumType {
 	return &file_v0s_v1_v0s_proto_enumTypes[1]
 }
 
-func (x SBOMState) Number() protoreflect.EnumNumber {
+func (x ImageStatus) Number() protoreflect.EnumNumber {
 	return protoreflect.EnumNumber(x)
 }
 
-// Deprecated: Use SBOMState.Descriptor instead.
-func (SBOMState) EnumDescriptor() ([]byte, []int) {
+// Deprecated: Use ImageStatus.Descriptor instead.
+func (ImageStatus) EnumDescriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{1}
 }
 
@@ -190,77 +192,6 @@ func (SuppressionState) EnumDescriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{2}
 }
 
-// Justification follows the CycloneDX/VEX vocabulary. Required for NOT_AFFECTED only.
-type Justification int32
-
-const (
-	Justification_JUSTIFICATION_UNSPECIFIED                     Justification = 0
-	Justification_JUSTIFICATION_CODE_NOT_PRESENT                Justification = 1
-	Justification_JUSTIFICATION_CODE_NOT_REACHABLE              Justification = 2
-	Justification_JUSTIFICATION_REQUIRES_CONFIGURATION          Justification = 3
-	Justification_JUSTIFICATION_REQUIRES_DEPENDENCY             Justification = 4
-	Justification_JUSTIFICATION_REQUIRES_ENVIRONMENT            Justification = 5
-	Justification_JUSTIFICATION_PROTECTED_BY_COMPILER           Justification = 6
-	Justification_JUSTIFICATION_PROTECTED_AT_RUNTIME            Justification = 7
-	Justification_JUSTIFICATION_PROTECTED_AT_PERIMETER          Justification = 8
-	Justification_JUSTIFICATION_PROTECTED_BY_MITIGATING_CONTROL Justification = 9
-)
-
-// Enum value maps for Justification.
-var (
-	Justification_name = map[int32]string{
-		0: "JUSTIFICATION_UNSPECIFIED",
-		1: "JUSTIFICATION_CODE_NOT_PRESENT",
-		2: "JUSTIFICATION_CODE_NOT_REACHABLE",
-		3: "JUSTIFICATION_REQUIRES_CONFIGURATION",
-		4: "JUSTIFICATION_REQUIRES_DEPENDENCY",
-		5: "JUSTIFICATION_REQUIRES_ENVIRONMENT",
-		6: "JUSTIFICATION_PROTECTED_BY_COMPILER",
-		7: "JUSTIFICATION_PROTECTED_AT_RUNTIME",
-		8: "JUSTIFICATION_PROTECTED_AT_PERIMETER",
-		9: "JUSTIFICATION_PROTECTED_BY_MITIGATING_CONTROL",
-	}
-	Justification_value = map[string]int32{
-		"JUSTIFICATION_UNSPECIFIED":                     0,
-		"JUSTIFICATION_CODE_NOT_PRESENT":                1,
-		"JUSTIFICATION_CODE_NOT_REACHABLE":              2,
-		"JUSTIFICATION_REQUIRES_CONFIGURATION":          3,
-		"JUSTIFICATION_REQUIRES_DEPENDENCY":             4,
-		"JUSTIFICATION_REQUIRES_ENVIRONMENT":            5,
-		"JUSTIFICATION_PROTECTED_BY_COMPILER":           6,
-		"JUSTIFICATION_PROTECTED_AT_RUNTIME":            7,
-		"JUSTIFICATION_PROTECTED_AT_PERIMETER":          8,
-		"JUSTIFICATION_PROTECTED_BY_MITIGATING_CONTROL": 9,
-	}
-)
-
-func (x Justification) Enum() *Justification {
-	p := new(Justification)
-	*p = x
-	return p
-}
-
-func (x Justification) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (Justification) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[3].Descriptor()
-}
-
-func (Justification) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[3]
-}
-
-func (x Justification) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use Justification.Descriptor instead.
-func (Justification) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{3}
-}
-
 type SuppressedFilter int32
 
 const (
@@ -298,11 +229,11 @@ func (x SuppressedFilter) String() string {
 }
 
 func (SuppressedFilter) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[4].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[3].Descriptor()
 }
 
 func (SuppressedFilter) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[4]
+	return &file_v0s_v1_v0s_proto_enumTypes[3]
 }
 
 func (x SuppressedFilter) Number() protoreflect.EnumNumber {
@@ -311,7 +242,7 @@ func (x SuppressedFilter) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SuppressedFilter.Descriptor instead.
 func (SuppressedFilter) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{4}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{3}
 }
 
 type CountFindingsRequest_GroupBy int32
@@ -356,11 +287,11 @@ func (x CountFindingsRequest_GroupBy) String() string {
 }
 
 func (CountFindingsRequest_GroupBy) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[5].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[4].Descriptor()
 }
 
 func (CountFindingsRequest_GroupBy) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[5]
+	return &file_v0s_v1_v0s_proto_enumTypes[4]
 }
 
 func (x CountFindingsRequest_GroupBy) Number() protoreflect.EnumNumber {
@@ -372,66 +303,17 @@ func (CountFindingsRequest_GroupBy) EnumDescriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{10, 0}
 }
 
-type FindingEvent_Kind int32
-
-const (
-	FindingEvent_KIND_UNSPECIFIED FindingEvent_Kind = 0
-	FindingEvent_KIND_APPEARED    FindingEvent_Kind = 1
-	FindingEvent_KIND_RESOLVED    FindingEvent_Kind = 2
-)
-
-// Enum value maps for FindingEvent_Kind.
-var (
-	FindingEvent_Kind_name = map[int32]string{
-		0: "KIND_UNSPECIFIED",
-		1: "KIND_APPEARED",
-		2: "KIND_RESOLVED",
-	}
-	FindingEvent_Kind_value = map[string]int32{
-		"KIND_UNSPECIFIED": 0,
-		"KIND_APPEARED":    1,
-		"KIND_RESOLVED":    2,
-	}
-)
-
-func (x FindingEvent_Kind) Enum() *FindingEvent_Kind {
-	p := new(FindingEvent_Kind)
-	*p = x
-	return p
-}
-
-func (x FindingEvent_Kind) String() string {
-	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
-}
-
-func (FindingEvent_Kind) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[6].Descriptor()
-}
-
-func (FindingEvent_Kind) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[6]
-}
-
-func (x FindingEvent_Kind) Number() protoreflect.EnumNumber {
-	return protoreflect.EnumNumber(x)
-}
-
-// Deprecated: Use FindingEvent_Kind.Descriptor instead.
-func (FindingEvent_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{22, 0}
-}
-
 type Image struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	Name      string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Digest    string                 `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
-	SbomState SBOMState              `protobuf:"varint,3,opt,name=sbom_state,json=sbomState,proto3,enum=v0s.v1.SBOMState" json:"sbom_state,omitempty"`
-	// Set when sbom_state is MISSING or FAILED.
-	SbomError string                 `protobuf:"bytes,4,opt,name=sbom_error,json=sbomError,proto3" json:"sbom_error,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Name   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Digest string                 `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
+	Status ImageStatus            `protobuf:"varint,8,opt,name=status,proto3,enum=v0s.v1.ImageStatus" json:"status,omitempty"`
+	// Why the last fetch or scan failed. Also set on a SCANNED image whose rescan with a newer
+	// vulnerability DB failed; its findings are still those of scanned_db_version.
+	Error     string                 `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
 	ScannedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=scanned_at,json=scannedAt,proto3" json:"scanned_at,omitempty"`
 	// UpdatedAt of the vulnerability DB used for the last scan.
 	ScannedDbVersion *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=scanned_db_version,json=scannedDbVersion,proto3" json:"scanned_db_version,omitempty"`
-	ScanError        string                 `protobuf:"bytes,7,opt,name=scan_error,json=scanError,proto3" json:"scan_error,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -480,16 +362,16 @@ func (x *Image) GetDigest() string {
 	return ""
 }
 
-func (x *Image) GetSbomState() SBOMState {
+func (x *Image) GetStatus() ImageStatus {
 	if x != nil {
-		return x.SbomState
+		return x.Status
 	}
-	return SBOMState_SBOM_STATE_UNSPECIFIED
+	return ImageStatus_IMAGE_STATUS_UNSPECIFIED
 }
 
-func (x *Image) GetSbomError() string {
+func (x *Image) GetError() string {
 	if x != nil {
-		return x.SbomError
+		return x.Error
 	}
 	return ""
 }
@@ -508,19 +390,17 @@ func (x *Image) GetScannedDbVersion() *timestamppb.Timestamp {
 	return nil
 }
 
-func (x *Image) GetScanError() string {
-	if x != nil {
-		return x.ScanError
-	}
-	return ""
-}
-
 type Workload struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Environment   string                 `protobuf:"bytes,1,opt,name=environment,proto3" json:"environment,omitempty"`
-	Team          string                 `protobuf:"bytes,2,opt,name=team,proto3" json:"team,omitempty"`
-	Name          string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	Image         *Image                 `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Environment string                 `protobuf:"bytes,1,opt,name=environment,proto3" json:"environment,omitempty"`
+	Team        string                 `protobuf:"bytes,2,opt,name=team,proto3" json:"team,omitempty"`
+	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	// The image as deployed, e.g. "ghcr.io/navikt/app:1.2.3". A caller that knows a newer
+	// reference can tell that v0s has not seen the deploy yet.
+	ImageReference string `protobuf:"bytes,5,opt,name=image_reference,json=imageReference,proto3" json:"image_reference,omitempty"`
+	// The image image_reference resolved to. Unset if it could not be resolved; see resolve_error.
+	Image         *Image `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`
+	ResolveError  string `protobuf:"bytes,6,opt,name=resolve_error,json=resolveError,proto3" json:"resolve_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -576,11 +456,25 @@ func (x *Workload) GetName() string {
 	return ""
 }
 
+func (x *Workload) GetImageReference() string {
+	if x != nil {
+		return x.ImageReference
+	}
+	return ""
+}
+
 func (x *Workload) GetImage() *Image {
 	if x != nil {
 		return x.Image
 	}
 	return nil
+}
+
+func (x *Workload) GetResolveError() string {
+	if x != nil {
+		return x.ResolveError
+	}
+	return ""
 }
 
 // FindingFilter narrows findings. Empty fields do not filter. Repeated fields match any value.
@@ -712,32 +606,30 @@ func (x *FindingFilter) GetSuppressed() SuppressedFilter {
 	return SuppressedFilter_SUPPRESSED_FILTER_UNSPECIFIED
 }
 
+// A vulnerability in a package in a workload's image.
 type Finding struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
-	Image            *Image                 `protobuf:"bytes,1,opt,name=image,proto3" json:"image,omitempty"`
-	VulnerabilityId  string                 `protobuf:"bytes,2,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
-	Purl             string                 `protobuf:"bytes,3,opt,name=purl,proto3" json:"purl,omitempty"`
-	PackageKey       string                 `protobuf:"bytes,4,opt,name=package_key,json=packageKey,proto3" json:"package_key,omitempty"`
-	InstalledVersion string                 `protobuf:"bytes,5,opt,name=installed_version,json=installedVersion,proto3" json:"installed_version,omitempty"`
-	FixedVersion     string                 `protobuf:"bytes,6,opt,name=fixed_version,json=fixedVersion,proto3" json:"fixed_version,omitempty"`
+	Workload         *WorkloadRef           `protobuf:"bytes,1,opt,name=workload,proto3" json:"workload,omitempty"`
+	Image            *Image                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	VulnerabilityId  string                 `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
+	Purl             string                 `protobuf:"bytes,4,opt,name=purl,proto3" json:"purl,omitempty"`
+	PackageKey       string                 `protobuf:"bytes,5,opt,name=package_key,json=packageKey,proto3" json:"package_key,omitempty"`
+	InstalledVersion string                 `protobuf:"bytes,6,opt,name=installed_version,json=installedVersion,proto3" json:"installed_version,omitempty"`
+	FixedVersion     string                 `protobuf:"bytes,7,opt,name=fixed_version,json=fixedVersion,proto3" json:"fixed_version,omitempty"`
 	// Trivy fix status: affected, fixed, will_not_fix, fix_deferred, end_of_life, under_investigation, unknown.
-	Status         string   `protobuf:"bytes,7,opt,name=status,proto3" json:"status,omitempty"`
-	Severity       Severity `protobuf:"varint,8,opt,name=severity,proto3,enum=v0s.v1.Severity" json:"severity,omitempty"`
-	SeveritySource string   `protobuf:"bytes,9,opt,name=severity_source,json=severitySource,proto3" json:"severity_source,omitempty"`
-	DataSource     string   `protobuf:"bytes,10,opt,name=data_source,json=dataSource,proto3" json:"data_source,omitempty"`
-	Title          string   `protobuf:"bytes,11,opt,name=title,proto3" json:"title,omitempty"`
+	Status string `protobuf:"bytes,8,opt,name=status,proto3" json:"status,omitempty"`
+	// Severity as the source named in severity_source rates it.
+	Severity       Severity `protobuf:"varint,9,opt,name=severity,proto3,enum=v0s.v1.Severity" json:"severity,omitempty"`
+	SeveritySource string   `protobuf:"bytes,10,opt,name=severity_source,json=severitySource,proto3" json:"severity_source,omitempty"`
+	// Advisory source that produced the match, e.g. "ghsa", "alpine".
+	DataSource string `protobuf:"bytes,11,opt,name=data_source,json=dataSource,proto3" json:"data_source,omitempty"`
+	Title      string `protobuf:"bytes,12,opt,name=title,proto3" json:"title,omitempty"`
 	// Highest CVSS v3 base score across sources, 0 if none.
-	CvssScore   float64                `protobuf:"fixed64,12,opt,name=cvss_score,json=cvssScore,proto3" json:"cvss_score,omitempty"`
-	Epss        *Epss                  `protobuf:"bytes,13,opt,name=epss,proto3" json:"epss,omitempty"`
-	Kev         *Kev                   `protobuf:"bytes,14,opt,name=kev,proto3" json:"kev,omitempty"`
-	FirstSeenAt *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=first_seen_at,json=firstSeenAt,proto3" json:"first_seen_at,omitempty"`
-	// Whether every team using the image within the filter has suppressed the finding.
-	// For a single team, whether that team has.
-	Suppressed bool `protobuf:"varint,16,opt,name=suppressed,proto3" json:"suppressed,omitempty"`
-	// Active suppressions of the finding by teams using the image within the filter.
-	Suppressions []*Suppression `protobuf:"bytes,17,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
-	// Workloads using the image within the filter, whether their team has suppressed the finding or not.
-	Workloads     []*WorkloadRef `protobuf:"bytes,18,rep,name=workloads,proto3" json:"workloads,omitempty"`
+	CvssScore float64 `protobuf:"fixed64,13,opt,name=cvss_score,json=cvssScore,proto3" json:"cvss_score,omitempty"`
+	Epss      *Epss   `protobuf:"bytes,14,opt,name=epss,proto3" json:"epss,omitempty"`
+	Kev       *Kev    `protobuf:"bytes,15,opt,name=kev,proto3" json:"kev,omitempty"`
+	// The workload's team's suppression of the finding, unset if not suppressed.
+	Suppression   *Suppression `protobuf:"bytes,16,opt,name=suppression,proto3" json:"suppression,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -770,6 +662,13 @@ func (x *Finding) ProtoReflect() protoreflect.Message {
 // Deprecated: Use Finding.ProtoReflect.Descriptor instead.
 func (*Finding) Descriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *Finding) GetWorkload() *WorkloadRef {
+	if x != nil {
+		return x.Workload
+	}
+	return nil
 }
 
 func (x *Finding) GetImage() *Image {
@@ -870,30 +769,9 @@ func (x *Finding) GetKev() *Kev {
 	return nil
 }
 
-func (x *Finding) GetFirstSeenAt() *timestamppb.Timestamp {
+func (x *Finding) GetSuppression() *Suppression {
 	if x != nil {
-		return x.FirstSeenAt
-	}
-	return nil
-}
-
-func (x *Finding) GetSuppressed() bool {
-	if x != nil {
-		return x.Suppressed
-	}
-	return false
-}
-
-func (x *Finding) GetSuppressions() []*Suppression {
-	if x != nil {
-		return x.Suppressions
-	}
-	return nil
-}
-
-func (x *Finding) GetWorkloads() []*WorkloadRef {
-	if x != nil {
-		return x.Workloads
+		return x.Suppression
 	}
 	return nil
 }
@@ -1199,9 +1077,10 @@ func (x *ListFindingsRequest) GetPageToken() string {
 }
 
 type ListFindingsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Findings      []*Finding             `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Ordered by workload, vulnerability ID and purl.
+	Findings      []*Finding `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
+	NextPageToken string     `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1893,38 +1772,32 @@ func (x *WorkloadRef) GetName() string {
 	return ""
 }
 
-// ListFindingEventsRequest narrows finding events. Empty fields do not filter.
-type ListFindingEventsRequest struct {
-	state       protoimpl.MessageState `protogen:"open.v1"`
-	ImageName   string                 `protobuf:"bytes,1,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
-	ImageDigest string                 `protobuf:"bytes,2,opt,name=image_digest,json=imageDigest,proto3" json:"image_digest,omitempty"`
-	// Vulnerability ID or alias.
+// Identifies a team's suppression.
+type SuppressionKey struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ImageName string                 `protobuf:"bytes,1,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
+	// Package key or full purl. Version, qualifiers and subpath are dropped.
+	Package string `protobuf:"bytes,2,opt,name=package,proto3" json:"package,omitempty"`
+	// Vulnerability ID or alias. Must resolve to exactly one vulnerability.
 	VulnerabilityId string `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
-	// Events for images that one of these teams currently uses. Matching uses
-	// current workloads, not the workloads when the event was recorded.
-	Teams []string `protobuf:"bytes,4,rep,name=teams,proto3" json:"teams,omitempty"`
-	// Events created at or after this time.
-	Since         *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
-	PageSize      int32                  `protobuf:"varint,6,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken     string                 `protobuf:"bytes,7,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
-func (x *ListFindingEventsRequest) Reset() {
-	*x = ListFindingEventsRequest{}
+func (x *SuppressionKey) Reset() {
+	*x = SuppressionKey{}
 	mi := &file_v0s_v1_v0s_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *ListFindingEventsRequest) String() string {
+func (x *SuppressionKey) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*ListFindingEventsRequest) ProtoMessage() {}
+func (*SuppressionKey) ProtoMessage() {}
 
-func (x *ListFindingEventsRequest) ProtoReflect() protoreflect.Message {
+func (x *SuppressionKey) ProtoReflect() protoreflect.Message {
 	mi := &file_v0s_v1_v0s_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -1936,229 +1809,53 @@ func (x *ListFindingEventsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use ListFindingEventsRequest.ProtoReflect.Descriptor instead.
-func (*ListFindingEventsRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use SuppressionKey.ProtoReflect.Descriptor instead.
+func (*SuppressionKey) Descriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *ListFindingEventsRequest) GetImageName() string {
+func (x *SuppressionKey) GetImageName() string {
 	if x != nil {
 		return x.ImageName
 	}
 	return ""
 }
 
-func (x *ListFindingEventsRequest) GetImageDigest() string {
+func (x *SuppressionKey) GetPackage() string {
 	if x != nil {
-		return x.ImageDigest
+		return x.Package
 	}
 	return ""
 }
 
-func (x *ListFindingEventsRequest) GetVulnerabilityId() string {
+func (x *SuppressionKey) GetVulnerabilityId() string {
 	if x != nil {
 		return x.VulnerabilityId
 	}
 	return ""
 }
 
-func (x *ListFindingEventsRequest) GetTeams() []string {
-	if x != nil {
-		return x.Teams
-	}
-	return nil
-}
-
-func (x *ListFindingEventsRequest) GetSince() *timestamppb.Timestamp {
-	if x != nil {
-		return x.Since
-	}
-	return nil
-}
-
-func (x *ListFindingEventsRequest) GetPageSize() int32 {
-	if x != nil {
-		return x.PageSize
-	}
-	return 0
-}
-
-func (x *ListFindingEventsRequest) GetPageToken() string {
-	if x != nil {
-		return x.PageToken
-	}
-	return ""
-}
-
-type ListFindingEventsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Events        []*FindingEvent        `protobuf:"bytes,1,rep,name=events,proto3" json:"events,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *ListFindingEventsResponse) Reset() {
-	*x = ListFindingEventsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[21]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *ListFindingEventsResponse) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*ListFindingEventsResponse) ProtoMessage() {}
-
-func (x *ListFindingEventsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[21]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use ListFindingEventsResponse.ProtoReflect.Descriptor instead.
-func (*ListFindingEventsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{21}
-}
-
-func (x *ListFindingEventsResponse) GetEvents() []*FindingEvent {
-	if x != nil {
-		return x.Events
-	}
-	return nil
-}
-
-func (x *ListFindingEventsResponse) GetNextPageToken() string {
-	if x != nil {
-		return x.NextPageToken
-	}
-	return ""
-}
-
-type FindingEvent struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	ImageName       string                 `protobuf:"bytes,1,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
-	ImageDigest     string                 `protobuf:"bytes,2,opt,name=image_digest,json=imageDigest,proto3" json:"image_digest,omitempty"`
-	VulnerabilityId string                 `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
-	Purl            string                 `protobuf:"bytes,4,opt,name=purl,proto3" json:"purl,omitempty"`
-	Kind            FindingEvent_Kind      `protobuf:"varint,5,opt,name=kind,proto3,enum=v0s.v1.FindingEvent_Kind" json:"kind,omitempty"`
-	DbVersion       *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=db_version,json=dbVersion,proto3" json:"db_version,omitempty"`
-	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
-}
-
-func (x *FindingEvent) Reset() {
-	*x = FindingEvent{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[22]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *FindingEvent) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*FindingEvent) ProtoMessage() {}
-
-func (x *FindingEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[22]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use FindingEvent.ProtoReflect.Descriptor instead.
-func (*FindingEvent) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{22}
-}
-
-func (x *FindingEvent) GetImageName() string {
-	if x != nil {
-		return x.ImageName
-	}
-	return ""
-}
-
-func (x *FindingEvent) GetImageDigest() string {
-	if x != nil {
-		return x.ImageDigest
-	}
-	return ""
-}
-
-func (x *FindingEvent) GetVulnerabilityId() string {
-	if x != nil {
-		return x.VulnerabilityId
-	}
-	return ""
-}
-
-func (x *FindingEvent) GetPurl() string {
-	if x != nil {
-		return x.Purl
-	}
-	return ""
-}
-
-func (x *FindingEvent) GetKind() FindingEvent_Kind {
-	if x != nil {
-		return x.Kind
-	}
-	return FindingEvent_KIND_UNSPECIFIED
-}
-
-func (x *FindingEvent) GetDbVersion() *timestamppb.Timestamp {
-	if x != nil {
-		return x.DbVersion
-	}
-	return nil
-}
-
-func (x *FindingEvent) GetCreatedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.CreatedAt
-	}
-	return nil
-}
-
-// A team's assessment of a vulnerability in a package in an image name. It applies
-// to the team's own workloads only: another team using the same image is not affected.
+// A team's assessment of a vulnerability in a package in an image name. It applies to the
+// team's own workloads only, whatever the image version: another team using the same image
+// is not affected.
 type Suppression struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
-	Id              int64                  `protobuf:"varint,1,opt,name=id,proto3" json:"id,omitempty"`
-	Team            string                 `protobuf:"bytes,2,opt,name=team,proto3" json:"team,omitempty"`
-	ImageName       string                 `protobuf:"bytes,3,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
-	PackageKey      string                 `protobuf:"bytes,4,opt,name=package_key,json=packageKey,proto3" json:"package_key,omitempty"`
-	VulnerabilityId string                 `protobuf:"bytes,5,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
-	State           SuppressionState       `protobuf:"varint,6,opt,name=state,proto3,enum=v0s.v1.SuppressionState" json:"state,omitempty"`
-	Justification   Justification          `protobuf:"varint,7,opt,name=justification,proto3,enum=v0s.v1.Justification" json:"justification,omitempty"`
-	Detail          string                 `protobuf:"bytes,8,opt,name=detail,proto3" json:"detail,omitempty"`
-	CreatedBy       string                 `protobuf:"bytes,9,opt,name=created_by,json=createdBy,proto3" json:"created_by,omitempty"`
-	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	RevokedAt       *timestamppb.Timestamp `protobuf:"bytes,12,opt,name=revoked_at,json=revokedAt,proto3" json:"revoked_at,omitempty"`
-	RevokedBy       string                 `protobuf:"bytes,13,opt,name=revoked_by,json=revokedBy,proto3" json:"revoked_by,omitempty"`
-	RevokeReason    string                 `protobuf:"bytes,14,opt,name=revoke_reason,json=revokeReason,proto3" json:"revoke_reason,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	Team            string                 `protobuf:"bytes,1,opt,name=team,proto3" json:"team,omitempty"`
+	ImageName       string                 `protobuf:"bytes,2,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
+	PackageKey      string                 `protobuf:"bytes,3,opt,name=package_key,json=packageKey,proto3" json:"package_key,omitempty"`
+	VulnerabilityId string                 `protobuf:"bytes,4,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
+	State           SuppressionState       `protobuf:"varint,5,opt,name=state,proto3,enum=v0s.v1.SuppressionState" json:"state,omitempty"`
+	// Why, in the team's words.
+	Detail        string                 `protobuf:"bytes,6,opt,name=detail,proto3" json:"detail,omitempty"`
+	UpdatedBy     string                 `protobuf:"bytes,7,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *Suppression) Reset() {
 	*x = Suppression{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[23]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2170,7 +1867,7 @@ func (x *Suppression) String() string {
 func (*Suppression) ProtoMessage() {}
 
 func (x *Suppression) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[23]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2183,14 +1880,7 @@ func (x *Suppression) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Suppression.ProtoReflect.Descriptor instead.
 func (*Suppression) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{23}
-}
-
-func (x *Suppression) GetId() int64 {
-	if x != nil {
-		return x.Id
-	}
-	return 0
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *Suppression) GetTeam() string {
@@ -2228,13 +1918,6 @@ func (x *Suppression) GetState() SuppressionState {
 	return SuppressionState_SUPPRESSION_STATE_UNSPECIFIED
 }
 
-func (x *Suppression) GetJustification() Justification {
-	if x != nil {
-		return x.Justification
-	}
-	return Justification_JUSTIFICATION_UNSPECIFIED
-}
-
 func (x *Suppression) GetDetail() string {
 	if x != nil {
 		return x.Detail
@@ -2242,66 +1925,32 @@ func (x *Suppression) GetDetail() string {
 	return ""
 }
 
-func (x *Suppression) GetCreatedBy() string {
+func (x *Suppression) GetUpdatedBy() string {
 	if x != nil {
-		return x.CreatedBy
+		return x.UpdatedBy
 	}
 	return ""
 }
 
-func (x *Suppression) GetCreatedAt() *timestamppb.Timestamp {
+func (x *Suppression) GetUpdatedAt() *timestamppb.Timestamp {
 	if x != nil {
-		return x.CreatedAt
+		return x.UpdatedAt
 	}
 	return nil
-}
-
-func (x *Suppression) GetExpiresAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.ExpiresAt
-	}
-	return nil
-}
-
-func (x *Suppression) GetRevokedAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.RevokedAt
-	}
-	return nil
-}
-
-func (x *Suppression) GetRevokedBy() string {
-	if x != nil {
-		return x.RevokedBy
-	}
-	return ""
-}
-
-func (x *Suppression) GetRevokeReason() string {
-	if x != nil {
-		return x.RevokeReason
-	}
-	return ""
 }
 
 type NewSuppression struct {
-	state     protoimpl.MessageState `protogen:"open.v1"`
-	ImageName string                 `protobuf:"bytes,1,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
-	// Package key or full purl. Version, qualifiers and subpath are dropped.
-	Package string `protobuf:"bytes,2,opt,name=package,proto3" json:"package,omitempty"`
-	// Vulnerability ID or alias. Must resolve to exactly one vulnerability.
-	VulnerabilityId string                 `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
-	State           SuppressionState       `protobuf:"varint,4,opt,name=state,proto3,enum=v0s.v1.SuppressionState" json:"state,omitempty"`
-	Justification   Justification          `protobuf:"varint,5,opt,name=justification,proto3,enum=v0s.v1.Justification" json:"justification,omitempty"`
-	Detail          string                 `protobuf:"bytes,6,opt,name=detail,proto3" json:"detail,omitempty"`
-	ExpiresAt       *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           *SuppressionKey        `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	State         SuppressionState       `protobuf:"varint,2,opt,name=state,proto3,enum=v0s.v1.SuppressionState" json:"state,omitempty"`
+	Detail        string                 `protobuf:"bytes,3,opt,name=detail,proto3" json:"detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *NewSuppression) Reset() {
 	*x = NewSuppression{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[24]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2313,7 +1962,7 @@ func (x *NewSuppression) String() string {
 func (*NewSuppression) ProtoMessage() {}
 
 func (x *NewSuppression) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[24]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2326,28 +1975,14 @@ func (x *NewSuppression) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NewSuppression.ProtoReflect.Descriptor instead.
 func (*NewSuppression) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{24}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{22}
 }
 
-func (x *NewSuppression) GetImageName() string {
+func (x *NewSuppression) GetKey() *SuppressionKey {
 	if x != nil {
-		return x.ImageName
+		return x.Key
 	}
-	return ""
-}
-
-func (x *NewSuppression) GetPackage() string {
-	if x != nil {
-		return x.Package
-	}
-	return ""
-}
-
-func (x *NewSuppression) GetVulnerabilityId() string {
-	if x != nil {
-		return x.VulnerabilityId
-	}
-	return ""
+	return nil
 }
 
 func (x *NewSuppression) GetState() SuppressionState {
@@ -2357,13 +1992,6 @@ func (x *NewSuppression) GetState() SuppressionState {
 	return SuppressionState_SUPPRESSION_STATE_UNSPECIFIED
 }
 
-func (x *NewSuppression) GetJustification() Justification {
-	if x != nil {
-		return x.Justification
-	}
-	return Justification_JUSTIFICATION_UNSPECIFIED
-}
-
 func (x *NewSuppression) GetDetail() string {
 	if x != nil {
 		return x.Detail
@@ -2371,40 +1999,32 @@ func (x *NewSuppression) GetDetail() string {
 	return ""
 }
 
-func (x *NewSuppression) GetExpiresAt() *timestamppb.Timestamp {
-	if x != nil {
-		return x.ExpiresAt
-	}
-	return nil
-}
-
-type CreateSuppressionsRequest struct {
+type SetSuppressionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The team whose assessment this is. The caller is trusted to have authorized the actor for it.
-	Team         string            `protobuf:"bytes,1,opt,name=team,proto3" json:"team,omitempty"`
-	Suppressions []*NewSuppression `protobuf:"bytes,2,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
+	// The team whose assessments these are. The caller has authorized the actor for it.
+	Team string `protobuf:"bytes,1,opt,name=team,proto3" json:"team,omitempty"`
 	// Identity of the human the caller acts for.
-	Actor         string `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
-	DryRun        bool   `protobuf:"varint,4,opt,name=dry_run,json=dryRun,proto3" json:"dry_run,omitempty"`
+	Actor         string            `protobuf:"bytes,2,opt,name=actor,proto3" json:"actor,omitempty"`
+	Suppressions  []*NewSuppression `protobuf:"bytes,3,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CreateSuppressionsRequest) Reset() {
-	*x = CreateSuppressionsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[25]
+func (x *SetSuppressionsRequest) Reset() {
+	*x = SetSuppressionsRequest{}
+	mi := &file_v0s_v1_v0s_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateSuppressionsRequest) String() string {
+func (x *SetSuppressionsRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateSuppressionsRequest) ProtoMessage() {}
+func (*SetSuppressionsRequest) ProtoMessage() {}
 
-func (x *CreateSuppressionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[25]
+func (x *SetSuppressionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_v0s_v1_v0s_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2415,61 +2035,54 @@ func (x *CreateSuppressionsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateSuppressionsRequest.ProtoReflect.Descriptor instead.
-func (*CreateSuppressionsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{25}
+// Deprecated: Use SetSuppressionsRequest.ProtoReflect.Descriptor instead.
+func (*SetSuppressionsRequest) Descriptor() ([]byte, []int) {
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{23}
 }
 
-func (x *CreateSuppressionsRequest) GetTeam() string {
+func (x *SetSuppressionsRequest) GetTeam() string {
 	if x != nil {
 		return x.Team
 	}
 	return ""
 }
 
-func (x *CreateSuppressionsRequest) GetSuppressions() []*NewSuppression {
+func (x *SetSuppressionsRequest) GetActor() string {
+	if x != nil {
+		return x.Actor
+	}
+	return ""
+}
+
+func (x *SetSuppressionsRequest) GetSuppressions() []*NewSuppression {
 	if x != nil {
 		return x.Suppressions
 	}
 	return nil
 }
 
-func (x *CreateSuppressionsRequest) GetActor() string {
-	if x != nil {
-		return x.Actor
-	}
-	return ""
-}
-
-func (x *CreateSuppressionsRequest) GetDryRun() bool {
-	if x != nil {
-		return x.DryRun
-	}
-	return false
-}
-
-type CreateSuppressionsResponse struct {
-	state         protoimpl.MessageState                           `protogen:"open.v1"`
-	Results       []*CreateSuppressionsResponse_CreatedSuppression `protobuf:"bytes,1,rep,name=results,proto3" json:"results,omitempty"`
+type SetSuppressionsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Suppressions  []*Suppression         `protobuf:"bytes,1,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *CreateSuppressionsResponse) Reset() {
-	*x = CreateSuppressionsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[26]
+func (x *SetSuppressionsResponse) Reset() {
+	*x = SetSuppressionsResponse{}
+	mi := &file_v0s_v1_v0s_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *CreateSuppressionsResponse) String() string {
+func (x *SetSuppressionsResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CreateSuppressionsResponse) ProtoMessage() {}
+func (*SetSuppressionsResponse) ProtoMessage() {}
 
-func (x *CreateSuppressionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[26]
+func (x *SetSuppressionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v0s_v1_v0s_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2480,44 +2093,42 @@ func (x *CreateSuppressionsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CreateSuppressionsResponse.ProtoReflect.Descriptor instead.
-func (*CreateSuppressionsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{26}
+// Deprecated: Use SetSuppressionsResponse.ProtoReflect.Descriptor instead.
+func (*SetSuppressionsResponse) Descriptor() ([]byte, []int) {
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{24}
 }
 
-func (x *CreateSuppressionsResponse) GetResults() []*CreateSuppressionsResponse_CreatedSuppression {
+func (x *SetSuppressionsResponse) GetSuppressions() []*Suppression {
 	if x != nil {
-		return x.Results
+		return x.Suppressions
 	}
 	return nil
 }
 
-type RevokeSuppressionsRequest struct {
+type DeleteSuppressionsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// The team the suppressions belong to. An ID of another team is not found.
-	Team          string  `protobuf:"bytes,1,opt,name=team,proto3" json:"team,omitempty"`
-	Ids           []int64 `protobuf:"varint,2,rep,packed,name=ids,proto3" json:"ids,omitempty"`
-	Actor         string  `protobuf:"bytes,3,opt,name=actor,proto3" json:"actor,omitempty"`
-	Reason        string  `protobuf:"bytes,4,opt,name=reason,proto3" json:"reason,omitempty"`
+	// The team the suppressions belong to. The caller has authorized the actor for it.
+	Team          string            `protobuf:"bytes,1,opt,name=team,proto3" json:"team,omitempty"`
+	Keys          []*SuppressionKey `protobuf:"bytes,2,rep,name=keys,proto3" json:"keys,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RevokeSuppressionsRequest) Reset() {
-	*x = RevokeSuppressionsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[27]
+func (x *DeleteSuppressionsRequest) Reset() {
+	*x = DeleteSuppressionsRequest{}
+	mi := &file_v0s_v1_v0s_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RevokeSuppressionsRequest) String() string {
+func (x *DeleteSuppressionsRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RevokeSuppressionsRequest) ProtoMessage() {}
+func (*DeleteSuppressionsRequest) ProtoMessage() {}
 
-func (x *RevokeSuppressionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[27]
+func (x *DeleteSuppressionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_v0s_v1_v0s_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2528,61 +2139,48 @@ func (x *RevokeSuppressionsRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RevokeSuppressionsRequest.ProtoReflect.Descriptor instead.
-func (*RevokeSuppressionsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{27}
+// Deprecated: Use DeleteSuppressionsRequest.ProtoReflect.Descriptor instead.
+func (*DeleteSuppressionsRequest) Descriptor() ([]byte, []int) {
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{25}
 }
 
-func (x *RevokeSuppressionsRequest) GetTeam() string {
+func (x *DeleteSuppressionsRequest) GetTeam() string {
 	if x != nil {
 		return x.Team
 	}
 	return ""
 }
 
-func (x *RevokeSuppressionsRequest) GetIds() []int64 {
+func (x *DeleteSuppressionsRequest) GetKeys() []*SuppressionKey {
 	if x != nil {
-		return x.Ids
+		return x.Keys
 	}
 	return nil
 }
 
-func (x *RevokeSuppressionsRequest) GetActor() string {
-	if x != nil {
-		return x.Actor
-	}
-	return ""
-}
-
-func (x *RevokeSuppressionsRequest) GetReason() string {
-	if x != nil {
-		return x.Reason
-	}
-	return ""
-}
-
-type RevokeSuppressionsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Revoked       []*Suppression         `protobuf:"bytes,1,rep,name=revoked,proto3" json:"revoked,omitempty"`
+type DeleteSuppressionsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The suppressions that existed and were deleted.
+	Deleted       []*Suppression `protobuf:"bytes,1,rep,name=deleted,proto3" json:"deleted,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *RevokeSuppressionsResponse) Reset() {
-	*x = RevokeSuppressionsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[28]
+func (x *DeleteSuppressionsResponse) Reset() {
+	*x = DeleteSuppressionsResponse{}
+	mi := &file_v0s_v1_v0s_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *RevokeSuppressionsResponse) String() string {
+func (x *DeleteSuppressionsResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*RevokeSuppressionsResponse) ProtoMessage() {}
+func (*DeleteSuppressionsResponse) ProtoMessage() {}
 
-func (x *RevokeSuppressionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[28]
+func (x *DeleteSuppressionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_v0s_v1_v0s_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2593,34 +2191,33 @@ func (x *RevokeSuppressionsResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use RevokeSuppressionsResponse.ProtoReflect.Descriptor instead.
-func (*RevokeSuppressionsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{28}
+// Deprecated: Use DeleteSuppressionsResponse.ProtoReflect.Descriptor instead.
+func (*DeleteSuppressionsResponse) Descriptor() ([]byte, []int) {
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{26}
 }
 
-func (x *RevokeSuppressionsResponse) GetRevoked() []*Suppression {
+func (x *DeleteSuppressionsResponse) GetDeleted() []*Suppression {
 	if x != nil {
-		return x.Revoked
+		return x.Deleted
 	}
 	return nil
 }
 
 type ListSuppressionsRequest struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	Teams           []string               `protobuf:"bytes,1,rep,name=teams,proto3" json:"teams,omitempty"`
-	ImageName       string                 `protobuf:"bytes,2,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
-	VulnerabilityId string                 `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
-	// Include revoked and expired suppressions.
-	IncludeInactive bool   `protobuf:"varint,4,opt,name=include_inactive,json=includeInactive,proto3" json:"include_inactive,omitempty"`
-	PageSize        int32  `protobuf:"varint,5,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
-	PageToken       string `protobuf:"bytes,6,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Teams     []string               `protobuf:"bytes,1,rep,name=teams,proto3" json:"teams,omitempty"`
+	ImageName string                 `protobuf:"bytes,2,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
+	// Vulnerability ID or alias.
+	VulnerabilityId string `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
+	PageSize        int32  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
+	PageToken       string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
 
 func (x *ListSuppressionsRequest) Reset() {
 	*x = ListSuppressionsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[29]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2632,7 +2229,7 @@ func (x *ListSuppressionsRequest) String() string {
 func (*ListSuppressionsRequest) ProtoMessage() {}
 
 func (x *ListSuppressionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[29]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2645,7 +2242,7 @@ func (x *ListSuppressionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSuppressionsRequest.ProtoReflect.Descriptor instead.
 func (*ListSuppressionsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{29}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ListSuppressionsRequest) GetTeams() []string {
@@ -2669,13 +2266,6 @@ func (x *ListSuppressionsRequest) GetVulnerabilityId() string {
 	return ""
 }
 
-func (x *ListSuppressionsRequest) GetIncludeInactive() bool {
-	if x != nil {
-		return x.IncludeInactive
-	}
-	return false
-}
-
 func (x *ListSuppressionsRequest) GetPageSize() int32 {
 	if x != nil {
 		return x.PageSize
@@ -2691,16 +2281,17 @@ func (x *ListSuppressionsRequest) GetPageToken() string {
 }
 
 type ListSuppressionsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Suppressions  []*Suppression         `protobuf:"bytes,1,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Ordered by team, image name, package key and vulnerability ID.
+	Suppressions  []*Suppression `protobuf:"bytes,1,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
+	NextPageToken string         `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListSuppressionsResponse) Reset() {
 	*x = ListSuppressionsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[30]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2712,7 +2303,7 @@ func (x *ListSuppressionsResponse) String() string {
 func (*ListSuppressionsResponse) ProtoMessage() {}
 
 func (x *ListSuppressionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[30]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2725,7 +2316,7 @@ func (x *ListSuppressionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSuppressionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSuppressionsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{30}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ListSuppressionsResponse) GetSuppressions() []*Suppression {
@@ -2753,7 +2344,7 @@ type CountFindingsResponse_Bucket struct {
 
 func (x *CountFindingsResponse_Bucket) Reset() {
 	*x = CountFindingsResponse_Bucket{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[31]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2765,7 +2356,7 @@ func (x *CountFindingsResponse_Bucket) String() string {
 func (*CountFindingsResponse_Bucket) ProtoMessage() {}
 
 func (x *CountFindingsResponse_Bucket) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[31]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2795,91 +2386,26 @@ func (x *CountFindingsResponse_Bucket) GetCount() int64 {
 	return 0
 }
 
-type CreateSuppressionsResponse_CreatedSuppression struct {
-	state protoimpl.MessageState `protogen:"open.v1"`
-	// Empty id on dry run.
-	Suppression *Suppression `protobuf:"bytes,1,opt,name=suppression,proto3" json:"suppression,omitempty"`
-	// Number of current findings, on images the team uses, that the suppression matches.
-	MatchedFindings int64 `protobuf:"varint,2,opt,name=matched_findings,json=matchedFindings,proto3" json:"matched_findings,omitempty"`
-	// Active suppression that this one replaces, if any.
-	ReplacesId    int64 `protobuf:"varint,3,opt,name=replaces_id,json=replacesId,proto3" json:"replaces_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
-}
-
-func (x *CreateSuppressionsResponse_CreatedSuppression) Reset() {
-	*x = CreateSuppressionsResponse_CreatedSuppression{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[33]
-	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-	ms.StoreMessageInfo(mi)
-}
-
-func (x *CreateSuppressionsResponse_CreatedSuppression) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*CreateSuppressionsResponse_CreatedSuppression) ProtoMessage() {}
-
-func (x *CreateSuppressionsResponse_CreatedSuppression) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[33]
-	if x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use CreateSuppressionsResponse_CreatedSuppression.ProtoReflect.Descriptor instead.
-func (*CreateSuppressionsResponse_CreatedSuppression) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{26, 0}
-}
-
-func (x *CreateSuppressionsResponse_CreatedSuppression) GetSuppression() *Suppression {
-	if x != nil {
-		return x.Suppression
-	}
-	return nil
-}
-
-func (x *CreateSuppressionsResponse_CreatedSuppression) GetMatchedFindings() int64 {
-	if x != nil {
-		return x.MatchedFindings
-	}
-	return 0
-}
-
-func (x *CreateSuppressionsResponse_CreatedSuppression) GetReplacesId() int64 {
-	if x != nil {
-		return x.ReplacesId
-	}
-	return 0
-}
-
 var File_v0s_v1_v0s_proto protoreflect.FileDescriptor
 
 const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\n" +
-	"\x10v0s/v1/v0s.proto\x12\x06v0s.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa8\x02\n" +
+	"\x10v0s/v1/v0s.proto\x12\x06v0s.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8d\x02\n" +
 	"\x05Image\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
-	"\x06digest\x18\x02 \x01(\tR\x06digest\x120\n" +
-	"\n" +
-	"sbom_state\x18\x03 \x01(\x0e2\x11.v0s.v1.SBOMStateR\tsbomState\x12\x1d\n" +
-	"\n" +
-	"sbom_error\x18\x04 \x01(\tR\tsbomError\x129\n" +
+	"\x06digest\x18\x02 \x01(\tR\x06digest\x12+\n" +
+	"\x06status\x18\b \x01(\x0e2\x13.v0s.v1.ImageStatusR\x06status\x12\x14\n" +
+	"\x05error\x18\t \x01(\tR\x05error\x129\n" +
 	"\n" +
 	"scanned_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tscannedAt\x12H\n" +
-	"\x12scanned_db_version\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x10scannedDbVersion\x12\x1d\n" +
-	"\n" +
-	"scan_error\x18\a \x01(\tR\tscanError\"y\n" +
+	"\x12scanned_db_version\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\x10scannedDbVersionJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\a\x10\b\"\xc7\x01\n" +
 	"\bWorkload\x12 \n" +
 	"\venvironment\x18\x01 \x01(\tR\venvironment\x12\x12\n" +
 	"\x04team\x18\x02 \x01(\tR\x04team\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\x12#\n" +
-	"\x05image\x18\x04 \x01(\v2\r.v0s.v1.ImageR\x05image\"\x81\x03\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12'\n" +
+	"\x0fimage_reference\x18\x05 \x01(\tR\x0eimageReference\x12#\n" +
+	"\x05image\x18\x04 \x01(\v2\r.v0s.v1.ImageR\x05image\x12#\n" +
+	"\rresolve_error\x18\x06 \x01(\tR\fresolveError\"\x81\x03\n" +
 	"\rFindingFilter\x12\x14\n" +
 	"\x05teams\x18\x01 \x03(\tR\x05teams\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
@@ -2897,32 +2423,28 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	" \x01(\bR\x03kev\x128\n" +
 	"\n" +
 	"suppressed\x18\v \x01(\x0e2\x18.v0s.v1.SuppressedFilterR\n" +
-	"suppressed\"\xb2\x05\n" +
-	"\aFinding\x12#\n" +
-	"\x05image\x18\x01 \x01(\v2\r.v0s.v1.ImageR\x05image\x12)\n" +
-	"\x10vulnerability_id\x18\x02 \x01(\tR\x0fvulnerabilityId\x12\x12\n" +
-	"\x04purl\x18\x03 \x01(\tR\x04purl\x12\x1f\n" +
-	"\vpackage_key\x18\x04 \x01(\tR\n" +
+	"suppressed\"\xce\x04\n" +
+	"\aFinding\x12/\n" +
+	"\bworkload\x18\x01 \x01(\v2\x13.v0s.v1.WorkloadRefR\bworkload\x12#\n" +
+	"\x05image\x18\x02 \x01(\v2\r.v0s.v1.ImageR\x05image\x12)\n" +
+	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12\x12\n" +
+	"\x04purl\x18\x04 \x01(\tR\x04purl\x12\x1f\n" +
+	"\vpackage_key\x18\x05 \x01(\tR\n" +
 	"packageKey\x12+\n" +
-	"\x11installed_version\x18\x05 \x01(\tR\x10installedVersion\x12#\n" +
-	"\rfixed_version\x18\x06 \x01(\tR\ffixedVersion\x12\x16\n" +
-	"\x06status\x18\a \x01(\tR\x06status\x12,\n" +
-	"\bseverity\x18\b \x01(\x0e2\x10.v0s.v1.SeverityR\bseverity\x12'\n" +
-	"\x0fseverity_source\x18\t \x01(\tR\x0eseveritySource\x12\x1f\n" +
-	"\vdata_source\x18\n" +
-	" \x01(\tR\n" +
+	"\x11installed_version\x18\x06 \x01(\tR\x10installedVersion\x12#\n" +
+	"\rfixed_version\x18\a \x01(\tR\ffixedVersion\x12\x16\n" +
+	"\x06status\x18\b \x01(\tR\x06status\x12,\n" +
+	"\bseverity\x18\t \x01(\x0e2\x10.v0s.v1.SeverityR\bseverity\x12'\n" +
+	"\x0fseverity_source\x18\n" +
+	" \x01(\tR\x0eseveritySource\x12\x1f\n" +
+	"\vdata_source\x18\v \x01(\tR\n" +
 	"dataSource\x12\x14\n" +
-	"\x05title\x18\v \x01(\tR\x05title\x12\x1d\n" +
+	"\x05title\x18\f \x01(\tR\x05title\x12\x1d\n" +
 	"\n" +
-	"cvss_score\x18\f \x01(\x01R\tcvssScore\x12 \n" +
-	"\x04epss\x18\r \x01(\v2\f.v0s.v1.EpssR\x04epss\x12\x1d\n" +
-	"\x03kev\x18\x0e \x01(\v2\v.v0s.v1.KevR\x03kev\x12>\n" +
-	"\rfirst_seen_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\vfirstSeenAt\x12\x1e\n" +
-	"\n" +
-	"suppressed\x18\x10 \x01(\bR\n" +
-	"suppressed\x127\n" +
-	"\fsuppressions\x18\x11 \x03(\v2\x13.v0s.v1.SuppressionR\fsuppressions\x121\n" +
-	"\tworkloads\x18\x12 \x03(\v2\x13.v0s.v1.WorkloadRefR\tworkloads\"P\n" +
+	"cvss_score\x18\r \x01(\x01R\tcvssScore\x12 \n" +
+	"\x04epss\x18\x0e \x01(\v2\f.v0s.v1.EpssR\x04epss\x12\x1d\n" +
+	"\x03kev\x18\x0f \x01(\v2\v.v0s.v1.KevR\x03kev\x125\n" +
+	"\vsuppression\x18\x10 \x01(\v2\x13.v0s.v1.SuppressionR\vsuppression\"P\n" +
 	"\x04Epss\x12\x14\n" +
 	"\x05score\x18\x01 \x01(\x01R\x05score\x12\x1e\n" +
 	"\n" +
@@ -3016,96 +2538,49 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\vWorkloadRef\x12 \n" +
 	"\venvironment\x18\x01 \x01(\tR\venvironment\x12\x12\n" +
 	"\x04team\x18\x02 \x01(\tR\x04team\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"\x8b\x02\n" +
-	"\x18ListFindingEventsRequest\x12\x1d\n" +
-	"\n" +
-	"image_name\x18\x01 \x01(\tR\timageName\x12!\n" +
-	"\fimage_digest\x18\x02 \x01(\tR\vimageDigest\x12)\n" +
-	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12\x14\n" +
-	"\x05teams\x18\x04 \x03(\tR\x05teams\x120\n" +
-	"\x05since\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x05since\x12\x1b\n" +
-	"\tpage_size\x18\x06 \x01(\x05R\bpageSize\x12\x1d\n" +
-	"\n" +
-	"page_token\x18\a \x01(\tR\tpageToken\"q\n" +
-	"\x19ListFindingEventsResponse\x12,\n" +
-	"\x06events\x18\x01 \x03(\v2\x14.v0s.v1.FindingEventR\x06events\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\xf8\x02\n" +
-	"\fFindingEvent\x12\x1d\n" +
-	"\n" +
-	"image_name\x18\x01 \x01(\tR\timageName\x12!\n" +
-	"\fimage_digest\x18\x02 \x01(\tR\vimageDigest\x12)\n" +
-	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12\x12\n" +
-	"\x04purl\x18\x04 \x01(\tR\x04purl\x12-\n" +
-	"\x04kind\x18\x05 \x01(\x0e2\x19.v0s.v1.FindingEvent.KindR\x04kind\x129\n" +
-	"\n" +
-	"db_version\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tdbVersion\x129\n" +
-	"\n" +
-	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"B\n" +
-	"\x04Kind\x12\x14\n" +
-	"\x10KIND_UNSPECIFIED\x10\x00\x12\x11\n" +
-	"\rKIND_APPEARED\x10\x01\x12\x11\n" +
-	"\rKIND_RESOLVED\x10\x02\"\xb5\x04\n" +
-	"\vSuppression\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\x03R\x02id\x12\x12\n" +
-	"\x04team\x18\x02 \x01(\tR\x04team\x12\x1d\n" +
-	"\n" +
-	"image_name\x18\x03 \x01(\tR\timageName\x12\x1f\n" +
-	"\vpackage_key\x18\x04 \x01(\tR\n" +
-	"packageKey\x12)\n" +
-	"\x10vulnerability_id\x18\x05 \x01(\tR\x0fvulnerabilityId\x12.\n" +
-	"\x05state\x18\x06 \x01(\x0e2\x18.v0s.v1.SuppressionStateR\x05state\x12;\n" +
-	"\rjustification\x18\a \x01(\x0e2\x15.v0s.v1.JustificationR\rjustification\x12\x16\n" +
-	"\x06detail\x18\b \x01(\tR\x06detail\x12\x1d\n" +
-	"\n" +
-	"created_by\x18\t \x01(\tR\tcreatedBy\x129\n" +
-	"\n" +
-	"created_at\x18\n" +
-	" \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
-	"\n" +
-	"expires_at\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x129\n" +
-	"\n" +
-	"revoked_at\x18\f \x01(\v2\x1a.google.protobuf.TimestampR\trevokedAt\x12\x1d\n" +
-	"\n" +
-	"revoked_by\x18\r \x01(\tR\trevokedBy\x12#\n" +
-	"\rrevoke_reason\x18\x0e \x01(\tR\frevokeReason\"\xb4\x02\n" +
-	"\x0eNewSuppression\x12\x1d\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"t\n" +
+	"\x0eSuppressionKey\x12\x1d\n" +
 	"\n" +
 	"image_name\x18\x01 \x01(\tR\timageName\x12\x18\n" +
 	"\apackage\x18\x02 \x01(\tR\apackage\x12)\n" +
-	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12.\n" +
-	"\x05state\x18\x04 \x01(\x0e2\x18.v0s.v1.SuppressionStateR\x05state\x12;\n" +
-	"\rjustification\x18\x05 \x01(\x0e2\x15.v0s.v1.JustificationR\rjustification\x12\x16\n" +
-	"\x06detail\x18\x06 \x01(\tR\x06detail\x129\n" +
+	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\"\xb4\x02\n" +
+	"\vSuppression\x12\x12\n" +
+	"\x04team\x18\x01 \x01(\tR\x04team\x12\x1d\n" +
 	"\n" +
-	"expires_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"\x9a\x01\n" +
-	"\x19CreateSuppressionsRequest\x12\x12\n" +
-	"\x04team\x18\x01 \x01(\tR\x04team\x12:\n" +
-	"\fsuppressions\x18\x02 \x03(\v2\x16.v0s.v1.NewSuppressionR\fsuppressions\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\x12\x17\n" +
-	"\adry_run\x18\x04 \x01(\bR\x06dryRun\"\x87\x02\n" +
-	"\x1aCreateSuppressionsResponse\x12O\n" +
-	"\aresults\x18\x01 \x03(\v25.v0s.v1.CreateSuppressionsResponse.CreatedSuppressionR\aresults\x1a\x97\x01\n" +
-	"\x12CreatedSuppression\x125\n" +
-	"\vsuppression\x18\x01 \x01(\v2\x13.v0s.v1.SuppressionR\vsuppression\x12)\n" +
-	"\x10matched_findings\x18\x02 \x01(\x03R\x0fmatchedFindings\x12\x1f\n" +
-	"\vreplaces_id\x18\x03 \x01(\x03R\n" +
-	"replacesId\"o\n" +
-	"\x19RevokeSuppressionsRequest\x12\x12\n" +
-	"\x04team\x18\x01 \x01(\tR\x04team\x12\x10\n" +
-	"\x03ids\x18\x02 \x03(\x03R\x03ids\x12\x14\n" +
-	"\x05actor\x18\x03 \x01(\tR\x05actor\x12\x16\n" +
-	"\x06reason\x18\x04 \x01(\tR\x06reason\"K\n" +
-	"\x1aRevokeSuppressionsResponse\x12-\n" +
-	"\arevoked\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\arevoked\"\xe0\x01\n" +
+	"image_name\x18\x02 \x01(\tR\timageName\x12\x1f\n" +
+	"\vpackage_key\x18\x03 \x01(\tR\n" +
+	"packageKey\x12)\n" +
+	"\x10vulnerability_id\x18\x04 \x01(\tR\x0fvulnerabilityId\x12.\n" +
+	"\x05state\x18\x05 \x01(\x0e2\x18.v0s.v1.SuppressionStateR\x05state\x12\x16\n" +
+	"\x06detail\x18\x06 \x01(\tR\x06detail\x12\x1d\n" +
+	"\n" +
+	"updated_by\x18\a \x01(\tR\tupdatedBy\x129\n" +
+	"\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtJ\x04\b\t\x10\n" +
+	"\"\x88\x01\n" +
+	"\x0eNewSuppression\x12(\n" +
+	"\x03key\x18\x01 \x01(\v2\x16.v0s.v1.SuppressionKeyR\x03key\x12.\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x18.v0s.v1.SuppressionStateR\x05state\x12\x16\n" +
+	"\x06detail\x18\x03 \x01(\tR\x06detailJ\x04\b\x04\x10\x05\"~\n" +
+	"\x16SetSuppressionsRequest\x12\x12\n" +
+	"\x04team\x18\x01 \x01(\tR\x04team\x12\x14\n" +
+	"\x05actor\x18\x02 \x01(\tR\x05actor\x12:\n" +
+	"\fsuppressions\x18\x03 \x03(\v2\x16.v0s.v1.NewSuppressionR\fsuppressions\"R\n" +
+	"\x17SetSuppressionsResponse\x127\n" +
+	"\fsuppressions\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\fsuppressions\"[\n" +
+	"\x19DeleteSuppressionsRequest\x12\x12\n" +
+	"\x04team\x18\x01 \x01(\tR\x04team\x12*\n" +
+	"\x04keys\x18\x02 \x03(\v2\x16.v0s.v1.SuppressionKeyR\x04keys\"K\n" +
+	"\x1aDeleteSuppressionsResponse\x12-\n" +
+	"\adeleted\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\adeleted\"\xb5\x01\n" +
 	"\x17ListSuppressionsRequest\x12\x14\n" +
 	"\x05teams\x18\x01 \x03(\tR\x05teams\x12\x1d\n" +
 	"\n" +
 	"image_name\x18\x02 \x01(\tR\timageName\x12)\n" +
-	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12)\n" +
-	"\x10include_inactive\x18\x04 \x01(\bR\x0fincludeInactive\x12\x1b\n" +
-	"\tpage_size\x18\x05 \x01(\x05R\bpageSize\x12\x1d\n" +
+	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12\x1b\n" +
+	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x06 \x01(\tR\tpageToken\"{\n" +
+	"page_token\x18\x05 \x01(\tR\tpageToken\"{\n" +
 	"\x18ListSuppressionsResponse\x127\n" +
 	"\fsuppressions\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\fsuppressions\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\x8b\x01\n" +
@@ -3115,44 +2590,32 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\fSEVERITY_LOW\x10\x02\x12\x13\n" +
 	"\x0fSEVERITY_MEDIUM\x10\x03\x12\x11\n" +
 	"\rSEVERITY_HIGH\x10\x04\x12\x15\n" +
-	"\x11SEVERITY_CRITICAL\x10\x05*\x86\x01\n" +
-	"\tSBOMState\x12\x1a\n" +
-	"\x16SBOM_STATE_UNSPECIFIED\x10\x00\x12\x16\n" +
-	"\x12SBOM_STATE_PENDING\x10\x01\x12\x16\n" +
-	"\x12SBOM_STATE_FETCHED\x10\x02\x12\x16\n" +
-	"\x12SBOM_STATE_MISSING\x10\x03\x12\x15\n" +
-	"\x11SBOM_STATE_FAILED\x10\x04*\xa4\x01\n" +
+	"\x11SEVERITY_CRITICAL\x10\x05*\x92\x01\n" +
+	"\vImageStatus\x12\x1c\n" +
+	"\x18IMAGE_STATUS_UNSPECIFIED\x10\x00\x12\x18\n" +
+	"\x14IMAGE_STATUS_PENDING\x10\x01\x12\x18\n" +
+	"\x14IMAGE_STATUS_SCANNED\x10\x02\x12\x18\n" +
+	"\x14IMAGE_STATUS_NO_SBOM\x10\x03\x12\x17\n" +
+	"\x13IMAGE_STATUS_FAILED\x10\x04*\xa4\x01\n" +
 	"\x10SuppressionState\x12!\n" +
 	"\x1dSUPPRESSION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eSUPPRESSION_STATE_NOT_AFFECTED\x10\x01\x12$\n" +
 	" SUPPRESSION_STATE_FALSE_POSITIVE\x10\x02\x12#\n" +
-	"\x1fSUPPRESSION_STATE_ACCEPTED_RISK\x10\x03*\x9f\x03\n" +
-	"\rJustification\x12\x1d\n" +
-	"\x19JUSTIFICATION_UNSPECIFIED\x10\x00\x12\"\n" +
-	"\x1eJUSTIFICATION_CODE_NOT_PRESENT\x10\x01\x12$\n" +
-	" JUSTIFICATION_CODE_NOT_REACHABLE\x10\x02\x12(\n" +
-	"$JUSTIFICATION_REQUIRES_CONFIGURATION\x10\x03\x12%\n" +
-	"!JUSTIFICATION_REQUIRES_DEPENDENCY\x10\x04\x12&\n" +
-	"\"JUSTIFICATION_REQUIRES_ENVIRONMENT\x10\x05\x12'\n" +
-	"#JUSTIFICATION_PROTECTED_BY_COMPILER\x10\x06\x12&\n" +
-	"\"JUSTIFICATION_PROTECTED_AT_RUNTIME\x10\a\x12(\n" +
-	"$JUSTIFICATION_PROTECTED_AT_PERIMETER\x10\b\x121\n" +
-	"-JUSTIFICATION_PROTECTED_BY_MITIGATING_CONTROL\x10\t*\x8f\x01\n" +
+	"\x1fSUPPRESSION_STATE_ACCEPTED_RISK\x10\x03*\x8f\x01\n" +
 	"\x10SuppressedFilter\x12!\n" +
 	"\x1dSUPPRESSED_FILTER_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19SUPPRESSED_FILTER_EXCLUDE\x10\x01\x12\x1d\n" +
 	"\x19SUPPRESSED_FILTER_INCLUDE\x10\x02\x12\x1a\n" +
-	"\x16SUPPRESSED_FILTER_ONLY\x10\x032\x85\x04\n" +
+	"\x16SUPPRESSED_FILTER_ONLY\x10\x032\xab\x03\n" +
 	"\x14VulnerabilityService\x12L\n" +
 	"\rListWorkloads\x12\x1c.v0s.v1.ListWorkloadsRequest\x1a\x1d.v0s.v1.ListWorkloadsResponse\x12I\n" +
 	"\fListFindings\x12\x1b.v0s.v1.ListFindingsRequest\x1a\x1c.v0s.v1.ListFindingsResponse\x12L\n" +
 	"\rCountFindings\x12\x1c.v0s.v1.CountFindingsRequest\x1a\x1d.v0s.v1.CountFindingsResponse\x12U\n" +
 	"\x10GetVulnerability\x12\x1f.v0s.v1.GetVulnerabilityRequest\x1a .v0s.v1.GetVulnerabilityResponse\x12U\n" +
-	"\x10SearchComponents\x12\x1f.v0s.v1.SearchComponentsRequest\x1a .v0s.v1.SearchComponentsResponse\x12X\n" +
-	"\x11ListFindingEvents\x12 .v0s.v1.ListFindingEventsRequest\x1a!.v0s.v1.ListFindingEventsResponse2\xa5\x02\n" +
-	"\x12SuppressionService\x12[\n" +
-	"\x12CreateSuppressions\x12!.v0s.v1.CreateSuppressionsRequest\x1a\".v0s.v1.CreateSuppressionsResponse\x12[\n" +
-	"\x12RevokeSuppressions\x12!.v0s.v1.RevokeSuppressionsRequest\x1a\".v0s.v1.RevokeSuppressionsResponse\x12U\n" +
+	"\x10SearchComponents\x12\x1f.v0s.v1.SearchComponentsRequest\x1a .v0s.v1.SearchComponentsResponse2\x9c\x02\n" +
+	"\x12SuppressionService\x12R\n" +
+	"\x0fSetSuppressions\x12\x1e.v0s.v1.SetSuppressionsRequest\x1a\x1f.v0s.v1.SetSuppressionsResponse\x12[\n" +
+	"\x12DeleteSuppressions\x12!.v0s.v1.DeleteSuppressionsRequest\x1a\".v0s.v1.DeleteSuppressionsResponse\x12U\n" +
 	"\x10ListSuppressions\x12\x1f.v0s.v1.ListSuppressionsRequest\x1a .v0s.v1.ListSuppressionsResponseB&Z$github.com/nais/v0s/api/v0s/v1;v0sv1b\x06proto3"
 
 var (
@@ -3167,124 +2630,107 @@ func file_v0s_v1_v0s_proto_rawDescGZIP() []byte {
 	return file_v0s_v1_v0s_proto_rawDescData
 }
 
-var file_v0s_v1_v0s_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
-var file_v0s_v1_v0s_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_v0s_v1_v0s_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
+var file_v0s_v1_v0s_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_v0s_v1_v0s_proto_goTypes = []any{
-	(Severity)(0),                                         // 0: v0s.v1.Severity
-	(SBOMState)(0),                                        // 1: v0s.v1.SBOMState
-	(SuppressionState)(0),                                 // 2: v0s.v1.SuppressionState
-	(Justification)(0),                                    // 3: v0s.v1.Justification
-	(SuppressedFilter)(0),                                 // 4: v0s.v1.SuppressedFilter
-	(CountFindingsRequest_GroupBy)(0),                     // 5: v0s.v1.CountFindingsRequest.GroupBy
-	(FindingEvent_Kind)(0),                                // 6: v0s.v1.FindingEvent.Kind
-	(*Image)(nil),                                         // 7: v0s.v1.Image
-	(*Workload)(nil),                                      // 8: v0s.v1.Workload
-	(*FindingFilter)(nil),                                 // 9: v0s.v1.FindingFilter
-	(*Finding)(nil),                                       // 10: v0s.v1.Finding
-	(*Epss)(nil),                                          // 11: v0s.v1.Epss
-	(*Kev)(nil),                                           // 12: v0s.v1.Kev
-	(*ListWorkloadsRequest)(nil),                          // 13: v0s.v1.ListWorkloadsRequest
-	(*ListWorkloadsResponse)(nil),                         // 14: v0s.v1.ListWorkloadsResponse
-	(*ListFindingsRequest)(nil),                           // 15: v0s.v1.ListFindingsRequest
-	(*ListFindingsResponse)(nil),                          // 16: v0s.v1.ListFindingsResponse
-	(*CountFindingsRequest)(nil),                          // 17: v0s.v1.CountFindingsRequest
-	(*CountFindingsResponse)(nil),                         // 18: v0s.v1.CountFindingsResponse
-	(*GetVulnerabilityRequest)(nil),                       // 19: v0s.v1.GetVulnerabilityRequest
-	(*GetVulnerabilityResponse)(nil),                      // 20: v0s.v1.GetVulnerabilityResponse
-	(*Vulnerability)(nil),                                 // 21: v0s.v1.Vulnerability
-	(*Cvss)(nil),                                          // 22: v0s.v1.Cvss
-	(*SearchComponentsRequest)(nil),                       // 23: v0s.v1.SearchComponentsRequest
-	(*SearchComponentsResponse)(nil),                      // 24: v0s.v1.SearchComponentsResponse
-	(*ComponentMatch)(nil),                                // 25: v0s.v1.ComponentMatch
-	(*WorkloadRef)(nil),                                   // 26: v0s.v1.WorkloadRef
-	(*ListFindingEventsRequest)(nil),                      // 27: v0s.v1.ListFindingEventsRequest
-	(*ListFindingEventsResponse)(nil),                     // 28: v0s.v1.ListFindingEventsResponse
-	(*FindingEvent)(nil),                                  // 29: v0s.v1.FindingEvent
-	(*Suppression)(nil),                                   // 30: v0s.v1.Suppression
-	(*NewSuppression)(nil),                                // 31: v0s.v1.NewSuppression
-	(*CreateSuppressionsRequest)(nil),                     // 32: v0s.v1.CreateSuppressionsRequest
-	(*CreateSuppressionsResponse)(nil),                    // 33: v0s.v1.CreateSuppressionsResponse
-	(*RevokeSuppressionsRequest)(nil),                     // 34: v0s.v1.RevokeSuppressionsRequest
-	(*RevokeSuppressionsResponse)(nil),                    // 35: v0s.v1.RevokeSuppressionsResponse
-	(*ListSuppressionsRequest)(nil),                       // 36: v0s.v1.ListSuppressionsRequest
-	(*ListSuppressionsResponse)(nil),                      // 37: v0s.v1.ListSuppressionsResponse
-	(*CountFindingsResponse_Bucket)(nil),                  // 38: v0s.v1.CountFindingsResponse.Bucket
-	nil,                                                   // 39: v0s.v1.Vulnerability.SeveritiesEntry
-	(*CreateSuppressionsResponse_CreatedSuppression)(nil), // 40: v0s.v1.CreateSuppressionsResponse.CreatedSuppression
-	(*timestamppb.Timestamp)(nil),                         // 41: google.protobuf.Timestamp
+	(Severity)(0),                        // 0: v0s.v1.Severity
+	(ImageStatus)(0),                     // 1: v0s.v1.ImageStatus
+	(SuppressionState)(0),                // 2: v0s.v1.SuppressionState
+	(SuppressedFilter)(0),                // 3: v0s.v1.SuppressedFilter
+	(CountFindingsRequest_GroupBy)(0),    // 4: v0s.v1.CountFindingsRequest.GroupBy
+	(*Image)(nil),                        // 5: v0s.v1.Image
+	(*Workload)(nil),                     // 6: v0s.v1.Workload
+	(*FindingFilter)(nil),                // 7: v0s.v1.FindingFilter
+	(*Finding)(nil),                      // 8: v0s.v1.Finding
+	(*Epss)(nil),                         // 9: v0s.v1.Epss
+	(*Kev)(nil),                          // 10: v0s.v1.Kev
+	(*ListWorkloadsRequest)(nil),         // 11: v0s.v1.ListWorkloadsRequest
+	(*ListWorkloadsResponse)(nil),        // 12: v0s.v1.ListWorkloadsResponse
+	(*ListFindingsRequest)(nil),          // 13: v0s.v1.ListFindingsRequest
+	(*ListFindingsResponse)(nil),         // 14: v0s.v1.ListFindingsResponse
+	(*CountFindingsRequest)(nil),         // 15: v0s.v1.CountFindingsRequest
+	(*CountFindingsResponse)(nil),        // 16: v0s.v1.CountFindingsResponse
+	(*GetVulnerabilityRequest)(nil),      // 17: v0s.v1.GetVulnerabilityRequest
+	(*GetVulnerabilityResponse)(nil),     // 18: v0s.v1.GetVulnerabilityResponse
+	(*Vulnerability)(nil),                // 19: v0s.v1.Vulnerability
+	(*Cvss)(nil),                         // 20: v0s.v1.Cvss
+	(*SearchComponentsRequest)(nil),      // 21: v0s.v1.SearchComponentsRequest
+	(*SearchComponentsResponse)(nil),     // 22: v0s.v1.SearchComponentsResponse
+	(*ComponentMatch)(nil),               // 23: v0s.v1.ComponentMatch
+	(*WorkloadRef)(nil),                  // 24: v0s.v1.WorkloadRef
+	(*SuppressionKey)(nil),               // 25: v0s.v1.SuppressionKey
+	(*Suppression)(nil),                  // 26: v0s.v1.Suppression
+	(*NewSuppression)(nil),               // 27: v0s.v1.NewSuppression
+	(*SetSuppressionsRequest)(nil),       // 28: v0s.v1.SetSuppressionsRequest
+	(*SetSuppressionsResponse)(nil),      // 29: v0s.v1.SetSuppressionsResponse
+	(*DeleteSuppressionsRequest)(nil),    // 30: v0s.v1.DeleteSuppressionsRequest
+	(*DeleteSuppressionsResponse)(nil),   // 31: v0s.v1.DeleteSuppressionsResponse
+	(*ListSuppressionsRequest)(nil),      // 32: v0s.v1.ListSuppressionsRequest
+	(*ListSuppressionsResponse)(nil),     // 33: v0s.v1.ListSuppressionsResponse
+	(*CountFindingsResponse_Bucket)(nil), // 34: v0s.v1.CountFindingsResponse.Bucket
+	nil,                                  // 35: v0s.v1.Vulnerability.SeveritiesEntry
+	(*timestamppb.Timestamp)(nil),        // 36: google.protobuf.Timestamp
 }
 var file_v0s_v1_v0s_proto_depIdxs = []int32{
-	1,  // 0: v0s.v1.Image.sbom_state:type_name -> v0s.v1.SBOMState
-	41, // 1: v0s.v1.Image.scanned_at:type_name -> google.protobuf.Timestamp
-	41, // 2: v0s.v1.Image.scanned_db_version:type_name -> google.protobuf.Timestamp
-	7,  // 3: v0s.v1.Workload.image:type_name -> v0s.v1.Image
+	1,  // 0: v0s.v1.Image.status:type_name -> v0s.v1.ImageStatus
+	36, // 1: v0s.v1.Image.scanned_at:type_name -> google.protobuf.Timestamp
+	36, // 2: v0s.v1.Image.scanned_db_version:type_name -> google.protobuf.Timestamp
+	5,  // 3: v0s.v1.Workload.image:type_name -> v0s.v1.Image
 	0,  // 4: v0s.v1.FindingFilter.severities:type_name -> v0s.v1.Severity
-	4,  // 5: v0s.v1.FindingFilter.suppressed:type_name -> v0s.v1.SuppressedFilter
-	7,  // 6: v0s.v1.Finding.image:type_name -> v0s.v1.Image
-	0,  // 7: v0s.v1.Finding.severity:type_name -> v0s.v1.Severity
-	11, // 8: v0s.v1.Finding.epss:type_name -> v0s.v1.Epss
-	12, // 9: v0s.v1.Finding.kev:type_name -> v0s.v1.Kev
-	41, // 10: v0s.v1.Finding.first_seen_at:type_name -> google.protobuf.Timestamp
-	30, // 11: v0s.v1.Finding.suppressions:type_name -> v0s.v1.Suppression
-	26, // 12: v0s.v1.Finding.workloads:type_name -> v0s.v1.WorkloadRef
-	8,  // 13: v0s.v1.ListWorkloadsResponse.workloads:type_name -> v0s.v1.Workload
-	9,  // 14: v0s.v1.ListFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
-	10, // 15: v0s.v1.ListFindingsResponse.findings:type_name -> v0s.v1.Finding
-	9,  // 16: v0s.v1.CountFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
-	5,  // 17: v0s.v1.CountFindingsRequest.group_by:type_name -> v0s.v1.CountFindingsRequest.GroupBy
-	38, // 18: v0s.v1.CountFindingsResponse.buckets:type_name -> v0s.v1.CountFindingsResponse.Bucket
-	21, // 19: v0s.v1.GetVulnerabilityResponse.vulnerability:type_name -> v0s.v1.Vulnerability
-	39, // 20: v0s.v1.Vulnerability.severities:type_name -> v0s.v1.Vulnerability.SeveritiesEntry
-	22, // 21: v0s.v1.Vulnerability.cvss:type_name -> v0s.v1.Cvss
-	41, // 22: v0s.v1.Vulnerability.published_at:type_name -> google.protobuf.Timestamp
-	41, // 23: v0s.v1.Vulnerability.modified_at:type_name -> google.protobuf.Timestamp
-	11, // 24: v0s.v1.Vulnerability.epss:type_name -> v0s.v1.Epss
-	12, // 25: v0s.v1.Vulnerability.kev:type_name -> v0s.v1.Kev
-	25, // 26: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
-	7,  // 27: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
-	26, // 28: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
-	41, // 29: v0s.v1.ListFindingEventsRequest.since:type_name -> google.protobuf.Timestamp
-	29, // 30: v0s.v1.ListFindingEventsResponse.events:type_name -> v0s.v1.FindingEvent
-	6,  // 31: v0s.v1.FindingEvent.kind:type_name -> v0s.v1.FindingEvent.Kind
-	41, // 32: v0s.v1.FindingEvent.db_version:type_name -> google.protobuf.Timestamp
-	41, // 33: v0s.v1.FindingEvent.created_at:type_name -> google.protobuf.Timestamp
-	2,  // 34: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
-	3,  // 35: v0s.v1.Suppression.justification:type_name -> v0s.v1.Justification
-	41, // 36: v0s.v1.Suppression.created_at:type_name -> google.protobuf.Timestamp
-	41, // 37: v0s.v1.Suppression.expires_at:type_name -> google.protobuf.Timestamp
-	41, // 38: v0s.v1.Suppression.revoked_at:type_name -> google.protobuf.Timestamp
-	2,  // 39: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
-	3,  // 40: v0s.v1.NewSuppression.justification:type_name -> v0s.v1.Justification
-	41, // 41: v0s.v1.NewSuppression.expires_at:type_name -> google.protobuf.Timestamp
-	31, // 42: v0s.v1.CreateSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
-	40, // 43: v0s.v1.CreateSuppressionsResponse.results:type_name -> v0s.v1.CreateSuppressionsResponse.CreatedSuppression
-	30, // 44: v0s.v1.RevokeSuppressionsResponse.revoked:type_name -> v0s.v1.Suppression
-	30, // 45: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
-	0,  // 46: v0s.v1.Vulnerability.SeveritiesEntry.value:type_name -> v0s.v1.Severity
-	30, // 47: v0s.v1.CreateSuppressionsResponse.CreatedSuppression.suppression:type_name -> v0s.v1.Suppression
-	13, // 48: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
-	15, // 49: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
-	17, // 50: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
-	19, // 51: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
-	23, // 52: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
-	27, // 53: v0s.v1.VulnerabilityService.ListFindingEvents:input_type -> v0s.v1.ListFindingEventsRequest
-	32, // 54: v0s.v1.SuppressionService.CreateSuppressions:input_type -> v0s.v1.CreateSuppressionsRequest
-	34, // 55: v0s.v1.SuppressionService.RevokeSuppressions:input_type -> v0s.v1.RevokeSuppressionsRequest
-	36, // 56: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
-	14, // 57: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
-	16, // 58: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
-	18, // 59: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
-	20, // 60: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
-	24, // 61: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
-	28, // 62: v0s.v1.VulnerabilityService.ListFindingEvents:output_type -> v0s.v1.ListFindingEventsResponse
-	33, // 63: v0s.v1.SuppressionService.CreateSuppressions:output_type -> v0s.v1.CreateSuppressionsResponse
-	35, // 64: v0s.v1.SuppressionService.RevokeSuppressions:output_type -> v0s.v1.RevokeSuppressionsResponse
-	37, // 65: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
-	57, // [57:66] is the sub-list for method output_type
-	48, // [48:57] is the sub-list for method input_type
-	48, // [48:48] is the sub-list for extension type_name
-	48, // [48:48] is the sub-list for extension extendee
-	0,  // [0:48] is the sub-list for field type_name
+	3,  // 5: v0s.v1.FindingFilter.suppressed:type_name -> v0s.v1.SuppressedFilter
+	24, // 6: v0s.v1.Finding.workload:type_name -> v0s.v1.WorkloadRef
+	5,  // 7: v0s.v1.Finding.image:type_name -> v0s.v1.Image
+	0,  // 8: v0s.v1.Finding.severity:type_name -> v0s.v1.Severity
+	9,  // 9: v0s.v1.Finding.epss:type_name -> v0s.v1.Epss
+	10, // 10: v0s.v1.Finding.kev:type_name -> v0s.v1.Kev
+	26, // 11: v0s.v1.Finding.suppression:type_name -> v0s.v1.Suppression
+	6,  // 12: v0s.v1.ListWorkloadsResponse.workloads:type_name -> v0s.v1.Workload
+	7,  // 13: v0s.v1.ListFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
+	8,  // 14: v0s.v1.ListFindingsResponse.findings:type_name -> v0s.v1.Finding
+	7,  // 15: v0s.v1.CountFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
+	4,  // 16: v0s.v1.CountFindingsRequest.group_by:type_name -> v0s.v1.CountFindingsRequest.GroupBy
+	34, // 17: v0s.v1.CountFindingsResponse.buckets:type_name -> v0s.v1.CountFindingsResponse.Bucket
+	19, // 18: v0s.v1.GetVulnerabilityResponse.vulnerability:type_name -> v0s.v1.Vulnerability
+	35, // 19: v0s.v1.Vulnerability.severities:type_name -> v0s.v1.Vulnerability.SeveritiesEntry
+	20, // 20: v0s.v1.Vulnerability.cvss:type_name -> v0s.v1.Cvss
+	36, // 21: v0s.v1.Vulnerability.published_at:type_name -> google.protobuf.Timestamp
+	36, // 22: v0s.v1.Vulnerability.modified_at:type_name -> google.protobuf.Timestamp
+	9,  // 23: v0s.v1.Vulnerability.epss:type_name -> v0s.v1.Epss
+	10, // 24: v0s.v1.Vulnerability.kev:type_name -> v0s.v1.Kev
+	23, // 25: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
+	5,  // 26: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
+	24, // 27: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
+	2,  // 28: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
+	36, // 29: v0s.v1.Suppression.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 30: v0s.v1.NewSuppression.key:type_name -> v0s.v1.SuppressionKey
+	2,  // 31: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
+	27, // 32: v0s.v1.SetSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
+	26, // 33: v0s.v1.SetSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	25, // 34: v0s.v1.DeleteSuppressionsRequest.keys:type_name -> v0s.v1.SuppressionKey
+	26, // 35: v0s.v1.DeleteSuppressionsResponse.deleted:type_name -> v0s.v1.Suppression
+	26, // 36: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	0,  // 37: v0s.v1.Vulnerability.SeveritiesEntry.value:type_name -> v0s.v1.Severity
+	11, // 38: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
+	13, // 39: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
+	15, // 40: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
+	17, // 41: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
+	21, // 42: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
+	28, // 43: v0s.v1.SuppressionService.SetSuppressions:input_type -> v0s.v1.SetSuppressionsRequest
+	30, // 44: v0s.v1.SuppressionService.DeleteSuppressions:input_type -> v0s.v1.DeleteSuppressionsRequest
+	32, // 45: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
+	12, // 46: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
+	14, // 47: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
+	16, // 48: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
+	18, // 49: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
+	22, // 50: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
+	29, // 51: v0s.v1.SuppressionService.SetSuppressions:output_type -> v0s.v1.SetSuppressionsResponse
+	31, // 52: v0s.v1.SuppressionService.DeleteSuppressions:output_type -> v0s.v1.DeleteSuppressionsResponse
+	33, // 53: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
+	46, // [46:54] is the sub-list for method output_type
+	38, // [38:46] is the sub-list for method input_type
+	38, // [38:38] is the sub-list for extension type_name
+	38, // [38:38] is the sub-list for extension extendee
+	0,  // [0:38] is the sub-list for field type_name
 }
 
 func init() { file_v0s_v1_v0s_proto_init() }
@@ -3297,8 +2743,8 @@ func file_v0s_v1_v0s_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v0s_v1_v0s_proto_rawDesc), len(file_v0s_v1_v0s_proto_rawDesc)),
-			NumEnums:      7,
-			NumMessages:   34,
+			NumEnums:      5,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

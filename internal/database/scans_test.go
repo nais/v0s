@@ -7,12 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/database/databasetest"
 )
 
-func TestClaimScans(t *testing.T) {
+func TestNextScan(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
 	v1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -35,31 +34,26 @@ func TestClaimScans(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	tests := []struct {
-		name string
-		want []string
-	}{
-		{name: "in use, fetched and outdated", want: []string{`old {"sbom":"old"}`, `unscanned {"sbom":"unscanned"}`}},
-		{name: "leased", want: nil},
+	// In use, fetched and outdated, never scanned first. Each is handed out until its result is stored.
+	var got []string
+	for range 10 {
+		j, ok, err := db.NextScan(ctx, v2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok {
+			break
+		}
+		if again, _, err := db.NextScan(ctx, v2); err != nil || again.Image.ID != j.Image.ID {
+			t.Errorf("NextScan before storing %s = %s, %v; want it again", j.Image.Name, again.Image.Name, err)
+		}
+		got = append(got, j.Image.Name+" "+string(j.SBOM))
+		if err := db.StoreScan(ctx, j.Image.ID, v2, v0s.ScanResult{}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var got []string
-			for {
-				j, ok, err := db.ClaimScan(ctx, v2, time.Minute)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if !ok {
-					break
-				}
-				got = append(got, j.Image.Name+" "+string(j.SBOM))
-			}
-			slices.Sort(got)
-			if !slices.Equal(got, tt.want) {
-				t.Errorf("claimed %q, want %q", got, tt.want)
-			}
-		})
+	if want := []string{`unscanned {"sbom":"unscanned"}`, `old {"sbom":"old"}`}; !slices.Equal(got, want) {
+		t.Errorf("scanned %q, want %q", got, want)
 	}
 }
 
@@ -75,80 +69,39 @@ func TestStoreScan(t *testing.T) {
 		dbVersion    time.Time
 		result       v0s.ScanResult
 		wantFindings []string
-		wantEvents   []string
 	}{
 		{
 			name:         "first scan",
 			dbVersion:    v1,
 			result:       scanResult("CVE-A pkg:x/p1", "CVE-B pkg:x/p1", "CVE-B pkg:x/p1"),
 			wantFindings: []string{"CVE-A pkg:x/p1", "CVE-B pkg:x/p1"},
-			wantEvents:   []string{"2026-01-01 appeared CVE-A pkg:x/p1", "2026-01-01 appeared CVE-B pkg:x/p1"},
 		},
 		{
 			name:         "newer db",
 			dbVersion:    v2,
 			result:       scanResult("CVE-B pkg:x/p1", "CVE-C pkg:x/p2"),
 			wantFindings: []string{"CVE-B pkg:x/p1", "CVE-C pkg:x/p2"},
-			wantEvents: []string{
-				"2026-01-01 appeared CVE-A pkg:x/p1", "2026-01-01 appeared CVE-B pkg:x/p1",
-				"2026-02-01 appeared CVE-C pkg:x/p2", "2026-02-01 resolved CVE-A pkg:x/p1",
-			},
 		},
 		{
 			name:         "older db is a no-op",
 			dbVersion:    v1,
 			result:       scanResult("CVE-D pkg:x/p3"),
 			wantFindings: []string{"CVE-B pkg:x/p1", "CVE-C pkg:x/p2"},
-			wantEvents: []string{
-				"2026-01-01 appeared CVE-A pkg:x/p1", "2026-01-01 appeared CVE-B pkg:x/p1",
-				"2026-02-01 appeared CVE-C pkg:x/p2", "2026-02-01 resolved CVE-A pkg:x/p1",
-			},
 		},
 		{
 			name:         "same db is a no-op",
 			dbVersion:    v2,
 			result:       scanResult("CVE-D pkg:x/p3"),
 			wantFindings: []string{"CVE-B pkg:x/p1", "CVE-C pkg:x/p2"},
-			wantEvents: []string{
-				"2026-01-01 appeared CVE-A pkg:x/p1", "2026-01-01 appeared CVE-B pkg:x/p1",
-				"2026-02-01 appeared CVE-C pkg:x/p2", "2026-02-01 resolved CVE-A pkg:x/p1",
-			},
 		},
 	}
-	firstSeen := map[string]time.Time{}
 	for _, s := range steps {
 		if err := db.StoreScan(ctx, id, s.dbVersion, s.result); err != nil {
 			t.Fatalf("%s: %v", s.name, err)
 		}
-
-		rows, err := db.Pool().Query(ctx, `SELECT vulnerability_id || ' ' || purl, first_seen_at FROM findings ORDER BY 1`)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var (
-			findings []string
-			finding  string
-			seen     time.Time
-		)
-		if _, err := pgx.ForEachRow(rows, []any{&finding, &seen}, func() error {
-			if prev, ok := firstSeen[finding]; ok && !prev.Equal(seen) {
-				t.Errorf("%s: first_seen_at of %s changed from %v to %v", s.name, finding, prev, seen)
-			}
-			firstSeen[finding] = seen
-			findings = append(findings, finding)
-			return nil
-		}); err != nil {
-			t.Fatal(err)
-		}
+		findings := queryStrings(t, db, `SELECT vulnerability_id || ' ' || purl FROM findings ORDER BY 1`)
 		if !slices.Equal(findings, s.wantFindings) {
 			t.Errorf("%s: findings = %q, want %q", s.name, findings, s.wantFindings)
-		}
-
-		events := queryStrings(t, db, `
-			SELECT to_char(db_version AT TIME ZONE 'UTC', 'YYYY-MM-DD') || ' ' || kind || ' ' || vulnerability_id || ' ' || purl
-			FROM finding_events ORDER BY 1`)
-		if !slices.Equal(events, s.wantEvents) {
-			t.Errorf("%s: events = %q, want %q", s.name, events, s.wantEvents)
 		}
 	}
 
@@ -184,12 +137,12 @@ func TestRecordScanFailure(t *testing.T) {
 	state := func() []string {
 		t.Helper()
 		return queryStrings(t, db, `
-			SELECT concat_ws(' ', to_char(i.scanned_db_version AT TIME ZONE 'UTC', 'YYYY-MM-DD'), quote_literal(i.scan_error), f.vulnerability_id)
+			SELECT concat_ws(' ', to_char(i.scanned_db_version AT TIME ZONE 'UTC', 'YYYY-MM-DD'), quote_literal(i.error), f.vulnerability_id)
 			FROM images i LEFT JOIN findings f ON f.image_id = i.id ORDER BY 1`)
 	}
 	claimed := func(dbVersion time.Time) bool {
 		t.Helper()
-		_, ok, err := db.ClaimScan(ctx, dbVersion, time.Minute)
+		_, ok, err := db.NextScan(ctx, dbVersion)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -203,7 +156,7 @@ func TestRecordScanFailure(t *testing.T) {
 		t.Errorf("after failure with v2: %q, want findings from v1 kept: %q", got, want)
 	}
 	if claimed(v2) {
-		t.Error("image that failed with v2 claimed again for v2")
+		t.Error("image that failed with v2 handed out again for v2")
 	}
 
 	if err := db.StoreScan(ctx, id, v2, scanResult("CVE-B pkg:x/p1")); err != nil {
@@ -213,13 +166,13 @@ func TestRecordScanFailure(t *testing.T) {
 		t.Errorf("after successful scan with v2: %q, want %q", got, want)
 	}
 	if !claimed(v3) {
-		t.Error("image not claimed for a newer DB")
+		t.Error("image not handed out for a newer DB")
 	}
 }
 
-// TestClaimScanAttemptCap checks that an image whose scans never record a result, as when the scan
-// kills the process, is given up for that DB version after three claims.
-func TestClaimScanAttemptCap(t *testing.T) {
+// TestNextScanAttemptCap checks that an image whose scans never record a result, as when the scan
+// kills the process, is given up for that DB version after three attempts.
+func TestNextScanAttemptCap(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
 	v1 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -230,36 +183,35 @@ func TestClaimScanAttemptCap(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// claim claims with dbVersion, then expires the lease as if the scanning process had died.
-	claim := func(dbVersion time.Time) bool {
+	// attempt hands out the image with dbVersion and records nothing, as if the process had died.
+	attempt := func(dbVersion time.Time) bool {
 		t.Helper()
-		_, ok, err := db.ClaimScan(ctx, dbVersion, time.Minute)
+		_, ok, err := db.NextScan(ctx, dbVersion)
 		if err != nil {
 			t.Fatal(err)
 		}
-		exec(t, db, `UPDATE images SET scan_lease_until = NULL`)
 		return ok
 	}
 
 	for i := range 2 {
-		if !claim(v1) {
-			t.Fatalf("claim %d for v1 failed", i+1)
+		if !attempt(v1) {
+			t.Fatalf("attempt %d for v1 failed", i+1)
 		}
 	}
 	for i := range 3 {
-		if !claim(v2) {
-			t.Fatalf("claim %d for v2 failed: attempts with v1 must not count for v2", i+1)
+		if !attempt(v2) {
+			t.Fatalf("attempt %d for v2 failed: attempts with v1 must not count for v2", i+1)
 		}
 	}
-	if claim(v2) {
-		t.Error("image claimed a fourth time for v2")
+	if attempt(v2) {
+		t.Error("image handed out a fourth time for v2")
 	}
-	got := queryStrings(t, db, `SELECT scan_error || ' ' || to_char(scan_failed_db_version AT TIME ZONE 'UTC', 'YYYY-MM-DD') FROM images`)
+	got := queryStrings(t, db, `SELECT error || ' ' || to_char(scan_failed_db_version AT TIME ZONE 'UTC', 'YYYY-MM-DD') FROM images`)
 	if want := []string{"abandoned after 3 attempts 2026-02-01"}; !slices.Equal(got, want) {
-		t.Errorf("after the fourth claim: %q, want %q", got, want)
+		t.Errorf("after the fourth attempt: %q, want %q", got, want)
 	}
-	if !claim(v3) {
-		t.Error("abandoned image not claimed for a newer DB")
+	if !attempt(v3) {
+		t.Error("abandoned image not handed out for a newer DB")
 	}
 }
 

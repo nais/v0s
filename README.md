@@ -4,8 +4,9 @@ v0s reports which known vulnerabilities affect the container images of the teams
 Nais workloads (applications and jobs) in a tenant. It reports mechanical facts and no
 judgements. The platform's own workloads in `nais-system` are not covered.
 
-It replaces v13s together with Dependency-Track. The motivation is recorded in
-the session notes (`~/ws/sessions/v13s-veien-videre`).
+It replaces v13s together with Dependency-Track. The motivation and the measurements
+behind it are in `docs/background/`; the current state of the work is in
+`docs/handover.md`.
 
 ## What it does
 
@@ -17,14 +18,17 @@ the session notes (`~/ws/sessions/v13s-veien-videre`).
    local copy of the database.
 4. Rescans every image in use whenever a new database is published.
 5. Serves the results through a gRPC API (`v0s.v1`): findings, components and
-   tenant-wide package search, counts, finding events, and suppressions.
+   tenant-wide package search, counts, and suppressions.
 
 ## What it does not do
 
-- It computes no priority, risk score or "top" lists. Clients decide what
-  matters. v0s exposes the inputs: severity and its source, CVSS, fix version,
-  fix status, EPSS and KEV.
-- It does not write to any other system. Suppressions are owned here.
+- It computes no priority, risk score or "top" lists, and keeps no history.
+  Clients decide what matters. v0s exposes the current inputs: severity and its
+  source, CVSS, fix version, fix status, EPSS and KEV.
+- It does not write to any other system. Suppressions are owned here, current
+  state only.
+- It does not authenticate callers. NetworkPolicy lets only `nais-system` reach
+  it, and Nais API authorizes its users.
 - It does not restrict reads. Everyone in the tenant may see every team's findings;
   team filters narrow a query. Only suppressions are scoped to a team.
 - It does not share data across tenants. There is one v0s per tenant.
@@ -36,8 +40,8 @@ the session notes (`~/ws/sessions/v13s-veien-videre`).
 - The system converges toward the desired state (level-triggered). Loops compare
   desired state with actual state in Postgres. There are no event queues to
   lose.
-- Postgres is the only state. Replicas are interchangeable, and work is claimed
-  with `FOR UPDATE SKIP LOCKED`.
+- Postgres is the only state. Replicas are interchangeable: one does the work
+  behind an advisory lock, all serve the API.
 - Few dependencies. Use the standard library first.
 
 See `CONTEXT.md` for the domain language and `docs/adr/` for decisions.

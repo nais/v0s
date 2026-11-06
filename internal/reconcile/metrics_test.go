@@ -27,7 +27,7 @@ func TestImagesMetric(t *testing.T) {
 	if err := db.SyncWorkloadImages(ctx, "dev", ws); err != nil {
 		t.Fatal(err)
 	}
-	images, err := db.ClaimSBOMFetches(ctx, len(names), 0)
+	images, err := db.DueSBOMFetches(ctx, len(names))
 	if err != nil {
 		t.Fatal(err)
 	}

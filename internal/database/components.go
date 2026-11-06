@@ -131,3 +131,37 @@ func (db *DB) SearchComponents(ctx context.Context, filter ComponentFilter, page
 func likePrefix(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s) + "%"
 }
+
+// inUse returns a condition that image i is used by a workload w matching the workload conditions.
+func inUse(workload []string) string {
+	return "EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = i.id AND " + and(workload) + ")"
+}
+
+// imageWorkloads returns the workloads using each of imageIDs that match the
+// workload conditions on w, whose placeholders are in args, ordered by environment, team and name.
+func imageWorkloads(ctx context.Context, q pgxQuerier, imageIDs []int64, workload []string, args sqlArgs) (map[int64][]WorkloadRef, error) {
+	if len(imageIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := q.Query(ctx, `
+		SELECT w.image_id, w.environment, w.team, w.name
+		FROM workloads w
+		WHERE w.image_id = ANY(`+args.add(imageIDs)+`) AND `+and(workload)+`
+		ORDER BY w.image_id, w.environment, w.team, w.name`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing workloads of images: %w", err)
+	}
+	workloads := make(map[int64][]WorkloadRef)
+	var (
+		imageID int64
+		ref     WorkloadRef
+	)
+	_, err = pgx.ForEachRow(rows, []any{&imageID, &ref.Environment, &ref.Team, &ref.Name}, func() error {
+		workloads[imageID] = append(workloads[imageID], ref)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("listing workloads of images: %w", err)
+	}
+	return workloads, nil
+}

@@ -3,8 +3,9 @@ package reconcile
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
+	"maps"
+	"slices"
 	"testing"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 )
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
+
+var discard = slog.New(slog.DiscardHandler)
 
 // fakeInventory is a snapshot; a nil inventory fails.
 type fakeInventory map[string][]v0s.WorkloadImage
@@ -67,16 +70,13 @@ func TestPipeline(t *testing.T) {
 	workload := func(app, digest string) v0s.WorkloadImage {
 		return v0s.WorkloadImage{Environment: "dev", Team: "team", Workload: app, ImageName: "registry/" + app, Digest: digest}
 	}
-	prod := workload("stored", "sha256:e")
-	prod.Environment = "prod"
-	if err := db.SyncWorkloadImages(ctx, "prod", []v0s.WorkloadImage{prod}); err != nil {
-		t.Fatal(err)
-	}
 	r := &Reconciler{
 		DB: db,
 		Inventory: fakeInventory{
-			// prod is missing: its stored workloads must be kept
-			"dev": {workload("scanned", "sha256:a"), workload("unsigned", "sha256:b"), workload("flaky", "sha256:c"), workload("garbage", "sha256:d")},
+			"dev": {
+				workload("scanned", "sha256:a"), workload("unsigned", "sha256:b"), workload("flaky", "sha256:c"), workload("garbage", "sha256:d"),
+				{Environment: "dev", Team: "team", Workload: "unresolved", Reference: "registry/unresolved:1", ResolveError: "tag not found"},
+			},
 		},
 		Fetcher: fakeFetcher{
 			"registry/scanned@sha256:a": []byte("sbom"),
@@ -84,7 +84,7 @@ func TestPipeline(t *testing.T) {
 			"registry/garbage@sha256:d": []byte("garbage"),
 		},
 		Scanner: fakeScanner{version: time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)},
-		Log:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Log:     discard,
 		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	for _, step := range []func(context.Context) error{r.sync, r.fetch, r.scan} {
@@ -97,23 +97,23 @@ func TestPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	images := map[string]v0s.Image{}
-	environments := map[string]string{}
+	status := map[string]v0s.ImageStatus{}
 	for _, w := range workloads {
-		environments[w.Name] = w.Environment
-		images[w.Name] = w.Image
-	}
-	if got := environments["stored"]; got != "prod" {
-		t.Errorf("workload stored in environment prod missing from the snapshot: environment %q, want it kept", got)
-	}
-	wantState := map[string]v0s.SBOMState{"scanned": v0s.SBOMFetched, "unsigned": v0s.SBOMMissing, "flaky": v0s.SBOMFailed, "garbage": v0s.SBOMFetched}
-	for app, want := range wantState {
-		if got := images[app].SBOMState; got != want {
-			t.Errorf("%s: SBOM state %q, want %q", app, got, want)
+		if w.Image == nil {
+			if w.ResolveError == "" {
+				t.Errorf("%s: no image and no resolve error", w.Name)
+			}
+			status[w.Name] = "unresolved"
+			continue
 		}
+		status[w.Name] = w.Image.Status()
 	}
-	if images["garbage"].ScanError == "" {
-		t.Error("garbage: scan error not recorded")
+	want := map[string]v0s.ImageStatus{
+		"scanned": v0s.ImageScanned, "unsigned": v0s.ImageNoSBOM, "flaky": v0s.ImageFailed, "garbage": v0s.ImageFailed,
+		"unresolved": "unresolved",
+	}
+	if !maps.Equal(status, want) {
+		t.Errorf("statuses = %v, want %v", status, want)
 	}
 
 	findings, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
@@ -124,9 +124,79 @@ func TestPipeline(t *testing.T) {
 		t.Errorf("findings = %+v, want CVE-2021-23337 in registry/scanned", findings)
 	}
 
-	// A second pass with the same DB version claims nothing.
-	if _, ok, err := db.ClaimScan(ctx, r.Scanner.DBVersion(), time.Minute); err != nil || ok {
-		t.Errorf("ClaimScan after pass = %t, %v; want nothing to claim", ok, err)
+	// A second pass with the same DB version finds nothing to scan.
+	if _, ok, err := db.NextScan(ctx, r.Scanner.DBVersion()); err != nil || ok {
+		t.Errorf("NextScan after pass = %t, %v; want nothing to scan", ok, err)
+	}
+}
+
+// TestSyncDeletesUnusedImages checks that an image no workload uses anymore is deleted at once,
+// while images of environments missing from the snapshot are kept.
+func TestSyncDeletesUnusedImages(t *testing.T) {
+	ctx := context.Background()
+	db, url := databasetest.NewWithURL(t)
+	workload := func(env, app string) v0s.WorkloadImage {
+		return v0s.WorkloadImage{Environment: env, Team: "team", Workload: app, ImageName: "registry/" + app, Digest: "sha256:" + app}
+	}
+	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{workload("dev", "kept"), workload("dev", "removed")}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SyncWorkloadImages(ctx, "prod", []v0s.WorkloadImage{workload("prod", "stored")}); err != nil {
+		t.Fatal(err)
+	}
+	r := &Reconciler{
+		DB:        db,
+		Inventory: fakeInventory{"dev": {workload("dev", "kept")}},
+		Log:       discard,
+	}
+	if err := r.sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	rows, err := conn.Query(ctx, `SELECT name FROM images ORDER BY name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"registry/kept", "registry/stored"}; !slices.Equal(got, want) {
+		t.Errorf("images = %q, want %q", got, want)
+	}
+}
+
+// TestOneScanner checks that only the holder of the scan lock scans.
+func TestOneScanner(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	w := v0s.WorkloadImage{Environment: "dev", Team: "team", Workload: "app", ImageName: "registry/app", Digest: "sha256:a"}
+	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
+		t.Fatal(err)
+	}
+	version := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
+	r := &Reconciler{
+		DB:      db,
+		Fetcher: fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
+		Scanner: fakeScanner{version: version},
+		Log:     discard,
+		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
+	}
+	if err := r.fetch(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Another replica holds the lock while this one tries to scan.
+	if err := db.WithLock(ctx, "scan", r.scan); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := db.NextScan(ctx, version); err != nil || !ok {
+		t.Errorf("NextScan after a scan without the lock = %t, %v; want the image still unscanned", ok, err)
 	}
 }
 
@@ -139,7 +209,7 @@ func TestFailedSnapshotKeepsWorkloads(t *testing.T) {
 	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
 		t.Fatal(err)
 	}
-	r := &Reconciler{DB: db, Inventory: fakeInventory(nil), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	r := &Reconciler{DB: db, Inventory: fakeInventory(nil), Log: discard}
 	if err := r.sync(ctx); err == nil {
 		t.Error("sync with an unavailable inventory succeeded, want an error")
 	}
@@ -175,7 +245,7 @@ func TestScanFailureRecordsUsedVersion(t *testing.T) {
 		DB:        db,
 		Inventory: fakeInventory{},
 		Fetcher:   fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
-		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Log:       discard,
 		Metrics:   NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	if err := r.fetch(ctx); err != nil {
@@ -185,14 +255,16 @@ func TestScanFailureRecordsUsedVersion(t *testing.T) {
 	v1 := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
 	v2 := v1.Add(time.Hour)
 	r.Scanner = staleScanner{fakeScanner: fakeScanner{version: v2}, used: v1}
-	job, ok, err := db.ClaimScan(ctx, v2, time.Minute)
+	job, ok, err := db.NextScan(ctx, v2)
 	if err != nil || !ok {
-		t.Fatalf("ClaimScan = %t, %v, want a job", ok, err)
+		t.Fatalf("NextScan = %t, %v, want a job", ok, err)
 	}
-	r.scanOne(ctx, job)
+	if err := r.scanOne(ctx, job); err != nil {
+		t.Fatal(err)
+	}
 
-	if _, ok, err := db.ClaimScan(ctx, v2, time.Minute); err != nil || !ok {
-		t.Errorf("ClaimScan for %v after a failure with %v = %t, %v; want the image again", v2, v1, ok, err)
+	if _, ok, err := db.NextScan(ctx, v2); err != nil || !ok {
+		t.Errorf("NextScan for %v after a failure with %v = %t, %v; want the image again", v2, v1, ok, err)
 	}
 }
 
@@ -206,7 +278,7 @@ func (s nulScanner) Scan(context.Context, []byte) (v0s.ScanResult, time.Time, er
 }
 
 // TestRejectedResultIsNotRetried checks that a result the database rejects is recorded as a
-// failure with that DB, so the image is not rescanned on every lease expiry.
+// failure with that DB, so the image is not rescanned on every pass.
 func TestRejectedResultIsNotRetried(t *testing.T) {
 	ctx := context.Background()
 	db, url := databasetest.NewWithURL(t)
@@ -220,7 +292,7 @@ func TestRejectedResultIsNotRetried(t *testing.T) {
 		Inventory: fakeInventory{},
 		Fetcher:   fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
 		Scanner:   nulScanner{fakeScanner{version: version}},
-		Log:       slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Log:       discard,
 		Metrics:   NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	if err := r.fetch(ctx); err != nil {

@@ -4,66 +4,39 @@ import (
 	"context"
 	"strconv"
 	"strings"
-	"time"
 
 	v0sv1 "github.com/nais/v0s/api/v0s/v1"
 	"github.com/nais/v0s/internal/database"
 )
 
-// CreateSuppressions implements SuppressionService.
-func (s *Server) CreateSuppressions(ctx context.Context, req *v0sv1.CreateSuppressionsRequest) (*v0sv1.CreateSuppressionsResponse, error) {
-	if len(req.GetSuppressions()) == 0 {
-		return nil, invalidArgument("no suppressions")
-	}
+// SetSuppressions implements SuppressionService.
+func (s *Server) SetSuppressions(ctx context.Context, req *v0sv1.SetSuppressionsRequest) (*v0sv1.SetSuppressionsResponse, error) {
 	items := make([]database.NewSuppression, 0, len(req.GetSuppressions()))
-	now := time.Now()
-	for i, n := range req.GetSuppressions() {
-		item := database.NewSuppression{
-			ImageName:       n.GetImageName(),
-			Package:         n.GetPackage(),
-			VulnerabilityID: n.GetVulnerabilityId(),
-			State:           enumToDatabase(v0sv1.SuppressionState_name, int32(n.GetState()), "SUPPRESSION_STATE_"),
-			Justification:   enumToDatabase(v0sv1.Justification_name, int32(n.GetJustification()), "JUSTIFICATION_"),
-			Detail:          n.GetDetail(),
-		}
-		// The database treats a zero expiry as none, so a present expiry must be checked here.
-		if exp := n.GetExpiresAt(); exp != nil {
-			if err := exp.CheckValid(); err != nil {
-				return nil, invalidArgument("suppression %d: invalid expiry: %v", i, err)
-			}
-			if !exp.AsTime().After(now) {
-				return nil, invalidArgument("suppression %d: expiry must be in the future", i)
-			}
-			item.ExpiresAt = exp.AsTime()
-		}
-		items = append(items, item)
-	}
-	created, err := s.db.CreateSuppressions(ctx, req.GetTeam(), items, req.GetActor(), req.GetDryRun())
-	if err != nil {
-		return nil, s.toStatus(ctx, err)
-	}
-	resp := &v0sv1.CreateSuppressionsResponse{Results: make([]*v0sv1.CreateSuppressionsResponse_CreatedSuppression, 0, len(created))}
-	for _, c := range created {
-		resp.Results = append(resp.Results, &v0sv1.CreateSuppressionsResponse_CreatedSuppression{
-			Suppression:     suppressionToProto(c.Suppression),
-			MatchedFindings: c.MatchedFindings,
-			ReplacesId:      c.ReplacesID,
+	for _, n := range req.GetSuppressions() {
+		items = append(items, database.NewSuppression{
+			SuppressionKey: suppressionKey(n.GetKey()),
+			State:          stateToDatabase(n.GetState()),
+			Detail:         n.GetDetail(),
 		})
 	}
-	return resp, nil
-}
-
-// RevokeSuppressions implements SuppressionService.
-func (s *Server) RevokeSuppressions(ctx context.Context, req *v0sv1.RevokeSuppressionsRequest) (*v0sv1.RevokeSuppressionsResponse, error) {
-	revoked, err := s.db.RevokeSuppressions(ctx, req.GetTeam(), req.GetIds(), req.GetActor(), req.GetReason())
+	set, err := s.db.SetSuppressions(ctx, req.GetTeam(), items, req.GetActor())
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
-	resp := &v0sv1.RevokeSuppressionsResponse{Revoked: make([]*v0sv1.Suppression, 0, len(revoked))}
-	for _, r := range revoked {
-		resp.Revoked = append(resp.Revoked, suppressionToProto(r))
+	return &v0sv1.SetSuppressionsResponse{Suppressions: suppressionsToProto(set)}, nil
+}
+
+// DeleteSuppressions implements SuppressionService.
+func (s *Server) DeleteSuppressions(ctx context.Context, req *v0sv1.DeleteSuppressionsRequest) (*v0sv1.DeleteSuppressionsResponse, error) {
+	keys := make([]database.SuppressionKey, 0, len(req.GetKeys()))
+	for _, k := range req.GetKeys() {
+		keys = append(keys, suppressionKey(k))
 	}
-	return resp, nil
+	deleted, err := s.db.DeleteSuppressions(ctx, req.GetTeam(), keys)
+	if err != nil {
+		return nil, s.toStatus(ctx, err)
+	}
+	return &v0sv1.DeleteSuppressionsResponse{Deleted: suppressionsToProto(deleted)}, nil
 }
 
 // ListSuppressions implements SuppressionService.
@@ -72,48 +45,49 @@ func (s *Server) ListSuppressions(ctx context.Context, req *v0sv1.ListSuppressio
 		Teams:           req.GetTeams(),
 		ImageName:       req.GetImageName(),
 		VulnerabilityID: req.GetVulnerabilityId(),
-		IncludeInactive: req.GetIncludeInactive(),
 	}
 	suppressions, next, err := s.db.ListSuppressions(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
-	resp := &v0sv1.ListSuppressionsResponse{Suppressions: make([]*v0sv1.Suppression, 0, len(suppressions)), NextPageToken: next}
-	for _, sup := range suppressions {
-		resp.Suppressions = append(resp.Suppressions, suppressionToProto(sup))
+	return &v0sv1.ListSuppressionsResponse{Suppressions: suppressionsToProto(suppressions), NextPageToken: next}, nil
+}
+
+func suppressionKey(k *v0sv1.SuppressionKey) database.SuppressionKey {
+	return database.SuppressionKey{ImageName: k.GetImageName(), Package: k.GetPackage(), VulnerabilityID: k.GetVulnerabilityId()}
+}
+
+func suppressionsToProto(ss []database.Suppression) []*v0sv1.Suppression {
+	out := make([]*v0sv1.Suppression, 0, len(ss))
+	for _, s := range ss {
+		out = append(out, suppressionToProto(s))
 	}
-	return resp, nil
+	return out
 }
 
 func suppressionToProto(s database.Suppression) *v0sv1.Suppression {
 	return &v0sv1.Suppression{
-		Id:              s.ID,
 		Team:            s.Team,
 		ImageName:       s.ImageName,
-		PackageKey:      s.PackageKey,
+		PackageKey:      s.Package,
 		VulnerabilityId: s.VulnerabilityID,
 		State:           v0sv1.SuppressionState(v0sv1.SuppressionState_value["SUPPRESSION_STATE_"+strings.ToUpper(s.State)]),
-		Justification:   v0sv1.Justification(v0sv1.Justification_value["JUSTIFICATION_"+strings.ToUpper(s.Justification)]),
 		Detail:          s.Detail,
-		CreatedBy:       s.CreatedBy,
-		CreatedAt:       timestamp(s.CreatedAt),
-		ExpiresAt:       timestamp(s.ExpiresAt),
-		RevokedAt:       timestamp(s.RevokedAt),
-		RevokedBy:       s.RevokedBy,
-		RevokeReason:    s.RevokeReason,
+		UpdatedBy:       s.UpdatedBy,
+		UpdatedAt:       timestamp(s.UpdatedAt),
 	}
 }
 
-// enumToDatabase maps a proto enum value to the database spelling, e.g.
+// stateToDatabase maps a suppression state to the database spelling, e.g.
 // SUPPRESSION_STATE_NOT_AFFECTED to "not_affected". The zero value maps to
 // "", and an unknown value to its number, which the database rejects.
-func enumToDatabase(names map[int32]string, v int32, prefix string) string {
-	if v == 0 {
+func stateToDatabase(v v0sv1.SuppressionState) string {
+	if v == v0sv1.SuppressionState_SUPPRESSION_STATE_UNSPECIFIED {
 		return ""
 	}
-	name, ok := names[v]
+	name, ok := v0sv1.SuppressionState_name[int32(v)]
 	if !ok {
 		return strconv.Itoa(int(v))
 	}
-	return strings.ToLower(strings.TrimPrefix(name, prefix))
+	return strings.ToLower(strings.TrimPrefix(name, "SUPPRESSION_STATE_"))
 }

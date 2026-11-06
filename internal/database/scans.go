@@ -15,28 +15,28 @@ import (
 	"github.com/nais/v0s"
 )
 
-// maxSBOMSize is the largest decompressed SBOM ClaimScan returns.
+// maxSBOMSize is the largest decompressed SBOM NextScan returns.
 const maxSBOMSize = 256 << 20
 
-// maxScanAttempts is how often ClaimScan hands out an image for one DB version without a result
+// maxScanAttempts is how often NextScan hands out an image for one DB version without a result
 // being recorded. A scan that kills the process records nothing, so without a cap the image would
-// crash every replica in turn.
+// crash v0s again after every restart.
 const maxScanAttempts = 3
 
-// ScanJob is a claimed image and its SBOM.
+// ScanJob is an image to scan and its SBOM.
 type ScanJob struct {
 	Image v0s.Image
 	SBOM  []byte // decompressed
 }
 
-// ClaimScan claims one in-use, fetched image whose scan lease has expired and that has neither
-// been scanned nor failed to scan with dbVersion or newer. It leases the image for lease and
-// returns it with its SBOM. ok is false if no image needs scanning.
+// NextScan returns one in-use, fetched image that has neither been scanned nor failed to scan with
+// dbVersion or newer, with its SBOM. ok is false if no image needs scanning. Only one caller at a
+// time may scan: NextScan returns the same image until a result is recorded.
 //
-// Each claim counts as an attempt for dbVersion; claiming with another DB version starts the count
-// again. An image already claimed maxScanAttempts times for dbVersion is not handed out again but
-// recorded as failed with dbVersion.
-func (db *DB) ClaimScan(ctx context.Context, dbVersion time.Time, lease time.Duration) (job ScanJob, ok bool, err error) {
+// Each call counts as an attempt for dbVersion; another DB version starts the count again. An image
+// already handed out maxScanAttempts times for dbVersion is not handed out again but recorded as
+// failed with dbVersion.
+func (db *DB) NextScan(ctx context.Context, dbVersion time.Time) (job ScanJob, ok bool, err error) {
 	for {
 		var (
 			img        imageScan
@@ -44,23 +44,20 @@ func (db *DB) ClaimScan(ctx context.Context, dbVersion time.Time, lease time.Dur
 			attempts   int
 		)
 		err = db.pool.QueryRow(ctx, `
-			UPDATE images i SET scan_lease_until = now() + make_interval(secs => $2),
+			UPDATE images i SET
 				scan_attempts = CASE WHEN i.scan_attempts_db_version = $1 THEN i.scan_attempts + 1 ELSE 1 END,
 				scan_attempts_db_version = $1
-			FROM sboms s
-			WHERE s.image_id = i.id AND i.id IN (
+			WHERE i.id = (
 				SELECT id FROM images
 				WHERE sbom_state = 'fetched'
 					AND (scanned_db_version IS NULL OR scanned_db_version < $1)
 					AND (scan_failed_db_version IS NULL OR scan_failed_db_version < $1)
-					AND (scan_lease_until IS NULL OR scan_lease_until <= now())
 					AND EXISTS (SELECT 1 FROM workloads w WHERE w.image_id = images.id)
 				ORDER BY scanned_db_version NULLS FIRST, id
 				LIMIT 1
-				FOR UPDATE SKIP LOCKED
 			)
-			RETURNING `+imageColumns+`, s.document, i.scan_attempts`,
-			dbVersion, lease.Seconds(),
+			RETURNING `+imageColumns+`, i.sbom, i.scan_attempts`,
+			dbVersion,
 		).Scan(append(img.dest(), &compressed, &attempts)...)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ScanJob{}, false, nil
@@ -70,7 +67,7 @@ func (db *DB) ClaimScan(ctx context.Context, dbVersion time.Time, lease time.Dur
 		}
 		if attempts > maxScanAttempts {
 			msg := fmt.Sprintf("abandoned after %d attempts", maxScanAttempts)
-			if err := db.RecordScanFailure(ctx, img.img.ID, dbVersion, msg); err != nil {
+			if err := db.RecordScanFailure(ctx, img.id.Int64, dbVersion, msg); err != nil {
 				return ScanJob{}, false, err
 			}
 			continue
@@ -78,8 +75,8 @@ func (db *DB) ClaimScan(ctx context.Context, dbVersion time.Time, lease time.Dur
 		sbom, err := gunzip(compressed)
 		if err != nil {
 			// Retrying cannot help, so record it as a failed scan with this DB.
-			err = fmt.Errorf("decompressing sbom of image %d: %w", img.img.ID, err)
-			if rerr := db.RecordScanFailure(ctx, img.img.ID, dbVersion, err.Error()); rerr != nil {
+			err = fmt.Errorf("decompressing sbom of image %d: %w", img.id.Int64, err)
+			if rerr := db.RecordScanFailure(ctx, img.id.Int64, dbVersion, err.Error()); rerr != nil {
 				return ScanJob{}, false, errors.Join(err, rerr)
 			}
 			return ScanJob{}, false, err
@@ -104,13 +101,13 @@ func gunzip(b []byte) ([]byte, error) {
 	return out, nil
 }
 
-// RecordScanFailure records that scanning with dbVersion failed, and clears the lease and the
-// attempt count. The image keeps its findings and scanned_db_version, and is not claimed again
-// until a newer DB is loaded. An image already scanned with dbVersion or newer, or failed with a
-// newer DB, is left alone.
+// RecordScanFailure records that scanning with dbVersion failed, and clears the attempt count.
+// The image keeps its findings and scanned_db_version, and is not handed out again until a newer
+// DB is loaded. An image already scanned with dbVersion or newer, or failed with a newer DB, or
+// deleted, is left alone.
 func (db *DB) RecordScanFailure(ctx context.Context, imageID int64, dbVersion time.Time, msg string) error {
 	if _, err := db.pool.Exec(ctx, `
-		UPDATE images SET scan_error = $3, scan_failed_db_version = $2, scan_lease_until = NULL, scan_attempts = 0
+		UPDATE images SET error = $3, scan_failed_db_version = $2, scan_attempts = 0
 		WHERE id = $1
 			AND (scanned_db_version IS NULL OR scanned_db_version < $2)
 			AND (scan_failed_db_version IS NULL OR scan_failed_db_version <= $2)`,
@@ -121,27 +118,21 @@ func (db *DB) RecordScanFailure(ctx context.Context, imageID int64, dbVersion ti
 	return nil
 }
 
-type findingKey struct{ vulnerabilityID, purl string }
-
-// StoreScan records a scan result. If the image already has scanned_db_version >= dbVersion it is
-// a no-op. Otherwise, in one transaction, it upserts vulnerabilities and their aliases, writes
-// finding events (appeared for new (vulnerability, purl) pairs, resolved for vanished ones),
-// replaces findings while preserving first_seen_at for findings that persist, inserts components
-// if the image has none (SBOMs are immutable), and marks the image scanned, clearing any recorded
-// scan failure and the attempt count. Vulnerability rows from a newer DB than dbVersion are kept.
+// StoreScan records a scan result. If the image already has scanned_db_version >= dbVersion, or
+// has been deleted, it is a no-op. Otherwise, in one transaction, it upserts vulnerabilities and
+// their aliases, replaces findings, inserts components if the image has none (SBOMs are
+// immutable), and marks the image scanned, clearing any recorded scan failure and the attempt
+// count. Vulnerability rows from a newer DB than dbVersion are kept.
 //
 // Duplicate findings (same vulnerability and purl) and components (same purl) keep the first.
 func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time, r v0s.ScanResult) error {
 	return pgx.BeginFunc(ctx, db.pool, func(tx pgx.Tx) error {
-		var (
-			name, digest string
-			scanned      *time.Time
-			now          time.Time
-		)
-		if err := tx.QueryRow(ctx, `
-			SELECT name, digest, scanned_db_version, now() FROM images WHERE id = $1 FOR UPDATE`,
-			imageID,
-		).Scan(&name, &digest, &scanned, &now); err != nil {
+		var scanned *time.Time
+		err := tx.QueryRow(ctx, `SELECT scanned_db_version FROM images WHERE id = $1 FOR UPDATE`, imageID).Scan(&scanned)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil // no workload uses it anymore
+		}
+		if err != nil {
 			return fmt.Errorf("locking image %d: %w", imageID, err)
 		}
 		if scanned != nil && !scanned.Before(dbVersion) {
@@ -151,7 +142,7 @@ func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time,
 		if err := upsertVulnerabilities(ctx, tx, dbVersion, r.Vulnerabilities); err != nil {
 			return err
 		}
-		if err := replaceFindings(ctx, tx, imageID, name, digest, dbVersion, now, r.Findings); err != nil {
+		if err := replaceFindings(ctx, tx, imageID, r.Findings); err != nil {
 			return err
 		}
 		if err := insertComponents(ctx, tx, imageID, r.Components); err != nil {
@@ -160,8 +151,7 @@ func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time,
 
 		if _, err := tx.Exec(ctx, `
 			UPDATE images
-			SET scanned_db_version = $2, scanned_at = now(), scan_error = '', scan_failed_db_version = NULL,
-				scan_lease_until = NULL, scan_attempts = 0
+			SET scanned_db_version = $2, scanned_at = now(), error = '', scan_failed_db_version = NULL, scan_attempts = 0
 			WHERE id = $1`,
 			imageID, dbVersion,
 		); err != nil {
@@ -172,8 +162,7 @@ func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time,
 }
 
 // upsertVulnerabilities inserts or updates vulnerabilities from dbVersion and adds missing
-// aliases. A row from a newer DB is not overwritten. Rows are written in ID order so that
-// concurrent scans lock shared rows in the same order.
+// aliases. A row from the same or a newer DB is not overwritten.
 func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, vulns []v0s.Vulnerability) error {
 	n := len(vulns)
 	var (
@@ -219,11 +208,7 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, 
 			published_at = excluded.published_at,
 			modified_at = excluded.modified_at,
 			db_version = excluded.db_version
-		WHERE v.db_version < excluded.db_version
-			OR (v.db_version = excluded.db_version
-				AND (v.title, v.description, v.severities, v.cvss, v."references", v.published_at, v.modified_at)
-				IS DISTINCT FROM (excluded.title, excluded.description, excluded.severities, excluded.cvss,
-					excluded."references", excluded.published_at, excluded.modified_at))`,
+		WHERE v.db_version < excluded.db_version`,
 		ids, titles, descriptions, severities, cvss, references, publishedAt, modifiedAt, dbVersion,
 	); err != nil {
 		return fmt.Errorf("upserting vulnerabilities: %w", err)
@@ -232,7 +217,6 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, 
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO vulnerability_aliases (alias, vulnerability_id)
 		SELECT DISTINCT alias, vulnerability_id FROM unnest($1::text[], $2::text[]) AS t (alias, vulnerability_id)
-		ORDER BY alias, vulnerability_id
 		ON CONFLICT DO NOTHING`,
 		aliases, aliasVulnerabilityIDs,
 	); err != nil {
@@ -241,59 +225,23 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, 
 	return nil
 }
 
-// replaceFindings replaces the image's findings with fs and records the difference as finding
-// events. Findings that persist keep their first_seen_at; new ones get now.
-func replaceFindings(ctx context.Context, tx pgx.Tx, imageID int64, name, digest string, dbVersion, now time.Time, fs []v0s.Finding) error {
-	rows, err := tx.Query(ctx, `SELECT vulnerability_id, purl, first_seen_at FROM findings WHERE image_id = $1`, imageID)
-	if err != nil {
-		return fmt.Errorf("reading findings: %w", err)
-	}
-	firstSeen := map[findingKey]time.Time{}
+// replaceFindings replaces the image's findings with fs.
+func replaceFindings(ctx context.Context, tx pgx.Tx, imageID int64, fs []v0s.Finding) error {
+	type key struct{ vulnerabilityID, purl string }
 	var (
-		k findingKey
-		t time.Time
-	)
-	if _, err := pgx.ForEachRow(rows, []any{&k.vulnerabilityID, &k.purl, &t}, func() error {
-		firstSeen[k] = t
-		return nil
-	}); err != nil {
-		return fmt.Errorf("reading findings: %w", err)
-	}
-
-	var (
-		current                         = map[findingKey]bool{}
-		findingRows                     [][]any
-		kinds, eventVulnIDs, eventPURLs []string
+		seen = map[key]bool{}
+		rows [][]any
 	)
 	for _, f := range fs {
-		k := findingKey{f.VulnerabilityID, f.PURL}
-		if current[k] {
+		k := key{f.VulnerabilityID, f.PURL}
+		if seen[k] {
 			continue
 		}
-		current[k] = true
-		seen, ok := firstSeen[k]
-		if !ok {
-			seen = now
-			kinds, eventVulnIDs, eventPURLs = append(kinds, "appeared"), append(eventVulnIDs, k.vulnerabilityID), append(eventPURLs, k.purl)
-		}
-		findingRows = append(findingRows, []any{
+		seen[k] = true
+		rows = append(rows, []any{
 			imageID, f.VulnerabilityID, f.PURL, f.PackageKey, f.InstalledVersion, f.FixedVersion,
-			f.Status, string(f.Severity), f.SeveritySource, f.DataSource, seen,
+			f.Status, string(f.Severity), f.SeveritySource, f.DataSource,
 		})
-	}
-	for k := range firstSeen {
-		if !current[k] {
-			kinds, eventVulnIDs, eventPURLs = append(kinds, "resolved"), append(eventVulnIDs, k.vulnerabilityID), append(eventPURLs, k.purl)
-		}
-	}
-
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO finding_events (image_name, image_digest, vulnerability_id, purl, kind, db_version)
-		SELECT $1, $2, t.vulnerability_id, t.purl, t.kind, $3
-		FROM unnest($4::text[], $5::text[], $6::text[]) AS t (kind, vulnerability_id, purl)`,
-		name, digest, dbVersion, kinds, eventVulnIDs, eventPURLs,
-	); err != nil {
-		return fmt.Errorf("inserting finding events: %w", err)
 	}
 
 	if _, err := tx.Exec(ctx, `DELETE FROM findings WHERE image_id = $1`, imageID); err != nil {
@@ -301,8 +249,8 @@ func replaceFindings(ctx context.Context, tx pgx.Tx, imageID int64, name, digest
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"findings"}, []string{
 		"image_id", "vulnerability_id", "purl", "package_key", "installed_version", "fixed_version",
-		"status", "severity", "severity_source", "data_source", "first_seen_at",
-	}, pgx.CopyFromRows(findingRows)); err != nil {
+		"status", "severity", "severity_source", "data_source",
+	}, pgx.CopyFromRows(rows)); err != nil {
 		return fmt.Errorf("inserting findings: %w", err)
 	}
 	return nil

@@ -89,9 +89,6 @@ func New(dir string, repos []string, log *slog.Logger) (*Scanner, error) {
 // Repositories are tried in order until one succeeds. A DB is only swapped in if it is
 // newer than the loaded one, so a lagging mirror never rolls the DB back.
 func (s *Scanner) Update(ctx context.Context) (bool, error) {
-	s.updateMu.Lock()
-	defer s.updateMu.Unlock()
-
 	var errs []error
 	for _, repo := range s.repos {
 		swapped, err := s.updateFrom(ctx, repo)
@@ -105,7 +102,6 @@ func (s *Scanner) Update(ctx context.Context) (bool, error) {
 }
 
 // updateFrom downloads the DB from repo if its digest is new, and swaps it in if it is newer.
-// The caller must hold s.updateMu.
 func (s *Scanner) updateFrom(ctx context.Context, repo string) (bool, error) {
 	art := oci.NewArtifact(repo, ftypes.RegistryOptions{})
 	digest, err := art.Digest(ctx)

@@ -2,10 +2,8 @@ package grpcapi_test
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	v0sv1 "github.com/nais/v0s/api/v0s/v1"
@@ -14,7 +12,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
@@ -34,44 +31,36 @@ func newServer(t *testing.T) *grpcapi.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return grpcapi.New(db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	return grpcapi.New(db, slog.New(slog.DiscardHandler))
 }
 
-func TestSuppressionLifecycle(t *testing.T) {
+func TestSuppressions(t *testing.T) {
 	s := newServer(t)
 	ctx := context.Background()
+	key := &v0sv1.SuppressionKey{ImageName: "repo/app", Package: "pkg:npm/lodash@4.17.20", VulnerabilityId: "GHSA-1"}
 
-	created, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{
+	set, err := s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{
 		Team:  "team",
 		Actor: "me",
 		Suppressions: []*v0sv1.NewSuppression{{
-			ImageName:       "repo/app",
-			Package:         "pkg:npm/lodash@4.17.20",
-			VulnerabilityId: "GHSA-1",
-			State:           v0sv1.SuppressionState_SUPPRESSION_STATE_NOT_AFFECTED,
-			Justification:   v0sv1.Justification_JUSTIFICATION_CODE_NOT_REACHABLE,
-			Detail:          "never called",
+			Key:    key,
+			State:  v0sv1.SuppressionState_SUPPRESSION_STATE_NOT_AFFECTED,
+			Detail: "never called",
 		}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := created.GetResults()[0].GetSuppression()
-	if got.GetTeam() != "team" || got.GetVulnerabilityId() != "CVE-1" || got.GetState() != v0sv1.SuppressionState_SUPPRESSION_STATE_NOT_AFFECTED ||
-		got.GetJustification() != v0sv1.Justification_JUSTIFICATION_CODE_NOT_REACHABLE || got.GetCreatedAt() == nil {
-		t.Errorf("created suppression = %v", got)
+	got := set.GetSuppressions()[0]
+	if got.GetTeam() != "team" || got.GetImageName() != "repo/app" || got.GetPackageKey() != "pkg:npm/lodash" || got.GetVulnerabilityId() != "CVE-1" ||
+		got.GetState() != v0sv1.SuppressionState_SUPPRESSION_STATE_NOT_AFFECTED || got.GetDetail() != "never called" ||
+		got.GetUpdatedBy() != "me" || got.GetUpdatedAt() == nil {
+		t.Errorf("set suppression = %v", got)
 	}
 
-	_, err = s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Team: "other", Ids: []int64{got.GetId()}, Actor: "me", Reason: "fixed"})
-	if status.Code(err) != codes.NotFound {
-		t.Errorf("revoking as another team: err = %v, want NotFound", err)
-	}
-	if _, err := s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Team: "team", Ids: []int64{got.GetId()}, Actor: "me", Reason: "fixed"}); err != nil {
-		t.Fatal(err)
-	}
-	_, err = s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Team: "team", Ids: []int64{got.GetId()}, Actor: "me", Reason: "fixed"})
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("revoking twice: err = %v, want FailedPrecondition", err)
+	deleted, err := s.DeleteSuppressions(ctx, &v0sv1.DeleteSuppressionsRequest{Team: "team", Keys: []*v0sv1.SuppressionKey{key}})
+	if err != nil || len(deleted.GetDeleted()) != 1 {
+		t.Errorf("DeleteSuppressions = %v, %v; want the suppression deleted", deleted.GetDeleted(), err)
 	}
 }
 
@@ -92,42 +81,12 @@ func TestErrorCodes(t *testing.T) {
 			_, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Severities: []v0sv1.Severity{0}}})
 			return err
 		}},
-		{name: "malformed page token", want: codes.InvalidArgument, call: func() error {
+		{name: "invalid in the database", want: codes.InvalidArgument, call: func() error {
 			_, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{PageToken: "%%%"})
 			return err
 		}},
-		{name: "suppression without team", want: codes.InvalidArgument, call: func() error {
-			_, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
-				ImageName: "repo/app", Package: "pkg:npm/lodash", VulnerabilityId: "CVE-1",
-				State: v0sv1.SuppressionState_SUPPRESSION_STATE_FALSE_POSITIVE, Detail: "d",
-			}}})
-			return err
-		}},
-		{name: "unknown vulnerability in suppression", want: codes.InvalidArgument, call: func() error {
-			_, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{Team: "team", Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
-				ImageName: "repo/app", Package: "pkg:npm/x", VulnerabilityId: "CVE-404",
-				State: v0sv1.SuppressionState_SUPPRESSION_STATE_FALSE_POSITIVE, Detail: "d",
-			}}})
-			return err
-		}},
-		{name: "zero expiry is not never", want: codes.InvalidArgument, call: func() error {
-			_, err := s.CreateSuppressions(ctx, &v0sv1.CreateSuppressionsRequest{Team: "team", Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
-				ImageName: "repo/app", Package: "pkg:npm/x", VulnerabilityId: "CVE-1",
-				State: v0sv1.SuppressionState_SUPPRESSION_STATE_FALSE_POSITIVE, Detail: "d",
-				ExpiresAt: timestamppb.New(time.Time{}),
-			}}})
-			return err
-		}},
-		{name: "unknown vulnerability", want: codes.NotFound, call: func() error {
+		{name: "not found", want: codes.NotFound, call: func() error {
 			_, err := s.GetVulnerability(ctx, &v0sv1.GetVulnerabilityRequest{Id: "CVE-404"})
-			return err
-		}},
-		{name: "vulnerability by alias", want: codes.OK, call: func() error {
-			_, err := s.GetVulnerability(ctx, &v0sv1.GetVulnerabilityRequest{Id: "GHSA-1"})
-			return err
-		}},
-		{name: "revoke unknown", want: codes.NotFound, call: func() error {
-			_, err := s.RevokeSuppressions(ctx, &v0sv1.RevokeSuppressionsRequest{Team: "team", Ids: []int64{404}, Actor: "me", Reason: "r"})
 			return err
 		}},
 		{name: "canceled", want: codes.Canceled, call: func() error {
@@ -147,7 +106,7 @@ func TestErrorCodes(t *testing.T) {
 }
 
 func TestRecoveryInterceptor(t *testing.T) {
-	intercept := grpcapi.RecoveryInterceptor(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	intercept := grpcapi.RecoveryInterceptor(slog.New(slog.DiscardHandler))
 	handler := func(context.Context, any) (any, error) { panic("boom") }
 	_, err := intercept(context.Background(), nil, &grpc.UnaryServerInfo{FullMethod: "/v0s.v1.VulnerabilityService/ListFindings"}, handler)
 	if status.Code(err) != codes.Internal {
