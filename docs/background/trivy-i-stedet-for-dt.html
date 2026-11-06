@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>v13s uten Dependency-Track: Trivy DB per tenant</title>
+<style>
+:root {
+  --bg: #f7f8fa; --paper: #fff; --ink: #1b2129; --ink-2: #3c4450; --dim: #5b6573;
+  --line: #d5dae1; --line-soft: #e7eaee; --node: #9aa4b1; --edge: #6b7684;
+  --accent: #0067c5; --accent-soft: #e6f0ff; --accent-ink: #00347d;
+  --ok-soft: #d8f5e1; --ok-ink: #06622c; --warn-soft: #ffefc7; --warn-ink: #6b4500;
+  --err-soft: #ffe2e0; --err-ink: #8a1c13; --danger: #c30000; --bar: #0067c5; --bar-2: #9aa4b1;
+  --sans: "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not(:has(#theme:checked)) {
+  --bg: #0e1116; --paper: #161b22; --ink: #e6e9ee; --ink-2: #c3cad3; --dim: #949eab;
+  --line: #2f3742; --line-soft: #252c35; --node: #5a6573; --edge: #8a94a2;
+  --accent: #4c9bf0; --accent-soft: #10274a; --accent-ink: #a9cdff;
+  --ok-soft: #0f2f1c; --ok-ink: #8fe0a8; --warn-soft: #33270b; --warn-ink: #f3cf7a;
+  --err-soft: #3a1512; --err-ink: #ffb1a9; --danger: #ff8a80; --bar: #4c9bf0; --bar-2: #5a6573;
+  color-scheme: dark; } }
+@media (prefers-color-scheme: light) { :root:has(#theme:checked) {
+  --bg: #0e1116; --paper: #161b22; --ink: #e6e9ee; --ink-2: #c3cad3; --dim: #949eab;
+  --line: #2f3742; --line-soft: #252c35; --node: #5a6573; --edge: #8a94a2;
+  --accent: #4c9bf0; --accent-soft: #10274a; --accent-ink: #a9cdff;
+  --ok-soft: #0f2f1c; --ok-ink: #8fe0a8; --warn-soft: #33270b; --warn-ink: #f3cf7a;
+  --err-soft: #3a1512; --err-ink: #ffb1a9; --danger: #ff8a80; --bar: #4c9bf0; --bar-2: #5a6573;
+  color-scheme: dark; } }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 17px/1.5 var(--sans); }
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: .86em; }
+h1, h2, h3 { line-height: 1.2; margin: 0; }
+h1 { font-size: 34px; } h2 { font-size: 24px; } h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
+.page { max-width: 1240px; margin: 0 auto; padding: 32px 24px 80px; display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 40px; }
+.toc { position: sticky; top: 24px; align-self: start; font-size: 15px; }
+.toc b, .eyebrow { display: block; font: 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); margin-bottom: 6px; }
+.toc a { display: block; padding: 3px 0 3px 10px; border-left: 2px solid var(--line); color: var(--dim); text-decoration: none; }
+.toc a:hover { color: var(--accent); border-left-color: var(--accent); }
+@media (max-width: 900px) {
+  .page { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .toc { position: static; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .toc b { width: 100%; } .toc a { border: 0; padding: 0; }
+}
+main { max-width: 900px; }
+section { margin-top: 56px; scroll-margin-top: 16px; }
+section > h2 { margin-bottom: 12px; }
+.lede { color: var(--dim); max-width: 66ch; }
+.tradeoff { font-size: 16px; border-left: 3px solid var(--line); padding: 2px 0 2px 12px; color: var(--dim); max-width: 66ch; margin-top: 12px; }
+.tradeoff b { color: var(--ink); }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; margin-top: 16px; }
+@media (max-width: 760px) { .two { grid-template-columns: minmax(0, 1fr); } }
+ul.tight { padding-left: 20px; font-size: 16px; margin: 8px 0 0; } ul.tight li { margin: 3px 0; }
+details { margin-top: 14px; font-size: 15px; color: var(--dim); }
+details summary { cursor: pointer; }
+.panel { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 16px; margin: 16px 0 0; }
+.diagram svg { display: block; width: 100%; height: auto; }
+.diagram text { font: 16px var(--sans); fill: var(--ink); }
+.diagram .lbl { font: 13px var(--mono); fill: var(--dim); }
+.diagram .node { fill: var(--paper); stroke: var(--node); stroke-width: 1.2; }
+.diagram .key { fill: var(--accent-soft); stroke: var(--accent); }
+.diagram .gone { fill: var(--err-soft); stroke: var(--err-ink); stroke-dasharray: 4 3; }
+.diagram .gone-t { fill: var(--err-ink); }
+.diagram .new { stroke: var(--accent); stroke-dasharray: 4 3; }
+.diagram .edge { fill: none; stroke: var(--edge); stroke-width: 1.3; marker-end: url(#arrow); }
+.diagram .edge.async { stroke-dasharray: 4 3; }
+.diagram .zone { fill: none; stroke: var(--line); stroke-dasharray: 2 4; }
+.diagram.wide { overflow-x: auto; }
+.diagram.wide svg { min-width: 640px; }
+.tag { white-space: nowrap; display: inline-block; font-size: 14px; padding: 1px 8px; border-radius: 4px; }
+.tag.info { background: var(--accent-soft); color: var(--accent-ink); }
+.tag.ok { background: var(--ok-soft); color: var(--ok-ink); }
+.tag.warn { background: var(--warn-soft); color: var(--warn-ink); }
+.tag.err { background: var(--err-soft); color: var(--err-ink); }
+
+/* Coverage bars */
+.bars { display: grid; grid-template-columns: 110px minmax(0, 1fr) 64px; gap: 8px 12px; align-items: center; font-size: 15px; }
+.bars .h { font: 12px var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; }
+.track { height: 14px; background: var(--line-soft); border-radius: 3px; overflow: hidden; display: flex; flex-direction: column; gap: 2px; height: auto; background: none; }
+.track i { display: block; height: 9px; border-radius: 2px; background: var(--bar); }
+.track i.g { background: var(--bar-2); }
+.num { font: 13px var(--mono); color: var(--dim); text-align: right; line-height: 1.2; }
+.legend { font-size: 14px; color: var(--dim); margin-top: 10px; }
+.legend i { display: inline-block; width: 12px; height: 9px; border-radius: 2px; background: var(--bar); margin: 0 4px 0 12px; }
+.legend i.g { background: var(--bar-2); }
+
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+th { font: 12px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--dim); font-weight: normal; }
+td.r, th.r { text-align: right; font-family: var(--mono); font-size: 14px; }
+.scroll { overflow-x: auto; }
+.cnt { color: var(--dim); font: 13px var(--mono); margin-left: 4px; }
+
+.callout { background: var(--accent-soft); color: var(--accent-ink); border-radius: 8px; padding: 14px 16px; margin-top: 16px; }
+.callout b { color: inherit; }
+
+.questions { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; counter-reset: q; }
+.questions li { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-size: 16px; counter-increment: q; }
+.questions li b { display: block; }
+.questions li b::before { content: counter(q) ". "; color: var(--dim); font-weight: normal; }
+@media (max-width: 760px) { .questions { grid-template-columns: minmax(0, 1fr); } }
+
+#theme { position: absolute; opacity: 0; pointer-events: none; }
+.steps { list-style: none; padding: 0; margin: 16px 0 0; counter-reset: s; border-left: 2px solid var(--line); }
+.steps li { counter-increment: s; position: relative; padding: 0 0 14px 28px; font-size: 16px; max-width: 72ch; }
+.steps li::before { content: counter(s); position: absolute; left: -12px; top: 1px; width: 22px; height: 22px; border-radius: 50%; background: var(--paper); border: 1px solid var(--node); font: 12px/20px var(--mono); text-align: center; color: var(--dim); }
+.steps li:last-child::before { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.steps li b { display: block; }
+.theme-toggle { position: fixed; top: 14px; right: 16px; z-index: 20; cursor: pointer; font-size: 13px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); color: var(--dim); }
+.theme-toggle::before { content: "◐ Bytt tema"; }
+#theme:focus-visible + .theme-toggle { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+<input type="checkbox" id="theme" aria-label="Bytt mellom lyst og mørkt tema"><label for="theme" class="theme-toggle"></label>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" style="fill:var(--edge)"/></marker>
+</defs></svg>
+
+<div class="page">
+<nav class="toc" aria-label="Innhold">
+  <b>v13s uten DT</b>
+  <a href="#rigg">Riggen</a>
+  <a href="#dekning">Dekning</a>
+  <a href="#grype">Grype?</a>
+  <a href="#kilder">Kilder</a>
+  <a href="#sentralt">Sentralt eller per tenant</a>
+  <a href="#risiko">Risiko</a>
+  <a href="#videre">Videre</a>
+  <a href="#helhet">Konklusjon</a>
+</nav>
+
+<main>
+<header>
+  <span class="eyebrow">Diskusjonsgrunnlag · utforskende · målt 29.10.2026</span>
+  <h1>v13s kan matche SBOM-er selv med Trivy DB, og da holder det med én enkel rigg per tenant</h1>
+  <p class="lede">Ingen bruker Dependency-Track (DT) direkte; det er en mellomstasjon mellom SBOM og v13s. Vi målte
+    hva vi mister ved å la v13s slå opp i Trivys sårbarhetsdatabase i stedet. Målingen er gjort på 100 tilfeldige
+    av 4 111 aktive prosjekter i nav-tenanten. Ingen kode er endret. <a href="#helhet">Konklusjonen</a> til slutt samler
+    hele tankerekken: v13s som en slank og mekanisk leverandør av fakta til Nais' brukere.</p>
+</header>
+
+<section id="rigg">
+  <span class="eyebrow">Riggen</span>
+  <h2>DT forsvinner; v13s skanner SBOM-en den allerede har</h2>
+  <p class="lede">I dag laster v13s opp SBOM til DT, venter på analyse og henter funn tilbake. I forslaget slår v13s
+    opp SBOM-en mot en lokal kopi av Trivy DB og skanner alle aktive images på nytt når DB-en oppdateres.</p>
+  <figure class="diagram wide panel">
+    <svg viewBox="0 0 900 300" role="img" aria-label="I dag går SBOM fra v13s via Dependency-Track med flere kilder og egen Trivy-server. I forslaget henter v13s Trivy DB fra Nais' kopi i GAR og matcher selv.">
+      <text x="10" y="22" class="lbl">I DAG (per tenant)</text>
+      <rect class="node" x="10" y="40" width="130" height="48" rx="6"/><text x="75" y="69" text-anchor="middle">attestert SBOM</text>
+      <rect class="node key" x="190" y="40" width="110" height="48" rx="6"/><text x="245" y="69" text-anchor="middle">v13s</text>
+      <rect class="gone" x="370" y="30" width="200" height="68" rx="6"/><text x="470" y="58" text-anchor="middle" class="gone-t">Dependency-Track</text><text x="470" y="80" text-anchor="middle" class="lbl">JVM · Cloud SQL · UI</text>
+      <rect class="gone" x="640" y="30" width="110" height="30" rx="6"/><text x="695" y="50" text-anchor="middle" class="lbl">Trivy-server</text>
+      <rect class="gone" x="640" y="70" width="250" height="30" rx="6"/><text x="765" y="90" text-anchor="middle" class="lbl">NVD · GHSA · OSV · OSS Index</text>
+      <path class="edge" d="M140 64H186"/>
+      <path class="edge" d="M300 56H366"/><text class="lbl" x="333" y="48" text-anchor="middle">send</text>
+      <path class="edge async" d="M366 80H304"/><text class="lbl" x="335" y="98" text-anchor="middle">poll</text>
+      <path class="edge" d="M570 50H636"/><path class="edge async" d="M636 85H574"/>
+
+      <line x1="10" y1="140" x2="890" y2="140" class="zone"/>
+      <text x="10" y="172" class="lbl">FORSLAG (per tenant)</text>
+      <rect class="node" x="10" y="200" width="130" height="48" rx="6"/><text x="75" y="229" text-anchor="middle">attestert SBOM</text>
+      <rect class="node key" x="190" y="190" width="250" height="68" rx="6"/><text x="315" y="218" text-anchor="middle">v13s</text><text x="315" y="242" text-anchor="middle" class="lbl">matcher med Trivy DB lokalt</text>
+      <rect class="node new" x="530" y="190" width="170" height="30" rx="6"/><text x="615" y="210" text-anchor="middle" class="lbl">trivy-db (130 MB)</text>
+      <rect class="node new" x="530" y="230" width="170" height="30" rx="6"/><text x="615" y="250" text-anchor="middle" class="lbl">EPSS (FIRST, daglig)</text>
+      <rect class="node" x="760" y="190" width="130" height="30" rx="6"/><text x="825" y="210" text-anchor="middle" class="lbl">GAR (kopi)</text>
+      <path class="edge" d="M140 224H186"/>
+      <path class="edge async" d="M526 205H444"/><text class="lbl" x="485" y="198" text-anchor="middle">hver 6. t</text>
+      <path class="edge async" d="M526 245H444"/>
+      <path class="edge async" d="M756 205H704"/>
+      <text x="190" y="285" class="lbl">+ lagrer komponenter per image-digest → pakkesøk uten DT</text>
+    </svg>
+  </figure>
+  <ul class="tight">
+    <li>Borte: DT-klienten, flyten med opplasting og polling, skriving av suppressions tilbake til DT, og kildekonfigurasjonen vår.</li>
+    <li>Nytt i v13s: lagre komponenter per digest, skanne nye SBOM-er, skanne alle aktive på nytt ved ny DB, og hente EPSS.</li>
+    <li>Trivy gir fiksversjon og status per funn og tar hensyn til backports. OSV-oppslaget for fiksversjon kan dermed forsvinne.</li>
+  </ul>
+</section>
+
+<section id="dekning">
+  <span class="eyebrow">Dekning · 98 images, native skann</span>
+  <h2>Trivy finner 99 % av DTs critical og high</h2>
+  <p class="lede">Hvert image ble hentet fra GAR og skannet med <code>trivy image</code> og Syft+Grype. Resultatene
+    ble sammenlignet med DT-funnene for samme prosjekt. Fra DT er åpenbar støy fjernet før sammenligningen
+    (se under), og like funn er slått sammen på alias.</p>
+  <div class="panel">
+    <div class="bars" role="table" aria-label="Andel av DT-funn som Trivy og Grype også fant, per severity">
+      <span class="h">Severity</span><span class="h">Andel av DTs funn</span><span class="h" style="text-align:right">T / G</span>
+      <span>Critical <span class="cnt">244</span></span><span class="track"><i style="width:99%"></i><i class="g" style="width:99%"></i></span><span class="num">99 %<br>99 %</span>
+      <span>High <span class="cnt">1477</span></span><span class="track"><i style="width:99%"></i><i class="g" style="width:98%"></i></span><span class="num">99 %<br>98 %</span>
+      <span>Medium <span class="cnt">1586</span></span><span class="track"><i style="width:73%"></i><i class="g" style="width:77%"></i></span><span class="num">73 %<br>77 %</span>
+      <span>Low <span class="cnt">284</span></span><span class="track"><i style="width:61%"></i><i class="g" style="width:60%"></i></span><span class="num">61 %<br>60 %</span>
+      <span>Uten <span class="cnt">569</span></span><span class="track"><i style="width:12%"></i><i class="g" style="width:19%"></i></span><span class="num">12 %<br>19 %</span>
+    </div>
+    <p class="legend"><i></i>Trivy (<code>trivy image</code>) <i class="g"></i>Syft + Grype · tallet etter severity er antall DT-funn</p>
+  </div>
+  <div class="two">
+    <div class="panel" style="margin:0">
+      <h3>Det Trivy mangler</h3>
+      <ul class="tight">
+        <li><b>24 critical/high</b> av 1 721. Grype mangler de samme og 14 til.</li>
+        <li>Omstridte CVE-er som bare finnes i NVD: <code>async</code> CVE-2024-39249, <code>jose</code> CVE-2025-45767.</li>
+        <li>Treff fra NVD på CPE der GitHub-advisoryen har ufullstendig pakkeliste: <code>tomcat-embed-core</code> CVE-2026-29145, Spring Boot actuator.</li>
+        <li>Medium/low/uten severity: hovedsakelig ufiksede Chainguard/Wolfi-funn (<code>CGA-*</code>), som Trivy ikke rapporterer.</li>
+      </ul>
+    </div>
+    <div class="panel" style="margin:0">
+      <h3>Det Trivy finner i tillegg</h3>
+      <ul class="tight">
+        <li><b>~1 230 funn</b> som DT ikke har. 1 086 av dem er ufiksede, nesten alle i Debian-pakker.</li>
+        <li>DT skjuler disse i dag fordi Trivy-analyzeren i DT kjører med <code>ignore_unfixed: true</code>.</li>
+        <li>Forslag: lagre <code>Status</code> (fixed/affected/will_not_fix) og la API-et filtrere.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout"><b>SBOM-en i attestasjonen er nok.</b> Trivy på SBOM eksportert fra DT og <code>trivy image</code>
+    på selve imaget ga samme dekning. v13s trenger aldri å hente images.</div>
+  <details><summary>Hvordan dette er målt, og forbehold</summary>
+    <ul>
+      <li>Utvalg: 100 tilfeldige (fast seed) av 4 111 aktive DT-prosjekter i nav. Hentet med <code>linux/amd64</code> fra GAR;
+        2 images var slettet, så 98 gjenstår. Ikke stratifisert på språk eller distro.</li>
+      <li>Verktøy: Trivy 0.76.1 (DB 29.10 01:22 UTC), Syft 1.55.0, Grype 0.121.0 (DB v6.1.10, bygget 28.10). DT 4.14.6.</li>
+      <li>Støy fjernet fra DT før sammenligning: ~1 200 Echo-/TuxCare-advisories feilmatchet mot vanlige npm-/Maven-pakker
+        (via OSV-økosystemene), og 50 tilbaketrukne advisories. 12 699 rå DT-funn blir 5 835 unike etter
+        sammenslåing på alias, fordi DT lager ett funn per ID (CVE, GHSA, CGA …).</li>
+      <li>Matching: purl uten qualifiers og ID eller alias. Go-versjoner er normalisert uten <code>v</code>, og Debian-epoke er fjernet.
+        Ingen manuell gjennomgang av hvert avvik.</li>
+      <li>Detaljer: <code>trivy-db-vs-dt-analyse.md</code> og <code>trivy-vs-dt-maaling.md</code> i sesjonsmappen.</li>
+    </ul>
+  </details>
+</section>
+
+<section id="grype">
+  <span class="eyebrow">Alternativ · Syft + Grype</span>
+  <h2>Grype treffer like godt, men gir ikke grunn til å bytte verktøykjede</h2>
+  <p class="lede">Grype er Anchores tilsvarende scanner. Den er den naturlige exit-veien hvis Trivy blir et problem.</p>
+  <div class="scroll panel">
+    <table>
+      <thead><tr><th></th><th>Trivy DB</th><th>Syft + Grype</th></tr></thead>
+      <tbody>
+        <tr><td>Critical/high som DT har</td><td>99 %</td><td>98–99 %</td></tr>
+        <tr><td>SBOM-format</td><td><span class="tag ok">dagens attestasjoner</span></td><td><span class="tag warn">krever Syft-SBOM</span> Trivy-SBOM mister OS-funn</td></tr>
+        <tr><td>Runtimer installert utenom pakkebehandler</td><td><span class="tag err">ser dem ikke</span></td><td><span class="tag ok">Node i 5, OpenJDK i 2 av 98 images</span></td></tr>
+        <tr><td>Støy vi så</td><td>Lite</td><td>Testfixture i <code>resolve</code> merket som skadevare (critical) i 9 images; 42 usikre CPE-treff i Alpine</td></tr>
+        <tr><td>EPSS / KEV</td><td>Må hentes selv</td><td>Innebygd (EPSS på 96 % av funnene)</td></tr>
+        <tr><td>DB: nedlasting / på disk</td><td>130 MB / 1,5 GB</td><td>187 MB / 3,1 GB</td></tr>
+        <tr><td>Oppdateres</td><td>Hver 6. time</td><td>Daglig</td></tr>
+        <tr><td>98 SBOM-er, 6 parallelle, laptop</td><td>1,7 s</td><td>37 s</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="tradeoff"><b>Konklusjon:</b> Grypes eneste reelle fortrinn er runtimer installert utenom pakkebehandler.
+    Det hullet har vi også med DT i dag, fordi SBOM-en lages av Trivy. Tett det i SBOM-genereringen
+    (<code>nais/attest-sign</code>), ikke ved å bytte matcher.</p>
+</section>
+
+<section id="kilder">
+  <span class="eyebrow">Kildehåndtering</span>
+  <h2>Med DT velger vi selv kildene; med Trivy DB gjør Aqua det</h2>
+  <p class="lede">Målet var å overlate kildekurateringen til folk som kan det. Målingen viser at det er der DT-oppsettet vårt lager mest støy.</p>
+  <div class="scroll panel">
+    <table>
+      <thead><tr><th></th><th>DT slik vi kjører den</th><th>Trivy DB</th></tr></thead>
+      <tbody>
+        <tr><td>Hvem velger og vedlikeholder kilder</td><td>Vi (bootstrap: NVD-feeds, GitHub-token, OSV for alle økosystemer, OSS Index, Trivy)</td><td>Aquas pipeline: <code>vuln-list-update</code> → <code>trivy-db</code></td></tr>
+        <tr><td>OS-pakker</td><td>Blanding av OSV-distrodata, NVD/CPE og Trivy</td><td>Leverandørens egen advisory (tar hensyn til backports)</td></tr>
+        <tr><td>Duplikater</td><td>Ett funn per ID: 12 699 rå → 5 835 unike</td><td>Ett funn per pakke og sårbarhet</td></tr>
+        <tr><td>Feilkonfigurasjon vi fant</td><td>~1 200 Echo-/TuxCare-feilmatcher og 50 tilbaketrukne advisories</td><td>Ingen av samme type</td></tr>
+        <tr><td>Proveniens per funn</td><td>Analyzer og kilde</td><td><code>DataSource</code>, <code>SeveritySource</code>, <code>VendorSeverity</code> og DB-ens <code>UpdatedAt</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="sentralt">
+  <span class="eyebrow">Sentralt eller per tenant</span>
+  <h2>Uten DT er det ingen tung tjeneste igjen å sentralisere, bare en databasefil å dele</h2>
+  <p class="lede">Argumentene for en sentral DT gjaldt DT selv: en tung JVM og en egen Cloud SQL per tenant,
+    tuning av scheduleren, egress-kostnader og overhead for små tenants. Med Trivy DB i v13s forsvinner de.
+    Det som blir igjen per tenant, er v13s, som allerede kjører der.</p>
+  <p class="lede"><b>Slik fungerer Trivy DB:</b> Aqua samler sårbarhetskildene og pakker dem i én databasefil (ca. 130 MB).
+    De publiserer en ny versjon hver 6. time på <code>ghcr.io</code>, som et image. Den som skal skanne, laster ned filen og slår
+    opp lokalt. Spørsmålet er derfor bare hvor oppslaget skjer: i hver tenant eller i én felles tjeneste.</p>
+  <div class="two">
+    <figure class="diagram panel" style="margin:0">
+      <h3>A · Hver tenant slår opp selv <span class="tag ok">anbefalt</span></h3>
+      <svg viewBox="0 0 420 250" role="img" aria-label="Aqua publiserer trivy-db på ghcr.io. Nais holder en kopi i eget registry (GAR). v13s i hver tenant laster ned kopien og slår opp lokalt.">
+        <rect class="node" x="110" y="6" width="200" height="40" rx="6"/><text x="210" y="31" text-anchor="middle">ghcr.io · Aqua</text>
+        <rect class="node key" x="110" y="86" width="200" height="40" rx="6"/><text x="210" y="111" text-anchor="middle">GAR · Nais' kopi</text>
+        <path class="edge async" d="M210 46V82"/><text class="lbl" x="222" y="69">ny fil hver 6. t</text>
+        <rect class="node" x="10" y="180" width="120" height="60" rx="6"/><text x="70" y="206" text-anchor="middle">v13s · nav</text><text x="70" y="228" text-anchor="middle" class="lbl" style="font-size:12px">oppslag lokalt</text>
+        <rect class="node" x="150" y="180" width="120" height="60" rx="6"/><text x="210" y="206" text-anchor="middle">v13s · B</text><text x="210" y="228" text-anchor="middle" class="lbl" style="font-size:12px">oppslag lokalt</text>
+        <rect class="node" x="290" y="180" width="120" height="60" rx="6"/><text x="350" y="206" text-anchor="middle">v13s · C</text><text x="350" y="228" text-anchor="middle" class="lbl" style="font-size:12px">oppslag lokalt</text>
+        <path class="edge async" d="M170 126L75 176"/><path class="edge async" d="M210 126V176"/><path class="edge async" d="M250 126L345 176"/>
+        <text class="lbl" x="318" y="150">laster ned</text>
+      </svg>
+      <ul class="tight">
+        <li>Det eneste som deles, er databasefilen. Den ligger som en kopi i Nais' eget registry, og ingen tjeneste kjører sentralt.</li>
+        <li>Kopien gjør at tenantene ikke er avhengige av ghcr.io. Den gir også ett sted å pinne og verifisere versjonen, og trafikken holder seg i GCP. Nais har allerede en slik kopi av ghcr (<code>nais-io/remote-ghcr</code>).</li>
+        <li>SBOM-er og funn forlater aldri tenanten.</li>
+        <li>Ingen ny flertenant-autorisasjon, og en feil rammer bare én tenant.</li>
+      </ul>
+      <p class="tradeoff"><b>Avveining:</b> Trivy-versjonen må oppgraderes i hver tenant, men det skjer uansett med v13s-releasen.</p>
+    </figure>
+    <figure class="diagram panel" style="margin:0">
+      <h3>B · Én felles skannetjeneste for alle tenants</h3>
+      <svg viewBox="0 0 420 170" role="img" aria-label="Én sentral tjeneste mottar SBOM-er fra alle tenants og returnerer funn.">
+        <rect class="node key" x="110" y="10" width="200" height="40" rx="6"/><text x="210" y="35" text-anchor="middle">sentral matcher + DB</text>
+        <rect class="node" x="10" y="110" width="110" height="44" rx="6"/><text x="65" y="137" text-anchor="middle">v13s · nav</text>
+        <rect class="node" x="155" y="110" width="110" height="44" rx="6"/><text x="210" y="137" text-anchor="middle">v13s · B</text>
+        <rect class="node" x="300" y="110" width="110" height="44" rx="6"/><text x="355" y="137" text-anchor="middle">v13s · C</text>
+        <path class="edge" d="M70 106L160 54"/><path class="edge" d="M210 106V54"/><path class="edge" d="M350 106L260 54"/>
+        <text class="lbl" x="318" y="70">SBOM inn</text>
+      </svg>
+      <ul class="tight">
+        <li>SBOM-er (hele programvareinventaret til en tenant) krysser tenantgrensen.</li>
+        <li>Krever tenantisolasjon og autorisasjon. <code>trivy server</code> har det ikke: delt cache og ingen tilgangskontroll per klient.</li>
+        <li>Gevinst: kryss-tenant-søk for Nais, og én versjon å oppgradere.</li>
+      </ul>
+      <p class="tradeoff"><b>Avveining:</b> vi bygger flertenant-infrastruktur for en jobb som tar under et sekund per SBOM.</p>
+    </figure>
+  </div>
+  <div class="scroll panel">
+    <table>
+      <thead><tr><th>Per tenant</th><th>I dag</th><th>Med Trivy DB i v13s</th></tr></thead>
+      <tbody>
+        <tr><td>Skanning</td><td>DT backend (JVM, requests 4 Gi/1 CPU, PVC 10 Gi), frontend, Trivy-server (StatefulSet)</td><td>I v13s-worker: ~0,1 s og ~110–145 MB RSS per SBOM <span class="tag info">laptop</span></td></tr>
+        <tr><td>Database</td><td>Cloud SQL for DT + Cloud SQL for v13s</td><td>Cloud SQL for v13s (flere rader: komponenter per digest)</td></tr>
+        <tr><td>Sårbarhetsdata</td><td>DT laster NVD/GHSA/OSV/OSS Index; hemmeligheter for GitHub-token og OSS Index</td><td>trivy-db 130 MB hver 6. time til lokal disk (1,5 GB); EPSS-CSV daglig</td></tr>
+        <tr><td>Annet</td><td>Bootstrap-jobb, OIDC-klient, to ingresser, admin-hemmelighet</td><td>–</td></tr>
+        <tr><td>v13s</td><td>2 replikaer, requests 100m/1 Gi</td><td>Samme; minnebehov ved full re-skann er ikke målt i klyngen</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout"><b>Svar:</b> hver tenants v13s slår opp selv. Det eneste som deles, er databasefilen, som en kopi i GAR. Ingen tjeneste kjører sentralt.
+    Trenger Nais å søke på tvers av tenants (Log4Shell-spørsmålet), kan det gjøres ved å spørre hver tenants
+    v13s eller nais-api. Data trenger ikke flyttes for det.</div>
+</section>
+
+<section id="risiko">
+  <span class="eyebrow">Risiko</span>
+  <h2>Vi bytter én tredjepart ut med en vi allerede er avhengige av</h2>
+  <ul class="tight">
+    <li><b>Én leverandør.</b> Trivy lager allerede SBOM-ene (<code>attest-sign</code>) og kjører inne i DT. Exit-vei: Grype, målt over.</li>
+    <li><b>Forsyningskjedeangrep i mars 2026</b> (GHSA-69fq-xp46-6x23): kompromitterte Trivy-binærer v0.69.4, Docker-tags 0.69.5/0.69.6
+      og <code>trivy-action</code>/<code>setup-trivy</code>. DB-artefaktene er ikke nevnt som berørt, men det er heller ikke
+      bekreftet at de var trygge. Tiltak: pinn binær og DB på digest, hent DB fra Nais' kopi i GAR, verifiser signaturer, og varsle på
+      <code>UpdatedAt</code> eldre enn ~48 t.</li>
+    <li><b>Presisjon foran dekning</b> er Trivys uttalte valg. Det passer målet om mekaniske fakta, men gir noen få falske negative.</li>
+    <li><b>Ikke verifisert:</b> om Trivy som Go-bibliotek er et stabilt API. Underprosess er det trygge utgangspunktet.</li>
+  </ul>
+</section>
+
+<section id="videre">
+  <span class="eyebrow">Videre</span>
+  <h2>Kjør Trivy og DT parallelt én periode før DT fjernes</h2>
+  <ol class="questions">
+    <li><b>Ufiksede funn</b>Vise dem (Trivys standard) eller skjule dem som i dag? Forslag: lagre status, filtrer i API-et.</li>
+    <li><b>Runtime-binærer</b>Skal <code>attest-sign</code> legge Node, JDK og Python installert utenom pakkebehandler inn i SBOM-en?</li>
+    <li><b>Kjøremodus</b>Underprosess i v13s-worker med DB på emptyDir eller PVC? Mål minne ved full re-skann i nav.</li>
+    <li><b>Større utvalg</b>Stratifiser på Java/Node/Go og Debian/Alpine/Chainguard/distroless før beslutning.</li>
+    <li><b>Parallellkjøring</b>v13s skriver Trivy-funn ved siden av DT-funn og sammenligner per workload.</li>
+    <li><b>EPSS og prioritet</b>Hent EPSS fra FIRST, eller la prioritet bygge på KEV og severity alene?</li>
+  </ol>
+</section>
+
+<section id="helhet">
+  <span class="eyebrow">Konklusjon · hele tankerekken</span>
+  <h2>v13s blir en slank leverandør av fakta, skreddersydd for Nais</h2>
+  <p class="lede">Målet har hele veien vært det samme. Eksperter kuraterer sårbarhetsdata, v13s kobler dem mekanisk til
+    det som faktisk kjører, og brukere og agenter gjør vurderingene. Hvert steg under har fjernet noe som sto i veien.</p>
+  <ol class="steps">
+    <li><b>Utgangspunkt: fakta og gjetninger blandet.</b> v13s og nais-api legger egne beregninger oppå kildedataene
+      (<code>priority</code>, <code>risk_score</code>, <code>URGENT</code>, trend), og suppressions synkes begge veier mot DT.
+      Ambisjonen ble mekaniske fakta, og at klienten rangerer selv.</li>
+    <li><b>Første idé: én sentral DT.</b> v13s skulle bli en tynn lesemodell over en felles DT v5.
+      Det reiste nye spørsmål om tenantisolasjon og policy-tilgang på tvers av tenants.</li>
+    <li><b>Suppressions eies av v13s.</b> Vi slutter å skrive dem til DT. Nøkkelen blir image + pakke uten versjon + kanonisk CVE,
+      så en suppression overlever en ny tag og en ny pakkeversjon. I tillegg utløp, historikk og batch med dry run.
+      Spec: <code>suppression-spec.md</code>.</li>
+    <li><b>Ingen bruker DT.</b> Da er DT bare en matcher vi drifter per tenant. Målingen viser at Trivy DB alene gir 99 % av
+      critical/high, og at det meste av avviket var støy fra vårt eget kildeoppsett i DT.</li>
+    <li><b>Uten DT er det ingenting tungt å sentralisere.</b> v13s slår opp i Trivy DB i hver tenant.
+      Bare databasefilen deles, som en kopi i GAR.</li>
+  </ol>
+
+  <div class="scroll panel">
+    <table>
+      <thead><tr><th>Målbilde</th><th>Innhold</th></tr></thead>
+      <tbody>
+        <tr><td><span class="tag info">v13s eier</span></td><td>Hva kjører hvor (workload → image-digest), komponentene i hver SBOM og teamenes suppressions. Det er Nais-kontekst ingen andre har.</td></tr>
+        <tr><td><span class="tag ok">v13s leverer</span></td><td>Fakta slik kilden oppgir dem: pakke, sårbarhet, kilde, severity, CVSS, fiksversjon og status, EPSS og KEV.
+          I tillegg hendelser (dukket opp, løst, vurdert), tellinger og pakkesøk i hele tenanten, også for pakker uten funn.</td></tr>
+        <tr><td><span class="tag warn">Andre eier</span></td><td>Kildekuratering: Aqua (Trivy DB). SBOM: <code>attest-sign</code>. EPSS: FIRST. KEV: CISA m.fl.
+          Vi kjøper ekspertisen i stedet for å drifte den.</td></tr>
+        <tr><td><span class="tag err">Fjernes</span></td><td>DT med frontend, Trivy-server og egen Cloud SQL. Opplasting og polling, skriving av suppressions til DT og OSV-oppslag for fiks.
+          Beregnede felt (<code>priority</code>, <code>risk_score</code>, <code>top_priority</code>) fjernes når klientene har flyttet; rangering skjer i klienten.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="two">
+    <div class="panel" style="margin:0">
+      <h3>For brukerne</h3>
+      <ul class="tight">
+        <li>Console viser fakta med filtre, for eksempel «KEV eller EPSS over 95 %», i stedet for våre egne nivåer.</li>
+        <li>«Hvor kjører log4j 2.14?» besvares direkte fra inventaret.</li>
+        <li>En agent via MCP gjør vurderingen: det som kan fikses, får en PR med pakkeoppgradering. Resten får et begrunnet
+          forslag til suppression, som teamet godkjenner i batch.</li>
+      </ul>
+    </div>
+    <div class="panel" style="margin:0">
+      <h3>Rekkefølge</h3>
+      <ol class="tight">
+        <li>Suppression v1 lokalt i v13s. Avhenger ikke av DT-valget.</li>
+        <li>Trivy-matching i v13s, kjørt parallelt med DT.</li>
+        <li>Fakta-API og pakkesøk; Console og MCP flytter over.</li>
+        <li>Fjern DT.</li>
+        <li>Fjern beregnede felt når ingen klienter bruker dem.</li>
+      </ol>
+    </div>
+  </div>
+</section>
+</main>
+</div>
+</body>
+</html>
