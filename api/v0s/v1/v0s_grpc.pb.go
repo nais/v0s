@@ -302,8 +302,8 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Suppressions manages teams' current assessments of findings. Only the current state is kept;
-// the caller keeps the history of changes if it wants one.
+// Suppressions manages teams' durable assessments of findings, owned by v0s. Only the current
+// state is kept; the caller keeps the history of changes if it wants one.
 type SuppressionServiceClient interface {
 	// SetSuppressions sets suppressions atomically, replacing any with the same key.
 	SetSuppressions(ctx context.Context, in *SetSuppressionsRequest, opts ...grpc.CallOption) (*SetSuppressionsResponse, error)
@@ -355,8 +355,8 @@ func (c *suppressionServiceClient) ListSuppressions(ctx context.Context, in *Lis
 // All implementations must embed UnimplementedSuppressionServiceServer
 // for forward compatibility.
 //
-// Suppressions manages teams' current assessments of findings. Only the current state is kept;
-// the caller keeps the history of changes if it wants one.
+// Suppressions manages teams' durable assessments of findings, owned by v0s. Only the current
+// state is kept; the caller keeps the history of changes if it wants one.
 type SuppressionServiceServer interface {
 	// SetSuppressions sets suppressions atomically, replacing any with the same key.
 	SetSuppressions(context.Context, *SetSuppressionsRequest) (*SetSuppressionsResponse, error)

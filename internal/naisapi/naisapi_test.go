@@ -112,6 +112,26 @@ func TestSnapshotUnavailable(t *testing.T) {
 	}
 }
 
+func TestMovedTagKeepsResolvedDigest(t *testing.T) {
+	client := environments(env("dev", workload("team", "app", "ghcr.io/nais/app:latest")))
+	resolver := &fakeResolver{digests: map[string]string{"ghcr.io/nais/app:latest": digestA}}
+	inv := newInventory(client, resolver)
+
+	for _, registryDigest := range []string{digestA, digestB} {
+		resolver.digests["ghcr.io/nais/app:latest"] = registryDigest
+		got, err := inv.Snapshot(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(got["dev"]) != 1 || got["dev"][0].Digest != digestA {
+			t.Fatalf("Snapshot = %+v, want the originally resolved digest %s", got, digestA)
+		}
+	}
+	if len(resolver.calls) != 1 {
+		t.Errorf("registry asked %d times, want once", len(resolver.calls))
+	}
+}
+
 func TestTagResolution(t *testing.T) {
 	client := environments(env("dev", workload("team", "app", "ghcr.io/nais/app:latest")))
 	resolver := &fakeResolver{digests: map[string]string{}} // the registry fails

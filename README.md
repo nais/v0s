@@ -1,55 +1,44 @@
 # v0s
 
-v0s reports which known vulnerabilities affect the container images of the teams'
-Nais workloads (applications and jobs) in a tenant. It reports mechanical facts and no
-judgements. The platform's own workloads in `nais-system` are not covered.
+v0s answers three questions about a tenant's Nais applications and jobs:
 
-It replaces v13s together with Dependency-Track. The motivation and the measurements
-behind it are in `docs/background/`; the current state of the work is in
-`docs/handover.md`.
+- Which known vulnerabilities affect their images, and is a fix available?
+- Where is a particular package or version deployed, even if it has no findings?
+- Which findings has a team assessed as not affected, false positive or accepted risk?
 
-## What it does
+It reads deployed images from Nais API, verifies their attested CycloneDX SBOMs,
+and matches them against Trivy's vulnerability database. Stored SBOMs are rescanned
+when the database changes; images are never pulled. Results, coverage gaps and
+team-scoped suppressions are served over gRPC.
 
-1. Reads the tenant's workloads and their images from Nais API, and records which
-   image digests they use where. Tags are resolved against the registry.
-2. Fetches the attested CycloneDX SBOM for each digest and verifies its signature.
-   The image itself is never pulled.
-3. Matches the SBOM against the Trivy vulnerability database, in-process, using a
-   local copy of the database.
-4. Rescans every image in use whenever a new database is published.
-5. Serves the results through a gRPC API (`v0s.v1`): findings, components and
-   tenant-wide package search, counts, and suppressions.
+One service per tenant, Postgres for state, no queue or separate scanner service.
+The aim is to replace v13s and Dependency-Track for this use case—not to reproduce
+all their features.
 
-## What it does not do
+## Boundaries
 
-- It computes no priority, risk score or "top" lists, and keeps no history.
-  Clients decide what matters. v0s exposes the current inputs: severity and its
-  source, CVSS, fix version, fix status, EPSS and KEV.
-- It does not write to any other system. Suppressions are owned here, current
-  state only.
-- It does not authenticate callers. NetworkPolicy lets only `nais-system` reach
-  it, and Nais API authorizes its users.
-- It does not restrict reads. Everyone in the tenant may see every team's findings;
-  team filters narrow a query. Only suppressions are scoped to a team.
-- It does not share data across tenants. There is one v0s per tenant.
-
-## Principles
-
-- Facts in, facts out. Every field can be traced to the SBOM, the Trivy DB,
-  FIRST EPSS, CISA KEV or a human decision (suppression).
-- The system converges toward the desired state (level-triggered). Loops compare
-  desired state with actual state in Postgres. There are no event queues to
-  lose.
-- Postgres is the only state. Replicas are interchangeable: one does the work
-  behind an advisory lock, all serve the API.
-- Few dependencies. Use the standard library first.
-
-See `CONTEXT.md` for the domain language and `docs/adr/` for decisions.
+- Facts, not prioritization: severity, fix information, EPSS and KEV, but no risk
+  score, priority tiers, policy engine, trends or history.
+- Team workloads only; no platform sidecars or workloads in `nais-system`.
+- Mutable tags are resolved once; moving a tag is not tracked. Deploy a new tag
+  or digest to change the image.
+- Reads are tenant-wide. Trusted callers authorize suppression writes;
+  NetworkPolicy is the API's trust boundary, not application authentication.
 
 ## Development
 
 ```sh
 mise install
-make generate   # protobuf
-make check      # vet, staticcheck, tests (needs postgres binaries on PATH)
+make check
 ```
+
+Database tests need PostgreSQL's `initdb` and `pg_ctl` on `PATH` or in `V0S_PG_BIN`,
+or an existing server via `V0S_TEST_DATABASE_URL`. Without either, they skip.
+Run `make generate` after changing protobufs.
+
+## Documentation
+
+[Domain language](CONTEXT.md) · [Architecture](docs/architecture.md) ·
+[Operations](docs/operations.md) · [Verification](docs/verification.md)
+
+Historical proposals, measurements and session notes are in the [archive](docs/archive/README.md).

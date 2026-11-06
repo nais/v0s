@@ -395,8 +395,8 @@ type Workload struct {
 	Environment string                 `protobuf:"bytes,1,opt,name=environment,proto3" json:"environment,omitempty"`
 	Team        string                 `protobuf:"bytes,2,opt,name=team,proto3" json:"team,omitempty"`
 	Name        string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
-	// The image as deployed, e.g. "ghcr.io/navikt/app:1.2.3". A caller that knows a newer
-	// reference can tell that v0s has not seen the deploy yet.
+	// The image as deployed, e.g. "ghcr.io/navikt/app:1.2.3". Tags are resolved once while in use;
+	// changes to what an existing tag points to are not tracked.
 	ImageReference string `protobuf:"bytes,5,opt,name=image_reference,json=imageReference,proto3" json:"image_reference,omitempty"`
 	// The image image_reference resolved to. Unset if it could not be resolved; see resolve_error.
 	Image         *Image `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`

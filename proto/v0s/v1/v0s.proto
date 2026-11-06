@@ -8,6 +8,8 @@ option go_package = "github.com/nais/v0s/api/v0s/v1;v0sv1";
 
 // The API has no authentication. NetworkPolicy limits who reaches it, and callers are trusted
 // services: they decide what their users may see and authorize suppression changes.
+// v0s keeps the results updated; callers use its current view without checking inventory age
+// or a target scan DB version. There is no client-facing freshness protocol.
 
 // Vulnerabilities exposes mechanical facts about vulnerabilities in the images of team workloads.
 // Nothing here is a judgement: no priority, no risk score. Everything is readable by every
@@ -26,8 +28,8 @@ service VulnerabilityService {
   rpc SearchComponents(SearchComponentsRequest) returns (SearchComponentsResponse);
 }
 
-// Suppressions manages teams' current assessments of findings. Only the current state is kept;
-// the caller keeps the history of changes if it wants one.
+// Suppressions manages teams' durable assessments of findings, owned by v0s. Only the current
+// state is kept; the caller keeps the history of changes if it wants one.
 service SuppressionService {
   // SetSuppressions sets suppressions atomically, replacing any with the same key.
   rpc SetSuppressions(SetSuppressionsRequest) returns (SetSuppressionsResponse);
@@ -83,8 +85,8 @@ message Workload {
   string environment = 1;
   string team = 2;
   string name = 3;
-  // The image as deployed, e.g. "ghcr.io/navikt/app:1.2.3". A caller that knows a newer
-  // reference can tell that v0s has not seen the deploy yet.
+  // The image as deployed, e.g. "ghcr.io/navikt/app:1.2.3". Tags are resolved once while in use;
+  // changes to what an existing tag points to are not tracked.
   string image_reference = 5;
   // The image image_reference resolved to. Unset if it could not be resolved; see resolve_error.
   Image image = 4;

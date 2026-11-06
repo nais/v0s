@@ -40,14 +40,15 @@ does log4j-core 2.14 run?").
 version is the `UpdatedAt` from the DB metadata.
 
 **Scan**
-: Matching one image's SBOM against one vulnerability DB version. A scan is
-pure: the same SBOM and DB version give the same findings.
+: Matching one image's SBOM against one vulnerability DB version. For a given
+scanner implementation, the same SBOM and DB version give the same findings.
 
 **Image status**
 : How far an image has got towards findings: `pending` (SBOM not fetched or
 image not scanned yet), `scanned`, `no_sbom` (no attestation found) or `failed`
-(fetching, verifying or scanning failed). An image without findings is clean
-only if it is `scanned`.
+(fetching, verifying or scanning failed). `scanned` means a scan completed, not
+that the image is free of vulnerabilities or its SBOM is complete. A failed
+rescan preserves the previous findings and `scanned` status, with an error.
 
 **Finding**
 : The fact that a vulnerability affects one component of a workload's image
@@ -70,7 +71,14 @@ in an image name, keyed by `(team, image name, package key, vulnerability ID)`.
 It applies to the team's own workloads only: another team using the same image
 is not affected. It has a state (not affected, false positive or accepted risk),
 a reason in the team's words, and who last set it. Setting it again replaces
-it; deleting it removes it. v0s keeps no history of changes: Nais API logs them.
+it; deleting it removes it. There is no expiry or history of changes in v0s;
+callers keep any activity log they need. These assessments are durable data
+owned here; unlike inventory and scan results, they cannot be rebuilt from
+external sources.
 
 **Suppressed**
 : A finding is suppressed when its workload's team has a suppression of it.
+
+**EPSS and KEV**
+: Source data from FIRST and CISA, supplied alongside findings. v0s does not
+turn them into priority tiers, thresholds or a risk score.

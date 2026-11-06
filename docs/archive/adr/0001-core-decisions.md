@@ -36,6 +36,12 @@ A crash loses nothing. On restart, the loops see the same desired state. A scan
 that kills the process is retried, and given up for that DB version after three
 attempts.
 
+The scan loop drains pending work every ten seconds. Already scanned images are
+not repeatedly scanned with the same DB. New images and newer DBs make work due;
+there is no general scanner-version invalidation mechanism. A code upgrade alone
+does not rescan images with the same DB, and normally the next DB update picks up
+matching changes. A concrete need to recompute on upgrade is handled when it arises.
+
 ## Workloads from Nais API, not from the clusters
 
 Nais API already watches every cluster of the tenant, including on-prem ones,
@@ -91,18 +97,32 @@ the VEX justification vocabulary is left out until something consumes it.
 There is no expiry: v13s has none and no one has asked for it, and without it
 whether a finding is suppressed does not depend on the time it is read.
 
+Suppressions are durable data owned by v0s for now. Inventory and scan results can
+be rebuilt from external sources; these human assessments cannot. Production
+backup and recovery must preserve them. Nais API's activity log is not a substitute
+for database recovery. The disposable pilot database is an explicit exception,
+not the production data-retention model.
+
 ## Facts only
 
 Nais does not judge severity or priority, neither here nor downstream. There is
 no priority tier, risk score or top list. Severity is the advisory source's, with
-the source named; EPSS and KEV are fields on the finding. Counts are plain
-`GROUP BY` facets.
+the source named; EPSS from FIRST and KEV from CISA are source data supplied as
+fields on the finding, without our own thresholds or interpretation. Counts are
+plain `GROUP BY` facets.
 
 ## Current state, no history
 
 v0s serves the findings as they are now. There are no trend graphs or
 time-to-fix metrics to feed, so there are no finding events, summary snapshots
 or first-seen times, and images are deleted as soon as no workload uses them.
+
+There is no client-facing freshness contract: no inventory-age check, target DB
+version or stale state for callers to manage. Clients use the stored results as
+v0s's current view. Keeping inventory and scans updated is an operational
+responsibility, not a guarantee of instantaneous completion. Environments missing
+from a snapshot retain their previous inventory. Image coverage and errors remain
+visible; they are not a freshness protocol.
 
 ## Everyone in the tenant can read everything; no authentication
 

@@ -130,6 +130,44 @@ func TestPipeline(t *testing.T) {
 	}
 }
 
+func TestNewDBRescansImages(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	r := &Reconciler{
+		DB: db,
+		Inventory: fakeInventory{"dev": {{
+			Environment: "dev", Team: "team", Workload: "app", ImageName: "registry/app", Digest: "sha256:a",
+		}}},
+		Fetcher: fakeFetcher{"registry/app@sha256:a": []byte("sbom")},
+		Log:     discard,
+		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
+	}
+	if err := r.sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.fetch(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	v1 := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
+	for _, version := range []time.Time{v1, v1.Add(6 * time.Hour)} {
+		r.Scanner = fakeScanner{version: version}
+		if err := r.scan(ctx); err != nil {
+			t.Fatal(err)
+		}
+		workloads, _, err := db.ListWorkloads(ctx, database.WorkloadFilter{}, database.Page{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(workloads) != 1 || workloads[0].Image == nil {
+			t.Fatalf("workloads = %+v, want one with an image", workloads)
+		}
+		if img := workloads[0].Image; !img.ScannedDBVersion.Equal(version) || img.Status() != v0s.ImageScanned {
+			t.Errorf("image = %+v, want scanned with %v", img, version)
+		}
+	}
+}
+
 // TestSyncDeletesUnusedImages checks that an image no workload uses anymore is deleted at once,
 // while images of environments missing from the snapshot are kept.
 func TestSyncDeletesUnusedImages(t *testing.T) {
