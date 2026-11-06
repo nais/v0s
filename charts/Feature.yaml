@@ -1,0 +1,55 @@
+environmentKinds:
+  - management
+
+dependencies:
+  - allOf:
+      - nais-api
+      - cloudnative-pg
+      - fqdn-policy
+      - monitoring-crds
+
+values:
+  image.tag:
+    displayName: Image tag override
+    description: Defaults to the chart's appVersion; must refer to a published v0s image.
+    config:
+      type: string
+
+  serviceAccountEmail:
+    displayName: Runtime Google service account
+    description: Dedicated v0s identity with read access to workload registries. Not the gh-v0s publisher.
+    config:
+      type: string
+
+  database.clusterName:
+    displayName: Existing CNPG cluster
+    description: Separately provisioned in the same namespace, with backups and a tested restore procedure.
+    config:
+      type: string
+
+  github.organizations:
+    displayName: Trusted GitHub organizations
+    description: Only SBOM attestations signed by workflows in these organizations are accepted.
+    config:
+      type: string_array
+
+  networkPolicy.httpsHosts:
+    displayName: Allowed HTTPS hosts
+    description: Registries, redirects, Sigstore trust roots and vulnerability data sources used by v0s.
+    config:
+      type: string_array
+
+  resources.requests.cpu:
+    displayName: CPU request
+    config:
+      type: string
+
+  resources.requests.memory:
+    displayName: Memory request
+    config:
+      type: string
+
+  resources.limits.memory:
+    displayName: Memory limit
+    config:
+      type: string

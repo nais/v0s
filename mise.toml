@@ -3,3 +3,61 @@ go = "1.27.3"
 buf = "1.68.1"
 protoc-gen-go = "1.36.11"
 protoc-gen-go-grpc = "1.5.1"
+helm = "4.1.0"
+
+[tasks.build]
+description = "Build the v0s binary"
+run = "go build -trimpath -o bin/v0s ./cmd/v0s"
+
+[tasks."build:image"]
+description = "Build the Linux image locally without pushing"
+run = "docker build --platform linux/amd64 --tag v0s:local ."
+
+[tasks."build:chart"]
+description = "Package a release chart for the published VERSION image tag"
+run = 'helm package charts --version "${VERSION:?Set VERSION to a published image tag}" --app-version "$VERSION" --destination dist'
+
+[tasks.generate]
+description = "Generate the public API and vendored Nais API client"
+run = [
+  "buf generate",
+  "buf generate third_party/naisapi --template buf.gen.naisapi.yaml",
+]
+
+[tasks.fmt]
+description = "Format Go code"
+run = "gofmt -w cmd internal api"
+
+[tasks.test]
+description = "Run all tests with the race detector"
+run = "go test -race -count=1 ./..."
+
+[tasks.check]
+description = "Check formatting, protobufs, Go code and tests"
+depends = ["check:fmt", "check:proto", "check:helm", "check:vet", "check:staticcheck", "test"]
+
+[tasks."check:fmt"]
+description = "Check Go formatting without changing files"
+run = '''
+files=$(gofmt -l cmd internal api) || exit 1
+if [ -n "$files" ]; then
+  printf '%s\n' "$files"
+  exit 1
+fi
+'''
+
+[tasks."check:proto"]
+description = "Lint protobufs"
+run = "buf lint"
+
+[tasks."check:helm"]
+description = "Lint the Helm chart with rendering fixtures"
+run = "helm lint --strict charts -f charts/ci/test-values.yaml"
+
+[tasks."check:vet"]
+description = "Run go vet"
+run = "go vet ./..."
+
+[tasks."check:staticcheck"]
+description = "Run staticcheck"
+run = "go tool staticcheck ./..."

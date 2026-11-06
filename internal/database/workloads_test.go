@@ -5,9 +5,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/database/databasetest"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 func TestSyncWorkloadImages(t *testing.T) {

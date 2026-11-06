@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/nais/v0s"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 // SyncWorkloadImages makes ws the complete set of workloads for environment. It creates missing

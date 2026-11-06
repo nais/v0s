@@ -14,8 +14,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/naisapi/protoapi"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 const (

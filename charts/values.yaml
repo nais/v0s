@@ -1,0 +1,52 @@
+replicas: 1
+
+image:
+  repository: europe-north1-docker.pkg.dev/nais-io/nais/images/v0s
+  # Set explicitly for local installs; packaged releases can use Chart.appVersion.
+  tag: ""
+
+# Required: a dedicated, tenant-provisioned GCP service account for registry reads.
+serviceAccountEmail: ""
+
+# The chart does not create, migrate between or delete database clusters.
+# CNPG's <clusterName>-app Secret supplies the connection URI.
+database:
+  clusterName: v0s-db
+
+github:
+  organizations:
+    - nais
+
+trivyDBRepositories:
+  - europe-north1-docker.pkg.dev/nais-io/github-ptc/aquasecurity/trivy-db:2
+  - ghcr.io/aquasecurity/trivy-db:2
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 1Gi
+  limits:
+    memory: 3Gi
+
+networkPolicy:
+  httpsHosts:
+    - europe-north1-docker.pkg.dev
+    - ghcr.io
+    - pkg-containers.githubusercontent.com
+    - index.docker.io
+    - registry-1.docker.io
+    - auth.docker.io
+    - production.cloudflare.docker.com
+    - gcr.io
+    - gke.gcr.io
+    - quay.io
+    - registry.k8s.io
+    - us-central1-docker.pkg.dev
+    - reg.kyverno.io
+    - tuf-repo-cdn.sigstore.dev
+    - sigstore-tuf-root.storage.googleapis.com
+    - www.googleapis.com
+    - oauth2.googleapis.com
+    - private.googleapis.com
+    - epss.empiricalsecurity.com
+    - www.cisa.gov

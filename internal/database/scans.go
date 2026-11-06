@@ -12,7 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/nais/v0s"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 // maxSBOMSize is the largest decompressed SBOM NextScan returns.

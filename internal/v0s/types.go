@@ -1,4 +1,4 @@
-// Package v0s holds the domain types shared across v0s. It has no dependencies.
+// Package v0s holds the domain types shared across the service. It has no third-party dependencies.
 //
 // Types are plain facts as v0s records them; see CONTEXT.md for the vocabulary.
 package v0s

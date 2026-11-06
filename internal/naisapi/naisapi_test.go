@@ -12,9 +12,9 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"google.golang.org/grpc"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/naisapi"
 	"github.com/nais/v0s/internal/naisapi/protoapi"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 const (

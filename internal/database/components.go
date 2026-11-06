@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/nais/v0s"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 // ComponentMatch is a component in the SBOM of an image in use.

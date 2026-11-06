@@ -1,0 +1,7 @@
+apiVersion: v2
+name: v0s
+description: Vulnerability findings for Nais API's workload inventory
+sources:
+  - https://github.com/nais/v0s/tree/main/charts
+type: application
+version: 0.1.0

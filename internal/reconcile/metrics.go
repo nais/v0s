@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/database"
+	"github.com/nais/v0s/internal/v0s"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )

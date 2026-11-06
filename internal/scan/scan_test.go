@@ -27,8 +27,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/static"
 	"github.com/google/go-containerregistry/pkg/v1/types"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/scan"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 var discard = slog.New(slog.DiscardHandler)

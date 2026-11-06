@@ -1,0 +1,4 @@
+# Rendering fixtures, not a deployable identity or published image.
+image:
+  tag: chart-test
+serviceAccountEmail: v0s@example.invalid

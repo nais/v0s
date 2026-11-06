@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: {{ .Release.Name }}
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ .Release.Name }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: v0s
+          image: {{ printf "%s:%s" .Values.image.repository (required "Set image.tag or package the chart with --app-version" (.Values.image.tag | default .Chart.AppVersion)) | quote }}
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ printf "%s-app" (required "Set database.clusterName to an existing CNPG cluster" .Values.database.clusterName) | quote }}
+                  key: uri
+            # Nais API is the required, sole source of workload inventory.
+            - name: NAIS_API_GRPC_ADDRESS
+              value: nais-api:3001
+            - name: GITHUB_ORGANIZATIONS
+              value: {{ required "Set github.organizations to at least one trusted organization" .Values.github.organizations | join "," | quote }}
+            - name: TRIVY_DB_REPOSITORIES
+              value: {{ required "Set trivyDBRepositories to at least one OCI repository" .Values.trivyDBRepositories | join "," | quote }}
+            - name: HOME
+              value: /var/cache/v0s/home
+            - name: TRIVY_DB_DIR
+              value: /var/cache/v0s/trivy-db
+          ports:
+            - name: grpc
+              containerPort: 50051
+            - name: http
+              containerPort: 8080
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            failureThreshold: 6
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: cache
+              mountPath: /var/cache/v0s
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: cache
+          emptyDir:
+            sizeLimit: 4Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi

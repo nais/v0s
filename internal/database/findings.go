@@ -11,8 +11,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/purl"
+	"github.com/nais/v0s/internal/v0s"
 	"github.com/package-url/packageurl-go"
 )
 

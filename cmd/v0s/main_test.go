@@ -17,9 +17,9 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/database/databasetest"
 	"github.com/nais/v0s/internal/reconcile"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 func TestMain(m *testing.M) { databasetest.Main(m) }

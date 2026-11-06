@@ -36,7 +36,7 @@ out of the current design docs.
 | Deploy a new tag or digest | New image appears and is processed; the old image is removed if unused |
 | Move an existing tag | No update is expected; mutable-tag tracking is outside scope |
 | Delete a workload | Its unused image, SBOM, components and findings are removed at the next sync |
-| Inventory request fails or omits an environment | Previous inventory is retained for affected environments |
+| Nais API is unavailable or omits an environment | Previous inventory is retained; reads and stored-SBOM rescans remain available, and inventory sync retries |
 | Image has no attestation | `NO_SBOM`; retry after backoff, no retry storm |
 | Newer Trivy DB loads | In-use images become due for rescanning without any client action |
 | Scan fails | Error is visible; previous findings remain; retry on a newer DB |
@@ -58,6 +58,11 @@ dev-nais alone cannot establish nav-scale performance.
 
 Before adding consumers:
 
+- Verify the chart's required Fasit features are deployed, especially `nais-api`,
+  and exercise its `Workloads.ListImages` contract. If Nais API consumes v0s
+  findings, confirm its inventory endpoint and readiness work without v0s.
+- Verify the dedicated runtime identity, CNPG connection secret, writable cache
+  volumes and egress against the tenant's actual registries and redirects.
 - Verify NetworkPolicy admits only intended trusted callers. Confirm callers
   authorize suppression writes; the service itself trusts their team and actor.
 - Establish database backup and restore, preserving suppressions.

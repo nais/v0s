@@ -28,8 +28,8 @@ import (
 	"github.com/aquasecurity/trivy/pkg/vulnerability"
 	"github.com/package-url/packageurl-go"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/purl"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 // ErrNoDB is returned by Scan when no vulnerability DB is loaded.

@@ -1,5 +1,58 @@
 # Operations
 
+## Building and publishing
+
+Mise owns build, checks and generation; see `mise tasks`. The Dockerfile builds a
+static Go binary and runs it as UID/GID 65532 in `scratch`, with only the binary,
+CA certificates and writable cache/temp directories. The build image is pinned
+by digest. `mise run build:image` builds `v0s:local` for Linux/amd64 without pushing.
+The deployment still needs writable cache and temporary volumes when using a
+read-only root filesystem.
+
+[CI](../.github/workflows/main.yaml) runs checks and race-enabled tests against
+PostgreSQL 18, verifies generated code, and builds PR images without publishing.
+Pushes to `main` publish to
+`europe-north1-docker.pkg.dev/nais-io/nais/images/v0s` through
+`nais/platform-build-push-sign`, including an SBOM attestation and signing.
+The same job packages and pushes the OCI Helm chart to
+`oci://europe-north1-docker.pkg.dev/nais-io/nais/feature/v0s`, using the image
+version for both the chart version and `appVersion`. Its Actions summary gives
+the chart reference, version and image reference with digest for manual Fasit
+assignment. No assignment or deployment is created automatically.
+
+Image and chart publication require infrastructure outside this repo:
+
+- `gh-v0s@nais-io.iam.gserviceaccount.com` with
+  `roles/artifactregistry.writer` on the `nais` GAR repository.
+- GitHub Workload Identity Federation allowing `nais/v0s` to impersonate that
+  account with `roles/iam.workloadIdentityUser`. The existing
+  `nais/nais-io-terraform-modules` service-account map can express this as
+  `gh-v0s = "v0s"`.
+- The organization secret `NAIS_IO_WORKLOAD_IDENTITY_PROVIDER` available to this
+  GitHub repository. No service-account key is needed.
+
+This publishing identity is separate from the workload's runtime identity and
+registry-read permissions. The pilot still uses `v13s-sa`; replacing it requires
+tenant-side provisioning, not a change to the publishing account.
+
+## Helm deployment
+
+The [chart](../charts/README.md) deploys v0s into the management namespace. Its
+`Feature.yaml` requires `nais-api`, `cloudnative-pg`, `fqdn-policy` and
+`monitoring-crds`. Nais API is the required, sole inventory source, not an
+optional integration or a Helm subchart. The feature dependency does not replace
+verification of the `Workloads.ListImages` gRPC contract.
+
+Provision the CNPG cluster, backups and runtime Google identity separately.
+The chart reads `<database.clusterName>-app` (`uri`) and does not create or delete
+the database, even during uninstall. Configure `serviceAccountEmail` and bind it
+to the chart's Kubernetes account through Workload Identity; there are no
+Kubernetes API permissions. Set trusted GitHub organizations and review the
+HTTPS egress allowlist for the tenant. See the chart README for rendering and
+packaging commands. CI publishes the chart after the signed image, but creating
+or updating its Fasit assignment is a separate, manual step. Assign the chart
+reference and version from the Actions summary, not the container image URL.
+
 ## Runtime configuration
 
 Configuration is read from environment variables by [`cmd/v0s`](../cmd/v0s/main.go).
@@ -62,13 +115,17 @@ verify recovery of the assessments. A caller's activity log is not a substitute.
 
 [`deploy/dev-nais/management.yaml`](../deploy/dev-nais/management.yaml) is a manual
 pilot manifest, not a production deployment template. It uses `v13s-sa`, one
-PostgreSQL 18 instance, no backups, and pins an older v0s image. Do not assume it
-runs the current API. No release workflow or Helm chart exists in this repo yet.
+PostgreSQL 18 instance and no backups. On 2026-11-06, build `97a170f` was deployed
+with the current API and a fresh database; see the
+[deployment verification](archive/dev-nais-deploy-2026-11-06.md). CI now defines
+image and chart publication, but these repository changes have not deployed
+the new chart or scratch image to the pilot. Production rollout remains
+unconfigured.
 
-Before the next comparison, publish a current build and update the pilot image.
-The pre-release `0001_schema.sql` was edited in place, so an existing pilot database
-needs a reset to receive those changes. Confirm its suppressions are disposable
-before resetting; never apply that recovery model to production.
+The pre-release `0001_schema.sql` is edited in place. If it changes again, an
+existing pilot database needs a reset to receive those changes. Confirm its
+suppressions are disposable before resetting; never apply that recovery model
+to production.
 
 The comparison tool still targets the old API; see
 [`tools/compare`](../tools/compare/README.md). Live multi-replica failures, recovery

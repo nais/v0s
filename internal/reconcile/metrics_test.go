@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/database/databasetest"
+	"github.com/nais/v0s/internal/v0s"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

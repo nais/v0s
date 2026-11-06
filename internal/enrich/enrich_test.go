@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nais/v0s"
 	"github.com/nais/v0s/internal/enrich"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 func TestFetchEPSS(t *testing.T) {

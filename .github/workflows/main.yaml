@@ -1,0 +1,100 @@
+name: Check and publish image and chart
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      V0S_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+      - run: mise run check
+      - name: Check generated code
+        run: |
+          mise run generate
+          git diff --exit-code
+
+  build:
+    name: Build image without publishing
+    if: github.event_name == 'pull_request'
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: nais/platform-build-push-sign@main # ratchet:exclude
+        with:
+          name: v0s
+          push: false
+
+  publish:
+    name: Publish signed image and chart
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FEATURE_REPOSITORY: oci://europe-north1-docker.pkg.dev/nais-io/nais/feature
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: jdx/mise-action@f5be966e4a917d54244728e6a5fdcd1d93a35e6c # v5
+      - uses: nais/platform-build-push-sign@main # ratchet:exclude
+        id: image
+        with:
+          name: v0s
+          google_service_account: gh-v0s
+          workload_identity_provider: ${{ secrets.NAIS_IO_WORKLOAD_IDENTITY_PROVIDER }}
+          push: true
+      - name: Package release chart
+        env:
+          VERSION: ${{ steps.image.outputs.version }}
+        run: mise run build:chart
+      - name: Push chart to GAR
+        env:
+          VERSION: ${{ steps.image.outputs.version }}
+        # Reuse the short-lived registry login established by the image action.
+        run: mise exec -- helm push "dist/v0s-${VERSION}.tgz" "$FEATURE_REPOSITORY" --registry-config "$HOME/.docker/config.json"
+      - name: References for manual Fasit assignment
+        env:
+          VERSION: ${{ steps.image.outputs.version }}
+          IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          {
+            printf '## Manual Fasit assignment\n\n'
+            printf -- "- Chart: \`%s/v0s\`\n" "$FEATURE_REPOSITORY"
+            printf -- "- Version: \`%s\`\n" "$VERSION"
+            printf -- "- Image: \`%s\`\n" "$IMAGE"
+            printf '\nNo Fasit assignment or rollout was created.\n'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/nais/v0s"
+	"github.com/nais/v0s/internal/v0s"
 )
 
 // imageColumns are the images columns scanned by imageScan, qualified with the alias i.

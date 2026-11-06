@@ -1,4 +1,4 @@
-// Command v0s watches workloads, scans their attested SBOMs and serves the facts over gRPC.
+// Command v0s scans attested SBOMs for Nais API's workload inventory and serves facts over gRPC.
 package main
 
 import (

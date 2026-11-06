@@ -1,4 +1,5 @@
 bin/
+dist/
 mise.local.toml
 /v0s
 /tools/compare/compare-out/

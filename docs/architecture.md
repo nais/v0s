@@ -1,9 +1,34 @@
 # Architecture
 
-v0s is a per-tenant inventory and vulnerability service. It reports source facts
-and teams' assessments; it does not decide which findings to prioritize.
+v0s is a per-tenant vulnerability service built around Nais API's workload
+inventory. It reports source facts and teams' assessments; it does not decide
+which findings to prioritize. It is separately deployable, not independent of
+Nais API.
 See [CONTEXT.md](../CONTEXT.md) for identities and counting semantics, and the
 [protobuf contract](../proto/v0s/v1/v0s.proto) for the API.
+
+## Required Nais API dependency
+
+Nais API owns workload discovery; v0s owns SBOM verification, vulnerability
+matching and assessments for those workloads. Nais API's internal gRPC
+`Workloads.ListImages` is the only inventory source. There are no direct
+Kubernetes watches, cluster credentials or alternative inventory backends in
+v0s. This is a deliberate simplification, not a missing integration.
+
+The tradeoff is that inventory coverage and updates depend on Nais API. If it
+is unavailable, v0s retains its stored inventory and results, continues rescanning
+stored SBOMs, and retries discovery. `/healthz` does not test Nais API; operational
+checks must observe inventory reconciliation separately.
+
+Keeping v0s in a separate process isolates Trivy's dependencies, memory use and
+scan failures from Nais API. If Nais API also consumes v0s findings, its inventory
+endpoint must still work when v0s is unavailable. Neither its startup nor its
+readiness may depend on v0s.
+
+The [chart](../charts/README.md) declares `nais-api` as a required Fasit feature.
+This is not a Helm subchart and does not install another Nais API instance.
+A deployed feature does not prove gRPC compatibility: the Nais API build must
+expose the `Workloads.ListImages` contract used by v0s.
 
 ## Data flow
 
@@ -59,10 +84,13 @@ when they arise. Retry and failure behaviour is described in [Operations](operat
 
 ## Stored facts and human assessments
 
-Domain types live in the root Go package. `internal/database` owns hand-written
-SQL and embedded, numbered migrations applied under an advisory lock. Postgres
-holds shared application state; each replica's Trivy DB is a replaceable local
-cache.
+`cmd/v0s` wires the service together. Private Go packages, including the shared
+domain types in `internal/v0s`, live under `internal/`; the generated public
+gRPC client stays in `api/v0s/v1`. There is one Go module.
+
+`internal/database` owns hand-written SQL and embedded, numbered migrations
+applied under an advisory lock. Postgres holds shared application state; each
+replica's Trivy DB is a replaceable local cache.
 
 Findings are listed and counted per workload. Severity and fix information come
 from the advisory source; EPSS and KEV come from FIRST and CISA without our own
