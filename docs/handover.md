@@ -2,7 +2,7 @@
 
 Skrevet for den som tar over etter sesjonen som laget v0s. Kortversjon: v0s
 bygger, testene går grønt lokalt, og en eldre versjon kjører i dev-nais. Siste
-runde forenklinger er ikke committet eller rullet ut, og den maskinelle
+runde forenklinger er committet og pushet, men ikke rullet ut, og den maskinelle
 sammenligningen mot v13s/Dependency-Track (DT) er neste store steg.
 
 ## Hva v0s er, og hvorfor
@@ -48,10 +48,13 @@ verifisering: `docs/verification.md`.
 
 ## Repo-tilstand
 
-- `~/ws/github.com/nais/v0s`, branch `main`, siste commit `b6e5285`.
-  **Ingen remote**: `nais/v0s` finnes ikke på GitHub ennå (det er godkjent å
-  opprette det som public repo og pushe).
-- Ucommittede endringer (alle forenklinger siden `b6e5285`):
+- https://github.com/nais/v0s (privat), lokalt i `~/ws/github.com/nais/v0s`,
+  branch `main`.
+- Historikken ble skrevet om før første push for å fjerne en committet binær
+  på 152 MB. Commit-hasher fra før 2026-11-06 (også i image-tagger som
+  `b6c6917-manual`) finnes derfor ikke i repoet; commit-meldingene er de samme.
+- `Simplify v0s and expose image status for coverage` samler alle forenklinger
+  etter piloten som kjører nå:
   - auth fjernet; leases erstattet av advisory locks; umiddelbar GC
   - `sboms`-tabellen slått inn i `images.sbom`; `finding_events` fjernet
   - suppressions som nåværende tilstand, team-scopet, uten utløp
@@ -60,9 +63,9 @@ verifisering: `docs/verification.md`.
     `images.sbom_error`/`scan_error` slått sammen til `images.error`
   - `Workload.image_reference` og `resolve_error`; uoppløste workloads vises
   - tag-cache uten TTL og uten stale-digest-fallback
-  - sesjonsmaterialet flyttet inn under `docs/background`, `docs/reviews`,
-    `docs/archive` og `tools/compare`
-- Siste verifisering (lokalt, før flyttingen): gofmt, `buf lint`, `go vet`,
+- Sesjonsmaterialet ligger under `docs/background`, `docs/reviews`,
+  `docs/archive` og `tools/compare`.
+- Siste verifisering (lokalt): gofmt, `buf lint`, `go vet`,
   staticcheck og `go test -race ./...` mot PostgreSQL 18.6 gikk grønt, alle 10
   pakker.
 - Migrasjonen `0001_schema.sql` er redigert på stedet (pre-1.0). En database som
@@ -101,7 +104,8 @@ Sjekk exit-status, ikke bare output.
   - v0s med én replika, kjører som KSA `v13s-sa`
   - CNPG-klusteret `v0s-db` (PostgreSQL 18, én instans, `dynamic-rwo`, uten
     backup, data kan bygges opp igjen)
-- Kjørende v0s: `b6c6917`, digest `sha256:9c142984…`. Altså **ikke** dagens kode.
+- Kjørende v0s: image `v0s:b6c6917-manual`, digest `sha256:9c142984…` (commit
+  "List each finding's workloads …", nå `0a6aa54`). Altså **ikke** dagens kode.
   Kjørende API-et har fortsatt Google-ID-token-auth og SBOM-state i stedet for
   status.
 - Kjørende nais-api: egenbygd image `v0s-nais-api@sha256:cd119c0c…` (PR-commit
@@ -123,20 +127,18 @@ Sjekk exit-status, ikke bare output.
 
 ## Neste steg
 
-1. Commit endringene (foreslått: `Simplify v0s and expose image status for coverage`).
-2. Opprett `nais/v0s` på GitHub og push (godkjent).
-3. Bygg linux/amd64-image, publiser til GAR, oppdater digest i manifestet, vis
+1. Bygg linux/amd64-image, publiser til GAR, oppdater digest i manifestet, vis
    diff, nullstill `v0s-db` og rull ut. Sjekk deretter at `ListWorkloads` gir
    status og uoppløste workloads, og at NetworkPolicy uten auth er så snever som
    tenkt.
-4. Oppdater `tools/compare/compare.py` til nytt API: ingen token for v0s,
+2. Oppdater `tools/compare/compare.py` til nytt API: ingen token for v0s,
    `Image.status`/`error`, workload-forekomster, kanonisk advisory-gruppering, og
    join på digest. v13s bruker tag-identitet og har gamle `latest`-poster.
-5. Kjør den maskinelle sammenligningen. Klassifiser hver critical/high-forskjell
+3. Kjør den maskinelle sammenligningen. Klassifiser hver critical/high-forskjell
    for hånd: v0s feil, v13s/DT feil, eller forsvarlig kildeforskjell. dev-nais har
    lite volum; nav (skyggekjøring, GCP først) trengs for skala og krever egen
    godkjenning.
-6. Etter sammenligningen: gjennomgå skjema og funn-semantikk på nytt for flere
+4. Etter sammenligningen: gjennomgå skjema og funn-semantikk på nytt for flere
    forenklinger (brukeren ba om dette etter statusarbeidet).
 
 ## Åpne spørsmål og kjente risikoer
