@@ -23,10 +23,14 @@ Before installing:
    Allow v0s pods to connect if the database has restrictive ingress policies.
    Configure backups and test restore of suppressions. The app chart neither
    creates nor deletes the cluster, including during uninstall.
-2. Provision a dedicated runtime GCP service account. Bind it through Workload
-   Identity to the Kubernetes account `<namespace>/<release-name>` and grant
-   read access to the workload registries it needs. Set `serviceAccountEmail`.
-   This is not the `gh-v0s` image-publishing account, nor the pilot's `v13s-sa`.
+2. Apply the management module's v0s identity resources through Atlantis before
+   assigning this chart. The module provisions `v0s-sa`, binds Workload Identity
+   to `nais-system/v0s`, grants Artifact Registry reader in the management project,
+   and publishes `v0s_serviceaccount_email` to Fasit. `Feature.yaml` computes
+   `serviceAccountEmail` from that value; no email or key is entered manually.
+   Install as release `v0s` in `nais-system` to match the binding. Additional
+   private registries may need separate read grants. This is not the `gh-v0s`
+   image-publishing account, nor the pilot's `v13s-sa`.
 3. Set `image.tag` to a published image tag, or use a release chart whose
    `appVersion` identifies that image. Set `github.organizations` to the
    organizations whose workflow signatures may supply SBOMs.
@@ -46,7 +50,7 @@ adding consumers. Do not install in an untrusted application namespace.
 `mise run check` includes chart lint and render tests. Rendering fixtures in
 `ci/test-values.yaml` are not deployable credentials or a published image.
 
-A local render with real values:
+Outside Fasit, supply the provisioned runtime email explicitly. A local render:
 
 ```sh
 mise exec -- helm template v0s charts --namespace nais-system --set image.tag="$VERSION" --set serviceAccountEmail="$RUNTIME_SERVICE_ACCOUNT"
