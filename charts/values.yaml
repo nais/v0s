@@ -5,7 +5,8 @@ image:
   # Set explicitly for local installs; packaged releases can use Chart.appVersion.
   tag: ""
 
-# Required: a dedicated, tenant-provisioned GCP service account for registry reads.
+# Computed by Fasit from v0s_serviceaccount_email, provisioned by the management module.
+# Set explicitly only when rendering or installing outside Fasit.
 serviceAccountEmail: ""
 
 # The chart does not create, migrate between or delete database clusters.

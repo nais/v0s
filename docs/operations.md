@@ -32,8 +32,9 @@ Image and chart publication require infrastructure outside this repo:
   GitHub repository. No service-account key is needed.
 
 This publishing identity is separate from the workload's runtime identity and
-registry-read permissions. The pilot still uses `v13s-sa`; replacing it requires
-tenant-side provisioning, not a change to the publishing account.
+registry-read permissions. The management module in `nais-terraform-modules`
+provisions `v0s-sa` and passes its email to Fasit; no runtime email is configured
+manually. This does not change the publishing account.
 
 ## Helm deployment
 
@@ -43,11 +44,16 @@ The [chart](../charts/README.md) deploys v0s into the management namespace. Its
 optional integration or a Helm subchart. The feature dependency does not replace
 verification of the `Workloads.ListImages` gRPC contract.
 
-Provision the CNPG cluster, backups and runtime Google identity separately.
-The chart reads `<database.clusterName>-app` (`uri`) and does not create or delete
-the database, even during uninstall. Configure `serviceAccountEmail` and bind it
-to the chart's Kubernetes account through Workload Identity; there are no
-Kubernetes API permissions. Set trusted GitHub organizations and review the
+Provision the CNPG cluster and backups separately. The chart reads
+`<database.clusterName>-app` (`uri`) and does not create or delete the database,
+even during uninstall. Apply the management module's v0s identity resources
+through Atlantis before assigning the chart. The module creates `v0s-sa`, grants
+Artifact Registry reader in the management project, binds Workload Identity to
+`nais-system/v0s`, and publishes `v0s_serviceaccount_email`. Fasit computes the
+chart's `serviceAccountEmail` from this value. Use release `v0s` in `nais-system`;
+other names need corresponding identity bindings. There are no Kubernetes API
+permissions or service-account keys. Additional private registries may need
+separate read grants. Set trusted GitHub organizations and review the
 HTTPS egress allowlist for the tenant. See the chart README for rendering and
 packaging commands. CI publishes the chart after the signed image, but creating
 or updating its Fasit assignment is a separate, manual step. Assign the chart

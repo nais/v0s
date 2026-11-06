@@ -17,9 +17,10 @@ values:
 
   serviceAccountEmail:
     displayName: Runtime Google service account
-    description: Dedicated v0s identity with read access to workload registries. Not the gh-v0s publisher.
-    config:
-      type: string
+    description: Provisioned by the management module with registry read access. Not the gh-v0s publisher.
+    computed:
+      template: |
+        {{ .Env.v0s_serviceaccount_email | quote }}
 
   database.clusterName:
     displayName: Existing CNPG cluster
