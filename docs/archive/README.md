@@ -24,6 +24,9 @@ For the current service, start with the [README](../../README.md),
   proposal, including infrastructure that had not been built.
 - [`dev-nais-comparison-2026-10-30.md`](dev-nais-comparison-2026-10-30.md): the first
   pilot's deployment notes and comparison results, using the old API.
+- [`dev-nais-manual-manifest.yaml`](dev-nais-manual-manifest.yaml): retired manual
+  pilot installation, formerly `deploy/dev-nais/management.yaml`. Do not apply
+  or bulk-delete it: the app resources now belong to Fasit.
 - `nais-api-listimages.patch`: an early patch, superseded by nais/api PR #609.
 - `v0s-lanes.js`, `v0s-fix-lanes-1.js`: agent orchestration scripts from the
   implementation sessions; not supported development tools.

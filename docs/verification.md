@@ -61,6 +61,17 @@ Before adding consumers:
 - Verify the chart's required Fasit features are deployed, especially `nais-api`,
   and exercise its `Workloads.ListImages` contract. If Nais API consumes v0s
   findings, confirm its inventory endpoint and readiness work without v0s.
+- For a new database, verify CNPG bootstraps `v0s-db`, supplies `v0s-db-app.uri`,
+  and has enough eligible nodes/storage for the configured instances. Verify the
+  database policies' Fasit-computed API/DNS addresses and actual app connectivity.
+- For databases whose data must survive, set `postgresqlEnabled=false` before
+  upgrading and verify the existing Cluster/PVC identities and suppressions.
+  The disposable dev-nais pilot is explicitly approved for destructive reset:
+  verify fresh Cluster/PVC identities, Helm ownership and successful bootstrap.
+  That approval does not apply to NAV.
+- Verify a packaged release includes its database dependency and works without
+  fetching subcharts from the target cluster. Verify managed Cluster retention
+  on uninstall/reinstall in a disposable environment, not a real tenant database.
 - Verify the dedicated runtime identity, CNPG connection secret, writable cache
   volumes and egress against the tenant's actual registries and redirects.
 - Verify NetworkPolicy admits only intended trusted callers. Confirm callers

@@ -1,6 +1,9 @@
 environmentKinds:
   - management
 
+# Allow CNPG bootstrap, disk provisioning and the cold Trivy cache download.
+timeout: 15m
+
 dependencies:
   - allOf:
       - nais-api
@@ -22,9 +25,37 @@ values:
       template: |
         {{ .Env.v0s_serviceaccount_email | quote }}
 
+  postgresqlEnabled:
+    displayName: Provision PostgreSQL
+    description: Defaults to true. Set false to use an existing database without adopting or changing it.
+    config:
+      type: bool
+
+  postgresql.networkPolicy.apiServerCidrs:
+    displayName: API server CIDRs
+    computed:
+      template: '["{{ .Env.apiserver_endpoint }}/32"]'
+
+  postgresql.networkPolicy.dnsCidrs:
+    displayName: DNS CIDRs
+    computed:
+      template: '["{{ .Env.svc_ip_cidr_range }}"]'
+
+  postgresql.instances:
+    displayName: PostgreSQL instances
+    description: Defaults to three total instances with required node anti-affinity. Replicas are not backups.
+    config:
+      type: int
+
+  postgresql.storage.size:
+    displayName: PostgreSQL storage per instance
+    description: Defaults to 10Gi. Expansion requires StorageClass support; shrinking is unsupported.
+    config:
+      type: string
+
   database.clusterName:
     displayName: Existing CNPG cluster
-    description: Separately provisioned in the same namespace, with backups and a tested restore procedure.
+    description: Used only when postgresqlEnabled=false; must supply the application Secret in the release namespace.
     config:
       type: string
 

@@ -9,8 +9,28 @@ image:
 # Set explicitly only when rendering or installing outside Fasit.
 serviceAccountEmail: ""
 
-# The chart does not create, migrate between or delete database clusters.
-# CNPG's <clusterName>-app Secret supplies the connection URI.
+# New installations provision CNPG through the shared nais-postgresql subchart.
+# Set false to keep an existing, independently managed database without adoption.
+postgresqlEnabled: true
+postgresql:
+  # Keep stable: changing this creates a new database, not a rename.
+  fullnameOverride: v0s-db
+  keep: true
+  imageName: ghcr.io/cloudnative-pg/postgresql:18@sha256:899d3ed526b659d77935dde0e6bf2d69dbbf17d3d8c6486ca8cfd04bd3c18533
+  database:
+    # Bootstrap only; does not modify an existing database or owner.
+    name: v0s
+    owner: v0s
+  storage:
+    # The management cluster's standard-rwo does not support N4 nodes.
+    storageClass: dynamic-rwo
+  networkPolicy:
+    enabled: true
+    # Computed by Fasit. Supply actual cluster addresses outside Fasit.
+    apiServerCidrs: []
+    dnsCidrs: []
+
+# Used only when postgresqlEnabled=false. CNPG supplies <clusterName>-app.uri.
 database:
   clusterName: v0s-db
 

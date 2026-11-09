@@ -15,7 +15,12 @@ run = "docker build --platform linux/amd64 --tag v0s:local ."
 
 [tasks."build:chart"]
 description = "Package a release chart for the published VERSION image tag"
+depends = ["charts:dependencies"]
 run = 'helm package charts --version "${VERSION:?Set VERSION to a published image tag}" --app-version "$VERSION" --destination dist'
+
+[tasks."charts:dependencies"]
+description = "Fetch pinned Helm dependencies from Chart.lock"
+run = "helm dependency build charts --skip-refresh"
 
 [tasks.generate]
 description = "Generate the public API and vendored Nais API client"
@@ -30,6 +35,7 @@ run = "gofmt -w cmd internal api"
 
 [tasks.test]
 description = "Run all tests with the race detector"
+depends = ["charts:dependencies"]
 run = "go test -race -count=1 ./..."
 
 [tasks.check]
@@ -52,7 +58,11 @@ run = "buf lint"
 
 [tasks."check:helm"]
 description = "Lint the Helm chart with rendering fixtures"
-run = "helm lint --strict charts -f charts/ci/test-values.yaml"
+depends = ["charts:dependencies"]
+run = [
+  "helm lint --strict charts -f charts/ci/test-values.yaml",
+  "helm lint --strict charts -f charts/ci/test-values.yaml -f charts/ci/postgresql-values.yaml",
+]
 
 [tasks."check:vet"]
 description = "Run go vet"
