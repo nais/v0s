@@ -1,5 +1,6 @@
 bin/
 dist/
+charts/charts/
 mise.local.toml
 /v0s
 /tools/compare/compare-out/

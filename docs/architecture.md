@@ -105,6 +105,14 @@ removes it. There is no expiry or assessment history in v0s.
 Inventory and scan results can be rebuilt; suppressions cannot. They are durable
 human assessments owned here and require backup and recovery.
 
+The deployment chart uses the shared `nais-postgresql` subchart to provision a
+CNPG database for new installations; `cloudnative-pg` remains a required Fasit
+operator feature. Existing databases can remain independently managed with
+`postgresqlEnabled=false`. Managed Clusters are retained on Helm uninstall by
+default, but that is not independent release ownership or backup protection.
+The shared subchart does not configure backups. See [Operations](operations.md)
+for the existing dev-nais database boundary and rollout requirements.
+
 ## Trust and current-state contract
 
 The gRPC API has no authentication. NetworkPolicy restricts access to trusted

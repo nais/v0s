@@ -5,3 +5,10 @@ sources:
   - https://github.com/nais/v0s/tree/main/charts
 type: application
 version: 0.1.0
+
+dependencies:
+  - name: nais-postgresql
+    alias: postgresql
+    version: "0.1.0"
+    repository: "oci://europe-north1-docker.pkg.dev/nais-io/nais/chart"
+    condition: postgresqlEnabled

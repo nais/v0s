@@ -2,3 +2,5 @@
 image:
   tag: chart-test
 serviceAccountEmail: v0s@example.invalid
+# Existing-database mode retains the app-only rendering contract.
+postgresqlEnabled: false

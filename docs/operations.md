@@ -44,10 +44,28 @@ The [chart](../charts/README.md) deploys v0s into the management namespace. Its
 optional integration or a Helm subchart. The feature dependency does not replace
 verification of the `Workloads.ListImages` gRPC contract.
 
-Provision the CNPG cluster and backups separately. The chart reads
-`<database.clusterName>-app` (`uri`) and does not create or delete the database,
-even during uninstall. Apply the management module's v0s identity resources
-through Atlantis before assigning the chart. The module creates `v0s-sa`, grants
+New installs provision PostgreSQL through the shared `nais-postgresql` Helm
+subchart, not a separate Fasit assignment. It creates `v0s-db` and CNPG supplies
+`v0s-db-app.uri` for the application. The pinned dependency is bundled in the
+published chart. Fasit computes database API/DNS egress addresses; the default
+is three PostgreSQL instances with 10Gi per instance and required node
+anti-affinity. Review sizing and eligible nodes before rollout.
+
+To retain an existing independent database, set `postgresqlEnabled=false` and
+keep `database.clusterName` unchanged. That mode creates no Cluster and does
+not adopt, replace or migrate the existing database. For the disposable dev-nais
+pilot, the operator has instead approved deleting the old database and testing
+fresh chart provisioning; follow the chart README's scoped reset procedure.
+This approval does not apply to NAV.
+
+Managed databases default to `postgresql.keep=true`, retaining the Cluster on
+uninstall but not its chart-owned NetworkPolicies. Retention is not protection
+against direct or namespace deletion. Neither this chart nor the database
+subchart configures backups: configure and verify recovery separately before
+production use. See the chart README for the lifecycle and adoption caveats.
+
+Apply the management module's v0s identity resources through Atlantis before
+assigning the chart. The module creates `v0s-sa`, grants
 Artifact Registry reader in the management project, binds Workload Identity to
 `nais-system/v0s`, and publishes `v0s_serviceaccount_email`. Fasit computes the
 chart's `serviceAccountEmail` from this value. Use release `v0s` in `nais-system`;
@@ -119,14 +137,18 @@ verify recovery of the assessments. A caller's activity log is not a substitute.
 
 ## Pilot and remaining validation
 
-[`deploy/dev-nais/management.yaml`](../deploy/dev-nais/management.yaml) is a manual
-pilot manifest, not a production deployment template. It uses `v13s-sa`, one
-PostgreSQL 18 instance and no backups. On 2026-11-06, build `97a170f` was deployed
-with the current API and a fresh database; see the
-[deployment verification](archive/dev-nais-deploy-2026-11-06.md). CI now defines
-image and chart publication, but these repository changes have not deployed
-the new chart or scratch image to the pilot. Production rollout remains
-unconfigured.
+The [archived manual manifest](archive/dev-nais-manual-manifest.yaml) records
+the historical manual pilot, not the current app installation. It uses
+`v13s-sa`, one PostgreSQL 18 instance and no backups; do not bulk-delete it,
+because it also defines the database. The [manual deployment verification](archive/dev-nais-deploy-2026-11-06.md)
+is a historical snapshot.
+
+On 2026-11-06, Fasit took over the dev-nais app using version
+`2026-11-06-155111-44f64ee` and the dedicated `v0s` runtime identity. The existing
+CNPG Cluster and PVC retained their identities and remained outside the app
+release. Database-subchart provisioning has not been deployed or runtime-tested.
+NAV's initial app assignment was blocked by missing `v0s-db-app`; provisioning
+is intended to address that gap, not evidence that NAV is already operational.
 
 The pre-release `0001_schema.sql` is edited in place. If it changes again, an
 existing pilot database needs a reset to receive those changes. Confirm its

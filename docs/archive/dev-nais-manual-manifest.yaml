@@ -1,6 +1,7 @@
-# v0s in dev-nais, applied by hand to the management cluster (nais-system).
-# Runs as v13s's service account; see docs/verification.md. Remove with
-# `kubectl delete -f` on this file; the database goes with the Cluster object.
+# HISTORICAL SNAPSHOT ONLY: do not apply or kubectl delete -f this file.
+# The app resources now belong to the Fasit Helm release. The disposable pilot
+# database is being replaced by the shared nais-postgresql chart.
+# Original manual dev-nais setup, using v13s's runtime service account.
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
