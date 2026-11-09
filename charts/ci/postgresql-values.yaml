@@ -1,6 +1,2 @@
 # Merge after test-values.yaml to exercise database provisioning without a cluster.
 postgresqlEnabled: true
-postgresql:
-  networkPolicy:
-    apiServerCidrs: [192.0.2.1/32]
-    dnsCidrs: [192.0.2.53/32]

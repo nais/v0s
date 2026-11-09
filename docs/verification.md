@@ -63,7 +63,8 @@ Before adding consumers:
   findings, confirm its inventory endpoint and readiness work without v0s.
 - For a new database, verify CNPG bootstraps `v0s-db`, supplies `v0s-db-app.uri`,
   and has enough eligible nodes/storage for the configured instances. Verify the
-  database policies' Fasit-computed API/DNS addresses and actual app connectivity.
+  platform's `nais-netpols-management` DNS/API egress and actual app connectivity;
+  v0s does not require per-cluster CIDR values.
 - For databases whose data must survive, set `postgresqlEnabled=false` before
   upgrading and verify the existing Cluster/PVC identities and suppressions.
   The disposable dev-nais pilot is explicitly approved for destructive reset:

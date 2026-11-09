@@ -7,6 +7,7 @@ timeout: 15m
 dependencies:
   - allOf:
       - nais-api
+      - nais-netpols-management
       - cloudnative-pg
       - fqdn-policy
       - monitoring-crds
@@ -30,16 +31,6 @@ values:
     description: Defaults to true. Set false to use an existing database without adopting or changing it.
     config:
       type: bool
-
-  postgresql.networkPolicy.apiServerCidrs:
-    displayName: API server CIDRs
-    computed:
-      template: '["{{ .Env.apiserver_endpoint }}/32"]'
-
-  postgresql.networkPolicy.dnsCidrs:
-    displayName: DNS CIDRs
-    computed:
-      template: '["{{ .Env.svc_ip_cidr_range }}"]'
 
   postgresql.instances:
     displayName: PostgreSQL instances

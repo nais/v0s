@@ -39,16 +39,17 @@ manually. This does not change the publishing account.
 ## Helm deployment
 
 The [chart](../charts/README.md) deploys v0s into the management namespace. Its
-`Feature.yaml` requires `nais-api`, `cloudnative-pg`, `fqdn-policy` and
-`monitoring-crds`. Nais API is the required, sole inventory source, not an
-optional integration or a Helm subchart. The feature dependency does not replace
-verification of the `Workloads.ListImages` gRPC contract.
+`Feature.yaml` requires `nais-api`, `nais-netpols-management`, `cloudnative-pg`,
+`fqdn-policy` and `monitoring-crds`. Nais API is the required, sole inventory
+source, not an optional integration or a Helm subchart. The feature dependency
+does not replace verification of the `Workloads.ListImages` gRPC contract.
 
 New installs provision PostgreSQL through the shared `nais-postgresql` Helm
 subchart, not a separate Fasit assignment. It creates `v0s-db` and CNPG supplies
 `v0s-db-app.uri` for the application. The pinned dependency is bundled in the
-published chart. Fasit computes database API/DNS egress addresses; the default
-is three PostgreSQL instances with 10Gi per instance and required node
+published chart. `nais-netpols-management` supplies namespace-wide DNS and
+Kubernetes API egress; v0s needs no API-server or Service-IP CIDR inputs. The
+default is three PostgreSQL instances with 10Gi per instance and required node
 anti-affinity. Review sizing and eligible nodes before rollout.
 
 To retain an existing independent database, set `postgresqlEnabled=false` and

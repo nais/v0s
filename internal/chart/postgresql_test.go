@@ -5,11 +5,9 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
-	"text/template"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -168,84 +166,45 @@ func TestChartProvisionsRetainedDatabaseAndConnectsToIt(t *testing.T) {
 	}
 }
 
-func TestDatabasePoliciesUseComputedFasitAddresses(t *testing.T) {
+func TestDatabaseProvisioningNeedsNoClusterNetworkAddresses(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile(filepath.Join(chartDir, "Feature.yaml"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	var feature struct {
-		Values map[string]struct {
-			Computed struct{ Template string }
-		}
+		Values map[string]any
 	}
 	if err := yaml.Unmarshal(data, &feature); err != nil {
 		t.Fatal(err)
 	}
-	values := make(map[string]any)
 	for _, path := range []string{"postgresql.networkPolicy.apiServerCidrs", "postgresql.networkPolicy.dnsCidrs"} {
-		tmpl, err := template.New(path).Option("missingkey=error").Parse(feature.Values[path].Computed.Template)
-		if err != nil {
-			t.Fatal(err)
+		if _, exists := feature.Values[path]; exists {
+			t.Errorf("Fasit must not require per-cluster network input %q", path)
 		}
-		var out bytes.Buffer
-		if err := tmpl.Execute(&out, struct{ Env map[string]string }{
-			Env: map[string]string{"apiserver_endpoint": "192.0.2.10", "svc_ip_cidr_range": "192.0.2.0/24"},
-		}); err != nil {
-			t.Fatal(err)
-		}
-		var cidrs []string
-		if err := yaml.Unmarshal(out.Bytes(), &cidrs); err != nil {
-			t.Fatal(err)
-		}
-		values[strings.TrimPrefix(path, "postgresql.networkPolicy.")] = cidrs
 	}
-	data, err = yaml.Marshal(map[string]any{"postgresql": map[string]any{"networkPolicy": values}})
-	if err != nil {
-		t.Fatal(err)
+
+	// The fixture enables provisioning without supplying any cluster addresses.
+	resources := renderWithPostgreSQL(t, chartDir)
+	if _, exists := resources["Cluster/v0s-db"]; !exists {
+		t.Fatal("database provisioning must work without per-cluster network inputs")
 	}
-	file := filepath.Join(t.TempDir(), "computed-values.yaml")
-	if err := os.WriteFile(file, data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	resources := renderWithPostgreSQL(t, chartDir, "-f", file)
 	var policy struct {
 		Spec struct {
 			Egress []struct {
 				To []struct {
-					IPBlock struct{ CIDR string } `yaml:"ipBlock"`
+					IPBlock *struct{ CIDR string } `yaml:"ipBlock"`
 				}
-				Ports []struct{ Port int }
 			}
 		}
 	}
 	decode(t, resources["NetworkPolicy/v0s-db"], &policy)
-	var api, dns bool
 	for _, egress := range policy.Spec.Egress {
 		for _, to := range egress.To {
-			for _, port := range egress.Ports {
-				api = api || to.IPBlock.CIDR == "192.0.2.10/32" && port.Port == 443
-				dns = dns || to.IPBlock.CIDR == "192.0.2.0/24" && port.Port == 53
+			if to.IPBlock != nil {
+				t.Errorf("database policy must rely on platform DNS/API access, not per-cluster CIDR %q", to.IPBlock.CIDR)
 			}
 		}
-	}
-	if !api || !dns {
-		t.Fatalf("expected Fasit-computed API/DNS addresses: %+v", policy.Spec.Egress)
-	}
-}
-
-func TestDatabaseProvisioningRejectsMissingNetworkAddresses(t *testing.T) {
-	t.Parallel()
-	for _, field := range []string{"apiServerCidrs", "dnsCidrs"} {
-		t.Run(field, func(t *testing.T) {
-			out, err := exec.CommandContext(t.Context(), "helm", "template", "v0s", chartDir,
-				"-f", filepath.Join(chartDir, "ci/test-values.yaml"),
-				"-f", filepath.Join(chartDir, "ci/postgresql-values.yaml"),
-				"--set", "postgresql.networkPolicy."+field+"=").CombinedOutput()
-			if err == nil || !strings.Contains(string(out), field) {
-				t.Fatalf("expected missing %s rejection, got %v\n%s", field, err, out)
-			}
-		})
 	}
 }
 
