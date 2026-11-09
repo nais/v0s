@@ -180,7 +180,7 @@ func TestNetworkPolicyRestrictsCallersAndPermitsInventory(t *testing.T) {
 	}
 }
 
-func TestFeatureRequiresNaisAPI(t *testing.T) {
+func TestFeatureRequiresPlatformServices(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile(filepath.Join(chartDir, "Feature.yaml"))
 	if err != nil {
@@ -202,7 +202,7 @@ func TestFeatureRequiresNaisAPI(t *testing.T) {
 	for _, dependency := range feature.Dependencies {
 		required = append(required, dependency.AllOf...)
 	}
-	for _, name := range []string{"nais-api", "cloudnative-pg", "fqdn-policy", "monitoring-crds"} {
+	for _, name := range []string{"nais-api", "nais-netpols-management", "cloudnative-pg", "fqdn-policy", "monitoring-crds"} {
 		if !slices.Contains(required, name) {
 			t.Errorf("missing required feature %q", name)
 		}

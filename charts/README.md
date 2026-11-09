@@ -13,6 +13,7 @@ subchart. It creates no cloud identity, Kubernetes RBAC or public ingress.
 - **`nais-api`**: the sole workload-inventory source. `nais-api:3001` must expose
   the compatible `Workloads.ListImages` contract. This is a Fasit dependency,
   not a Helm subchart or a minimum API version.
+- `nais-netpols-management`: namespace-wide DNS and Kubernetes API egress.
 - `cloudnative-pg`: the CNPG operator and CRDs, with PostgreSQL 18 support.
 - `fqdn-policy`: HTTPS egress enforcement.
 - `monitoring-crds`: PodMonitor support.
@@ -45,10 +46,12 @@ them for the tenant. Storage may grow when the StorageClass supports it, but
 must not shrink. The feature allows 15 minutes for bootstrap and cold startup.
 The PostgreSQL 18 image is pinned by digest; major upgrades need a separate plan.
 
-Fasit computes the database policies' API-server and DNS CIDRs from
-`apiserver_endpoint` and `svc_ip_cidr_range`, as STS does. App pods carry the
-shared release label required by the database's ingress policy. Outside Fasit,
-supply the actual API/DNS addresses; rendering rejects missing addresses.
+`nais-netpols-management` already permits DNS and Kubernetes API egress for all
+pods in `nais-system`, including CNPG. NetworkPolicy allows are additive; no
+API-server or Service-IP CIDRs need to be configured for v0s. The database
+subchart retains its own DNS selectors and database-specific ingress/peer rules.
+App pods carry the shared release label required by the database's ingress
+policy. Installs outside this platform namespace need equivalent baseline policies.
 
 Keep `postgresql.fullnameOverride` stable. Changing it creates a different
 cluster, not a renamed database. Database name and owner apply only at bootstrap.
@@ -129,10 +132,10 @@ mise run charts:dependencies
 mise exec -- helm template v0s charts --namespace nais-system --set image.tag="$VERSION" --set serviceAccountEmail="$RUNTIME_SERVICE_ACCOUNT" --set postgresqlEnabled=false
 ```
 
-For a new database, leave provisioning enabled and supply real addresses:
+For a new database, leave provisioning enabled:
 
 ```sh
-mise exec -- helm template v0s charts --namespace nais-system --set image.tag="$VERSION" --set serviceAccountEmail="$RUNTIME_SERVICE_ACCOUNT" --set-json postgresql.networkPolicy.apiServerCidrs="$API_SERVER_CIDRS" --set-json postgresql.networkPolicy.dnsCidrs="$DNS_CIDRS"
+mise exec -- helm template v0s charts --namespace nais-system --set image.tag="$VERSION" --set serviceAccountEmail="$RUNTIME_SERVICE_ACCOUNT"
 ```
 
 To package a release for a published image:

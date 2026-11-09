@@ -25,10 +25,8 @@ postgresql:
     # The management cluster's standard-rwo does not support N4 nodes.
     storageClass: dynamic-rwo
   networkPolicy:
+    # DNS and API-server access come from nais-netpols-management.
     enabled: true
-    # Computed by Fasit. Supply actual cluster addresses outside Fasit.
-    apiServerCidrs: []
-    dnsCidrs: []
 
 # Used only when postgresqlEnabled=false. CNPG supplies <clusterName>-app.uri.
 database:
