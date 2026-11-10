@@ -252,9 +252,14 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		return nil, "", err
 	}
 	if page.Token != "" {
-		where = append(where, fmt.Sprintf("(w.environment, w.team, w.name, f.vulnerability_id, f.purl) > (%s, %s, %s, %s, %s)",
-			args.add(cursor.Environment), args.add(cursor.Team), args.add(cursor.Workload),
-			args.add(cursor.VulnerabilityID), args.add(cursor.PURL)))
+		env, team, workload := args.add(cursor.Environment), args.add(cursor.Team), args.add(cursor.Workload)
+		// Split the cursor at the workload boundary to give Postgres an index
+		// bound and avoid underestimating a row comparison spanning two tables.
+		// Include the cursor workload only for its remaining findings.
+		where = append(where,
+			fmt.Sprintf("(w.environment, w.team, w.name) >= (%s, %s, %s)", env, team, workload),
+			fmt.Sprintf("((w.environment, w.team, w.name) <> (%s, %s, %s) OR (f.vulnerability_id, f.purl) > (%s, %s))",
+				env, team, workload, args.add(cursor.VulnerabilityID), args.add(cursor.PURL)))
 	}
 	limit := page.limit()
 

@@ -3,6 +3,8 @@ package database_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -159,6 +161,108 @@ func TestListFindingsPagination(t *testing.T) {
 
 	if _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{Token: "garbage!"}); !errors.Is(err, database.ErrInvalid) {
 		t.Errorf("malformed token: err = %v, want ErrInvalid", err)
+	}
+}
+
+// TestListFindingsCursorBoundaries covers each part of the cursor, including two
+// purls for the same advisory and images shared across environments and teams.
+func TestListFindingsCursorBoundaries(t *testing.T) {
+	db, exec := newFixture(t)
+	exec(`
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		VALUES (1, 'CVE-1', 'pkg:npm/lodash@4.17.19', 'pkg:npm/lodash', '4.17.19', 'affected', 'HIGH');
+		INSERT INTO workloads (environment, team, name, image_reference, image_id)
+		SELECT 'c' || e, 'team-' || t, 'app-' || lpad(n::text, 3, '0'), 'repo/app:1', 1
+		FROM generate_series(1, 3) e CROSS JOIN generate_series(1, 3) t CROSS JOIN generate_series(1, 40) n;
+		INSERT INTO workloads (environment, team, name, image_reference, resolve_error)
+		VALUES ('c2', 'team-2', 'app-020a', 'repo/missing:1', 'not found');
+		INSERT INTO suppressions (team, image_name, package_key, vulnerability_id, state, detail, updated_by)
+		VALUES ('team-2', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'assessed', 'user');
+		INSERT INTO epss (cve, score, percentile, date) VALUES ('CVE-1', 0.1, 0.9, '2026-01-02');
+	`)
+	ctx := context.Background()
+	filters := []database.FindingFilter{
+		{},
+		{Suppressed: database.SuppressedInclude},
+		{Suppressed: database.SuppressedOnly},
+		{Environment: "c2", Teams: []string{"team-1", "team-2"}},
+		{Workload: "app-020"},
+		{ImageName: "repo/app", ImageDigest: "sha256:a"},
+		{VulnerabilityID: "GHSA-1"},
+		{Package: "pkg:npm/lodash@4.17.20"},
+		{HasFix: true},
+		{KEV: true},
+		{Severities: []v0s.Severity{v0s.SeverityLow}},
+	}
+	for i, filter := range filters {
+		t.Run(fmt.Sprintf("filter_%d", i), func(t *testing.T) {
+			// Use the original first-page query as the reference. Restrict its
+			// environment so all reference results fit in a single page.
+			if filter.Environment == "" {
+				filter.Environment = "c2"
+			}
+			want, next, err := db.ListFindings(ctx, filter, database.Page{Size: 1000})
+			if err != nil || next != "" {
+				t.Fatalf("reference page: next=%q, err=%v", next, err)
+			}
+			for _, size := range []int{1, 2, 7, 100} {
+				var got []database.WorkloadFinding
+				page := database.Page{Size: size}
+				for range len(want) + 1 {
+					findings, next, err := db.ListFindings(ctx, filter, page)
+					if err != nil {
+						t.Fatal(err)
+					}
+					got = append(got, findings...)
+					if next == "" {
+						break
+					}
+					if next == page.Token {
+						t.Fatal("page token did not advance")
+					}
+					page.Token = next
+				}
+				if !reflect.DeepEqual(got, want) {
+					t.Errorf("page size %d: paged findings differ from reference (%d rows, want %d)", size, len(got), len(want))
+				}
+			}
+		})
+	}
+
+	// Traverse the full inventory across environment boundaries with page
+	// boundaries inside workloads. Construct the expected order independently.
+	var want []string
+	for e := 1; e <= 3; e++ {
+		for team := 1; team <= 3; team++ {
+			for n := 1; n <= 40; n++ {
+				prefix := fmt.Sprintf("c%d/team-%d/app-%03d ", e, team, n)
+				want = append(want, prefix+"CVE-1 pkg:npm/lodash@4.17.19", prefix+"CVE-1 pkg:npm/lodash@4.17.20", prefix+"CVE-2 pkg:npm/express@4.0.0")
+			}
+		}
+	}
+	// Original fixture workloads sort after team-1/2/3 in c1.
+	for _, key := range []string{appLodash, appExpress, workerLodash, workerExpress, otherLodash} {
+		want = append(want, "c1/"+key)
+	}
+	want = append(want, "c1/team-a/app CVE-1 pkg:npm/lodash@4.17.19", "c1/team-a/worker CVE-1 pkg:npm/lodash@4.17.19")
+	slices.Sort(want)
+	var got []string
+	page := database.Page{Size: 127}
+	for range 20 {
+		findings, next, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedInclude}, page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range findings {
+			got = append(got, f.Workload.Environment+"/"+f.Workload.Team+"/"+f.Workload.Name+" "+f.Finding.VulnerabilityID+" "+f.Finding.PURL)
+		}
+		if next == "" {
+			break
+		}
+		page.Token = next
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("full traversal differs from expected order: got %d rows, want %d", len(got), len(want))
 	}
 }
 
