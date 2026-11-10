@@ -34,13 +34,20 @@ description = "Format Go code"
 run = "gofmt -w cmd internal api"
 
 [tasks.test]
-description = "Run all tests with the race detector"
+description = "Run race tests (vet is a separate check)"
 depends = ["charts:dependencies"]
-run = "go test -race -count=1 ./..."
+run = "go test -race -vet=off -count=1 ./..."
 
 [tasks.check]
-description = "Check formatting, protobufs, Go code and tests"
-depends = ["check:fmt", "check:proto", "check:helm", "check:vet", "check:staticcheck", "test"]
+description = "Check formatting, protobufs, Go code and tests sequentially"
+run = [
+  "mise run check:fmt",
+  "mise run check:proto",
+  "mise run check:helm",
+  "mise run check:vet",
+  "mise run check:staticcheck",
+  "mise run test",
+]
 
 [tasks."check:fmt"]
 description = "Check Go formatting without changing files"

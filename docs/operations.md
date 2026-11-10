@@ -11,6 +11,9 @@ read-only root filesystem.
 
 [CI](../.github/workflows/main.yaml) runs checks and race-enabled tests against
 PostgreSQL 18, verifies generated code, and builds PR images without publishing.
+Checks have separate Actions steps; vet, staticcheck and tests run sequentially
+rather than competing for runner resources. `mise run check` uses the same order.
+Tests disable built-in vet because the full vet check runs separately.
 Pushes to `main` publish to
 `europe-north1-docker.pkg.dev/nais-io/nais/images/v0s` through
 `nais/platform-build-push-sign`, including an SBOM attestation and signing.

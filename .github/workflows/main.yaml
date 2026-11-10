@@ -39,7 +39,18 @@ jobs:
             ~/.cache/go-build
           key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
           restore-keys: go-${{ runner.os }}-
-      - run: mise run check
+      - name: Check Go formatting
+        run: mise run check:fmt
+      - name: Lint protobufs
+        run: mise run check:proto
+      - name: Lint Helm chart
+        run: mise run check:helm
+      - name: Go vet
+        run: mise run check:vet
+      - name: Staticcheck
+        run: mise run check:staticcheck
+      - name: Race tests
+        run: mise run test
       - name: Check generated code
         run: |
           mise run generate
