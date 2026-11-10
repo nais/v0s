@@ -2,15 +2,25 @@ package attest
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	"github.com/google/go-containerregistry/pkg/v1/google"
 	"github.com/sigstore/cosign/v3/pkg/cosign"
 	cbundle "github.com/sigstore/cosign/v3/pkg/cosign/bundle"
 	"github.com/sigstore/cosign/v3/pkg/oci"
@@ -21,6 +31,90 @@ import (
 	"github.com/sigstore/sigstore-go/pkg/tlog"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
 )
+
+// TestFetchRegistryDeadline exercises the real cosign/registry path against a
+// server that never sends response headers. A transport's dial/TLS timeouts do
+// not bound this wait; the caller's context must reach the registry request.
+func TestFetchRegistryDeadline(t *testing.T) {
+	vs, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := make(chan struct{}, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+	f := &Fetcher{
+		log: slog.New(slog.DiscardHandler), keychain: authn.NewMultiKeychain(),
+		trustedRoot: vs, identity: githubIdentity([]string{"nais"}),
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
+	defer cancel()
+	ref := strings.TrimPrefix(srv.URL, "http://") + "/app@sha256:" + strings.Repeat("a", 64)
+	_, err = f.Fetch(ctx, ref)
+	if !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrNotFound) {
+		t.Errorf("Fetch error = %v; want deadline exceeded, not missing attestation", err)
+	}
+	select {
+	case <-started:
+	default:
+		t.Error("no registry request reached the stalled endpoint")
+	}
+}
+
+type contextKeychainFunc func(context.Context, authn.Resource) (authn.Authenticator, error)
+
+func (f contextKeychainFunc) Resolve(r authn.Resource) (authn.Authenticator, error) {
+	return f(context.Background(), r)
+}
+
+func (f contextKeychainFunc) ResolveContext(ctx context.Context, r authn.Resource) (authn.Authenticator, error) {
+	return f(ctx, r)
+}
+
+func TestCredentialRefreshAfterFetchCancellation(t *testing.T) {
+	// Use only a synthetic helper, never the developer's credentials. An expired
+	// token forces refresh on every Authorization call without waiting an hour.
+	dir := t.TempDir()
+	script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' '{\"credential\":{\"access_token\":\"synthetic-token\",\"token_expiry\":\"%s\"}}'\n",
+		time.Now().Add(-time.Hour).UTC().Format(time.RFC3339))
+	if err := os.WriteFile(filepath.Join(dir, "gcloud"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+	serviceCtx, stop := context.WithCancel(t.Context())
+	defer stop()
+	keychain := lifetimeKeychain{serviceCtx, contextKeychainFunc(func(ctx context.Context, _ authn.Resource) (authn.Authenticator, error) {
+		return google.NewGcloudAuthenticator(ctx)
+	})}
+	registry, err := name.NewRegistry("europe-north1-docker.pkg.dev")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetchCtx, cancel := context.WithCancel(serviceCtx)
+	defer cancel()
+	auth, err := authn.Resolve(fetchCtx, keychain, registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	if _, err := auth.Authorization(); err != nil {
+		t.Fatalf("cached credentials failed to refresh after a fetch ended: %v", err)
+	}
+	stop()
+	if _, err := auth.Authorization(); !errors.Is(err, context.Canceled) {
+		t.Errorf("refresh after service shutdown: %v; want context canceled", err)
+	}
+}
 
 func TestGitHubIdentity(t *testing.T) {
 	identity := githubIdentity([]string{"nais", "navikt", "a.b"})

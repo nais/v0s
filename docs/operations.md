@@ -127,7 +127,15 @@ not a client-side freshness protocol.
 
 ## Retries and recovery
 
-- Missing attestations are retried after 6 hours; failed fetches after 30 minutes.
+- Each image's registry and attestation operations receive a shared two-minute
+  deadline, including bundle-to-legacy fallback. Fetches still run in batches of
+  16, so a slow registry request can delay the next batch until its deadline.
+  Credential resolution uses the service context: cached token sources must
+  survive individual fetches. External credential helpers have their own timeout
+  behavior and are not force-stopped by the per-image deadline.
+- Missing attestations are retried after 6 hours; failed fetches, including local
+  timeouts, after 30 minutes. Shutdown cancellation leaves the image due without
+  recording a failure.
 - Failed loops retry after the shorter of their normal interval and 5 minutes.
 - A recorded scan failure is not retried until a newer DB is loaded. Previous
   findings are kept; an already scanned image stays `SCANNED` with an error.

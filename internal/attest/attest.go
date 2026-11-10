@@ -43,7 +43,8 @@ type Fetcher struct {
 }
 
 // NewFetcher verifies attestations signed by GitHub Actions workflows in the given GitHub organizations.
-func NewFetcher(organizations []string, log *slog.Logger) (*Fetcher, error) {
+// ctx must live for the service lifetime, since cached credentials reuse it for token refresh.
+func NewFetcher(ctx context.Context, organizations []string, log *slog.Logger) (*Fetcher, error) {
 	if len(organizations) == 0 {
 		return nil, errors.New("no GitHub organizations to trust")
 	}
@@ -52,11 +53,28 @@ func NewFetcher(organizations []string, log *slog.Logger) (*Fetcher, error) {
 		return nil, fmt.Errorf("getting sigstore trusted root: %w", err)
 	}
 	return &Fetcher{
-		log:         log,
-		keychain:    authn.NewMultiKeychain(authn.DefaultKeychain, google.Keychain, github.Keychain),
+		log: log,
+		keychain: lifetimeKeychain{
+			ctx:      ctx,
+			keychain: authn.NewMultiKeychain(authn.DefaultKeychain, google.Keychain, github.Keychain),
+		},
 		trustedRoot: trustedRoot,
 		identity:    githubIdentity(organizations),
 	}, nil
+}
+
+// lifetimeKeychain keeps cached token sources on the service context rather than
+// a fetch's short-lived context. Google credentials can retain the context from
+// their first resolution and reuse it when refreshing tokens hours later.
+// Registry requests still use the per-fetch context in checkOpts.
+// Credential resolution itself follows the service's cancellation, not the fetch deadline.
+type lifetimeKeychain struct {
+	ctx      context.Context
+	keychain authn.Keychain
+}
+
+func (k lifetimeKeychain) Resolve(resource authn.Resource) (authn.Authenticator, error) {
+	return authn.Resolve(k.ctx, k.keychain, resource)
 }
 
 // githubIdentity accepts certificates issued to any workflow under .github/workflows in a

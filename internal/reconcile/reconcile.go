@@ -31,6 +31,7 @@ const (
 	dbInterval     = time.Hour
 	enrichInterval = 24 * time.Hour
 	fetchBatch     = 16
+	fetchTimeout   = 2 * time.Minute
 	retryMissing   = 6 * time.Hour
 	retryFailed    = 30 * time.Minute
 	retryLoop      = 5 * time.Minute
@@ -42,7 +43,8 @@ type Inventory interface {
 	Snapshot(ctx context.Context) (map[string][]v0s.WorkloadImage, error)
 }
 
-// Fetcher returns the verified SBOM for an image reference.
+// Fetcher returns the verified SBOM for an image reference. Implementations must
+// propagate context cancellation to registry requests to bound batch waiting.
 type Fetcher interface {
 	Fetch(ctx context.Context, ref string) ([]byte, error)
 }
@@ -128,6 +130,10 @@ func (r *Reconciler) sync(ctx context.Context) error {
 
 // fetch drains due SBOM fetches, fetching each batch concurrently.
 func (r *Reconciler) fetch(ctx context.Context) error {
+	return r.fetchDue(ctx, fetchTimeout)
+}
+
+func (r *Reconciler) fetchDue(ctx context.Context, timeout time.Duration) error {
 	return r.DB.WithLock(ctx, "fetch", func(ctx context.Context) error {
 		for ctx.Err() == nil {
 			images, err := r.DB.DueSBOMFetches(ctx, fetchBatch)
@@ -137,7 +143,7 @@ func (r *Reconciler) fetch(ctx context.Context) error {
 			errs := make([]error, len(images))
 			var wg sync.WaitGroup
 			for i, img := range images {
-				wg.Go(func() { errs[i] = r.fetchOne(ctx, img) })
+				wg.Go(func() { errs[i] = r.fetchOne(ctx, img, timeout) })
 			}
 			wg.Wait()
 			// An unrecorded fetch would be due again at once.
@@ -151,8 +157,15 @@ func (r *Reconciler) fetch(ctx context.Context) error {
 
 // fetchOne fetches the image's SBOM and records the outcome. It returns an error only if the
 // outcome could not be recorded.
-func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image) error {
-	doc, err := r.Fetcher.Fetch(ctx, img.Ref())
+func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image, timeout time.Duration) error {
+	// Bound the whole registry/verification attempt, including format fallback.
+	// Persist a local timeout with the parent context so it gets normal backoff.
+	fetchCtx, cancel := context.WithTimeout(ctx, timeout)
+	doc, err := r.Fetcher.Fetch(fetchCtx, img.Ref())
+	if fetchCtx.Err() != nil {
+		err = fetchCtx.Err()
+	}
+	cancel()
 	if ctx.Err() != nil {
 		return nil // the image stays due
 	}

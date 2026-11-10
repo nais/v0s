@@ -116,7 +116,7 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("opening vulnerability DB: %w", err)
 	}
-	fetcher, err := attest.NewFetcher(cfg.githubOrgs, log)
+	fetcher, err := attest.NewFetcher(ctx, cfg.githubOrgs, log)
 	if err != nil {
 		return fmt.Errorf("creating attestation fetcher: %w", err)
 	}
