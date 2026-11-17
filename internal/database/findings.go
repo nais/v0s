@@ -19,8 +19,9 @@ import (
 // Errors the read path and suppressions return for requests they reject.
 // The message of an error wrapping one of these is safe to show to clients.
 var (
-	ErrInvalid  = errors.New("invalid argument")
-	ErrNotFound = errors.New("not found")
+	ErrInvalid     = errors.New("invalid argument")
+	ErrNotFound    = errors.New("not found")
+	ErrUnavailable = errors.New("CISA KEV catalog is not available")
 )
 
 const (
@@ -135,17 +136,17 @@ const (
 
 // FindingFilter narrows findings. Empty fields do not filter, and slices match any value.
 type FindingFilter struct {
-	Teams           []string
-	Environment     string
-	Workload        string
-	ImageName       string
-	ImageDigest     string
-	VulnerabilityID string // ID or alias
-	Package         string // package key, or purl with version for an exact match
-	Severities      []v0s.Severity
-	HasFix          bool // only findings with a fixed version
-	KEV             bool // only findings for vulnerabilities in CISA KEV
-	Suppressed      SuppressedFilter
+	Teams              []string
+	Environment        string
+	Workload           string
+	ImageName          string
+	ImageDigest        string
+	VulnerabilityID    string // ID or alias
+	Package            string // package key, or purl with version for an exact match
+	Severities         []v0s.Severity
+	HasFix             bool // only findings with a fixed version
+	OnlyKnownExploited bool // only findings for vulnerabilities in CISA KEV
+	Suppressed         SuppressedFilter
 }
 
 // conditions returns WHERE conditions on findingsFrom.
@@ -186,7 +187,7 @@ func (f FindingFilter) conditions(args *sqlArgs) ([]string, error) {
 	if f.HasFix {
 		where = append(where, "f.fixed_version <> ''")
 	}
-	if f.KEV {
+	if f.OnlyKnownExploited {
 		where = append(where, "EXISTS (SELECT 1 FROM kev WHERE kev.cve = f.vulnerability_id)")
 	}
 	switch f.Suppressed {
@@ -221,13 +222,11 @@ func and(conds []string) string {
 
 // WorkloadFinding is a current finding in a workload's image, with facts about its vulnerability.
 type WorkloadFinding struct {
-	Workload  WorkloadRef
-	Image     v0s.Image
-	Finding   v0s.Finding
-	Title     string
-	CVSSScore float64 // highest CVSS v3 score across sources, 0 if none
-	EPSS      *v0s.EPSS
-	KEV       *v0s.KEV
+	Workload       WorkloadRef
+	Image          v0s.Image
+	Finding        v0s.Finding
+	EPSS           *v0s.EPSS
+	KnownExploited bool // according to CISA KEV
 	// Suppression is this workload's active suppression of the finding, nil if none.
 	Suppression *Suppression
 }
@@ -252,6 +251,9 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	if err != nil {
 		return nil, "", err
 	}
+	if err := db.requireKEVCatalog(ctx); err != nil {
+		return nil, "", err
+	}
 	if page.Token != "" {
 		env, team, workload := args.add(cursor.Environment), args.add(cursor.Team), args.add(cursor.Workload)
 		// Split the cursor at the workload boundary to give Postgres an index
@@ -268,12 +270,9 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		SELECT w.environment, w.team, w.name, `+imageColumns+`,
 			f.vulnerability_id, f.purl, f.package_key, f.installed_version, f.fixed_version, f.status,
 			f.severity, f.severity_source, f.data_source,
-			v.title, coalesce((SELECT max((c.value->>'v3_score')::float8) FROM jsonb_each(v.cvss) c), 0),
-			e.score, e.percentile, e.date,
-			k.date_added, k.due_date, k.known_ransomware_campaign,
+			e.score, e.date, k.cve IS NOT NULL,
 			s.state, s.detail, s.updated_by, s.updated_at
 		FROM `+findingsFrom+`
-		JOIN vulnerabilities v ON v.id = f.vulnerability_id
 		LEFT JOIN epss e ON e.cve = f.vulnerability_id
 		LEFT JOIN kev k ON k.cve = f.vulnerability_id
 		WHERE `+and(where)+`
@@ -287,7 +286,6 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 			fi                       WorkloadFinding
 			img                      imageScan
 			epss                     epssScan
-			kev                      kevScan
 			state, detail, updatedBy *string
 			updatedAt                pgtype.Timestamptz
 		)
@@ -296,17 +294,15 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		dest = append(dest,
 			&fi.Finding.VulnerabilityID, &fi.Finding.PURL, &fi.Finding.PackageKey, &fi.Finding.InstalledVersion,
 			&fi.Finding.FixedVersion, &fi.Finding.Status, &fi.Finding.Severity, &fi.Finding.SeveritySource,
-			&fi.Finding.DataSource, &fi.Title, &fi.CVSSScore,
+			&fi.Finding.DataSource,
 		)
 		dest = append(dest, epss.dest()...)
-		dest = append(dest, kev.dest()...)
-		dest = append(dest, &state, &detail, &updatedBy, &updatedAt)
+		dest = append(dest, &fi.KnownExploited, &state, &detail, &updatedBy, &updatedAt)
 		if err := row.Scan(dest...); err != nil {
 			return WorkloadFinding{}, err
 		}
 		fi.Image = img.image()
 		fi.EPSS = epss.epss(fi.Finding.VulnerabilityID)
-		fi.KEV = kev.kev(fi.Finding.VulnerabilityID)
 		if state != nil {
 			fi.Suppression = &Suppression{
 				SuppressionKey: SuppressionKey{
@@ -347,34 +343,19 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	return findings, next, nil
 }
 
-// epssScan reads e.score, e.percentile, e.date from a LEFT JOIN.
+// epssScan reads e.score and e.date from a LEFT JOIN.
 type epssScan struct {
-	score, percentile *float64
-	date              pgtype.Date
+	score *float64
+	date  pgtype.Date
 }
 
-func (s *epssScan) dest() []any { return []any{&s.score, &s.percentile, &s.date} }
+func (s *epssScan) dest() []any { return []any{&s.score, &s.date} }
 
 func (s *epssScan) epss(cve string) *v0s.EPSS {
 	if s.score == nil {
 		return nil
 	}
-	return &v0s.EPSS{CVE: cve, Score: *s.score, Percentile: *s.percentile, Date: s.date.Time}
-}
-
-// kevScan reads k.date_added, k.due_date, k.known_ransomware_campaign from a LEFT JOIN.
-type kevScan struct {
-	dateAdded, dueDate pgtype.Date
-	ransomware         *bool
-}
-
-func (s *kevScan) dest() []any { return []any{&s.dateAdded, &s.dueDate, &s.ransomware} }
-
-func (s *kevScan) kev(cve string) *v0s.KEV {
-	if s.ransomware == nil {
-		return nil
-	}
-	return &v0s.KEV{CVE: cve, DateAdded: s.dateAdded.Time, DueDate: s.dueDate.Time, KnownRansomwareCampaign: *s.ransomware}
+	return &v0s.EPSS{CVE: cve, Score: *s.score, Date: s.date.Time}
 }
 
 // GroupBy is the dimension CountFindings groups by.
@@ -418,6 +399,11 @@ func (db *DB) CountFindings(ctx context.Context, filter FindingFilter, groupBy G
 	where, err := filter.conditions(&args)
 	if err != nil {
 		return nil, err
+	}
+	if filter.OnlyKnownExploited {
+		if err := db.requireKEVCatalog(ctx); err != nil {
+			return nil, err
+		}
 	}
 
 	rows, err := db.pool.Query(ctx, `
@@ -463,11 +449,11 @@ type pgxQuerier interface {
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 }
 
-// VulnerabilityDetail is a vulnerability record with its EPSS score and KEV entry.
+// VulnerabilityDetail is a vulnerability record with its EPSS score and CISA KEV membership.
 type VulnerabilityDetail struct {
 	v0s.Vulnerability
-	EPSS *v0s.EPSS
-	KEV  *v0s.KEV
+	EPSS           *v0s.EPSS
+	KnownExploited bool // according to CISA KEV
 }
 
 // GetVulnerability returns the vulnerability named by an ID or an alias.
@@ -484,21 +470,22 @@ func (db *DB) GetVulnerability(ctx context.Context, idOrAlias string) (Vulnerabi
 	default:
 		return VulnerabilityDetail{}, fmt.Errorf("%q names several vulnerabilities (%s): %w", idOrAlias, strings.Join(ids, ", "), ErrInvalid)
 	}
+	if err := db.requireKEVCatalog(ctx); err != nil {
+		return VulnerabilityDetail{}, err
+	}
 
 	var (
 		d                       VulnerabilityDetail
 		publishedAt, modifiedAt pgtype.Timestamptz
 		epss                    epssScan
-		kev                     kevScan
 	)
 	dest := []any{&d.ID, &d.Title, &d.Description, &d.Severities, &d.CVSS, &d.References, &publishedAt, &modifiedAt, &d.Aliases}
 	dest = append(dest, epss.dest()...)
-	dest = append(dest, kev.dest()...)
+	dest = append(dest, &d.KnownExploited)
 	err = db.pool.QueryRow(ctx, `
 		SELECT v.id, v.title, v.description, v.severities, v.cvss, v."references", v.published_at, v.modified_at,
 			ARRAY(SELECT alias FROM vulnerability_aliases WHERE vulnerability_id = v.id ORDER BY alias),
-			e.score, e.percentile, e.date,
-			k.date_added, k.due_date, k.known_ransomware_campaign
+			e.score, e.date, k.cve IS NOT NULL
 		FROM vulnerabilities v
 		LEFT JOIN epss e ON e.cve = v.id
 		LEFT JOIN kev k ON k.cve = v.id
@@ -509,6 +496,5 @@ func (db *DB) GetVulnerability(ctx context.Context, idOrAlias string) (Vulnerabi
 	d.PublishedAt = publishedAt.Time
 	d.ModifiedAt = modifiedAt.Time
 	d.EPSS = epss.epss(d.ID)
-	d.KEV = kev.kev(d.ID)
 	return d, nil
 }

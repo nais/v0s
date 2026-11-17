@@ -100,6 +100,15 @@ from the advisory source; EPSS and KEV come from FIRST and CISA without our own
 thresholds or scoring. Components are searchable even when they have no findings.
 No finding history, trends or first-seen timestamps are kept.
 
+The public read contract accepts one team or the whole tenant. A workload name
+requires a team and environment. CVSS details are a versioned list per source on
+the advisory, with optional scores/vectors instead of a versionless maximum on
+every finding. CISA KEV is catalog membership, not exploitability. Until a
+nonempty catalog has been imported, reads that expose or filter on membership
+fail with `Unavailable`; a failed refresh retains the last valid catalog.
+EPSS and KEV refreshes are independent. See
+[contract rollout requirements](operations.md#simplified-public-contract).
+
 Suppressions are keyed by team, environment, workload name, image name,
 versionless package key and canonical vulnerability ID. They survive package
 versions and image builds within that workload and repository. No other workload

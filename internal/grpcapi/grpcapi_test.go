@@ -17,7 +17,7 @@ import (
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
 
-func newServer(t *testing.T) *grpcapi.Server {
+func newServer(t *testing.T, statements ...string) *grpcapi.Server {
 	t.Helper()
 	db, url := databasetest.NewWithURL(t)
 	ctx := context.Background()
@@ -35,9 +35,15 @@ func newServer(t *testing.T) *grpcapi.Server {
 		CROSS JOIN (VALUES ('prod'), ('dev')) environments(e)
 		CROSS JOIN (VALUES ('app'), ('worker')) names(n);
 		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
-		SELECT id, 'CVE-1', 'pkg:npm/lodash@4.17.20', 'pkg:npm/lodash', '4.17.20', 'affected', 'HIGH' FROM images;`)
+		SELECT id, 'CVE-1', 'pkg:npm/lodash@4.17.20', 'pkg:npm/lodash', '4.17.20', 'affected', 'HIGH' FROM images;
+		INSERT INTO kev (cve, date_added, known_ransomware_campaign) VALUES ('CVE-2', '2026-01-02', false);`)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, statement := range statements {
+		if _, err := conn.Exec(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
 	}
 	return grpcapi.New(db, slog.New(slog.DiscardHandler))
 }
@@ -78,7 +84,7 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	ctx := context.Background()
 	req := &v0sv1.ListFindingsRequest{
 		Filter: &v0sv1.FindingFilter{
-			Teams: []string{"team"}, VulnerabilityId: "GHSA-1",
+			Team: "team", VulnerabilityId: "GHSA-1",
 			Suppressed: v0sv1.SuppressedFilter_SUPPRESSED_FILTER_INCLUDE,
 		},
 		PageSize: 1,
@@ -112,7 +118,7 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	if _, err := s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{Team: "team", Actor: "me", Suppressions: selected}); err != nil {
 		t.Fatal(err)
 	}
-	active, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Teams: []string{"team"}, VulnerabilityId: "CVE-1"}})
+	active, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Team: "team", VulnerabilityId: "CVE-1"}})
 	if err != nil || len(active.GetFindings()) != 2 {
 		t.Fatalf("active findings = %v, %v; want both dev workloads", active, err)
 	}
@@ -121,7 +127,7 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 			t.Errorf("unselected scope affected: %v", f)
 		}
 	}
-	listed, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{Teams: []string{"team"}, Environment: "prod", Workload: "worker"})
+	listed, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{Team: "team", Environment: "prod", Workload: "worker"})
 	if err != nil || len(listed.GetSuppressions()) != 1 || listed.GetSuppressions()[0].GetWorkload() != "worker" {
 		t.Errorf("list worker = %v, %v", listed, err)
 	}

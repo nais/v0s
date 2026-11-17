@@ -37,6 +37,8 @@ func BenchmarkListFindings(b *testing.B) {
 		SELECT i.id, v.id, 'pkg:npm/package-' || n || '@1', 'pkg:npm/package-' || n,
 			'1', '2', 'fixed', 'HIGH'
 		FROM images i CROSS JOIN vulnerabilities v CROSS JOIN generate_series(1, 2) n;
+		INSERT INTO kev (cve, date_added, known_ransomware_campaign)
+		VALUES ('CVE-0001', '2026-01-02', false);
 		ANALYZE;
 	`); err != nil {
 		b.Fatal(err)

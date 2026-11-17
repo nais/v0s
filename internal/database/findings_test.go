@@ -95,7 +95,7 @@ func TestListFindingsFilters(t *testing.T) {
 		{name: "image digest", filter: database.FindingFilter{ImageName: "repo/app", ImageDigest: "sha256:b"}, want: []string{otherLodash}},
 		{name: "severity", filter: database.FindingFilter{Severities: []v0s.Severity{v0s.SeverityLow}}, want: []string{appExpress, workerExpress}},
 		{name: "has fix", filter: database.FindingFilter{HasFix: true}, want: []string{appLodash, workerLodash, otherLodash}},
-		{name: "kev", filter: database.FindingFilter{KEV: true}, want: []string{appExpress, workerExpress}},
+		{name: "kev", filter: database.FindingFilter{OnlyKnownExploited: true}, want: []string{appExpress, workerExpress}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -119,8 +119,8 @@ func TestListFindingsFilters(t *testing.T) {
 		}
 		f := findings[0]
 		want := database.WorkloadRef{Environment: "c1", Team: "team-a", Name: "app"}
-		if f.Workload != want || f.Image.Digest != "sha256:a" || f.CVSSScore != 8.1 || f.Title != "lodash bug" || f.KEV != nil || f.Suppression != nil {
-			t.Errorf("finding = %+v, want in c1/team-a/app with sha256:a, cvss 8.1, lodash bug, no KEV, not suppressed", f)
+		if f.Workload != want || f.Image.Digest != "sha256:a" || f.KnownExploited || f.Suppression != nil {
+			t.Errorf("finding = %+v, want in c1/team-a/app with sha256:a, not in CISA KEV, not suppressed", f)
 		}
 	})
 
@@ -192,7 +192,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 		{VulnerabilityID: "GHSA-1"},
 		{Package: "pkg:npm/lodash@4.17.20"},
 		{HasFix: true},
-		{KEV: true},
+		{OnlyKnownExploited: true},
 		{Severities: []v0s.Severity{v0s.SeverityLow}},
 	}
 	for i, filter := range filters {

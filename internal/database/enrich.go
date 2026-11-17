@@ -23,6 +23,9 @@ func (db *DB) ReplaceEPSS(ctx context.Context, scores []v0s.EPSS) error {
 
 // ReplaceKEV atomically replaces the CISA KEV entries.
 func (db *DB) ReplaceKEV(ctx context.Context, entries []v0s.KEV) error {
+	if len(entries) == 0 {
+		return fmt.Errorf("KEV catalog has no entries: %w", ErrInvalid)
+	}
 	rows := make([][]any, len(entries))
 	for i, e := range entries {
 		dueDate := pgtype.Date{Time: e.DueDate, Valid: !e.DueDate.IsZero()}
@@ -30,6 +33,19 @@ func (db *DB) ReplaceKEV(ctx context.Context, entries []v0s.KEV) error {
 	}
 	if err := db.replaceTable(ctx, "kev", []string{"cve", "date_added", "due_date", "known_ransomware_campaign"}, rows); err != nil {
 		return fmt.Errorf("replacing kev: %w", err)
+	}
+	return nil
+}
+
+// A valid catalog is nonempty and replaced atomically. No rows means it has never
+// been loaded, not that none of the vulnerabilities are in KEV.
+func (db *DB) requireKEVCatalog(ctx context.Context) error {
+	var loaded bool
+	if err := db.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM kev)`).Scan(&loaded); err != nil {
+		return fmt.Errorf("checking KEV catalog: %w", err)
+	}
+	if !loaded {
+		return ErrUnavailable
 	}
 	return nil
 }

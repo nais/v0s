@@ -120,6 +120,46 @@ keychains. Egress must cover the workload registries and their authentication an
 redirect hosts, the configured Trivy DB registries, Sigstore, FIRST EPSS and CISA
 KEV. A blocked attestation lookup is an error, not evidence that no SBOM exists.
 
+## Simplified public contract
+
+The 2026-11-17 source change simplifies the
+[gRPC contract](../proto/v0s/v1/v0s.proto). It is not a deployment or an
+implementation of the proposed GraphQL layer in Nais API.
+
+- Read filters take one `team`, or no team for tenant-wide reads. A `workload`
+  filter requires `team` and `environment`; `ListWorkloads` now accepts that
+  workload filter too. Requests carrying the removed `teams` field fail with
+  `InvalidArgument` rather than silently becoming tenant-wide.
+- Findings and advisory details expose `known_exploited`, and the finding filter uses
+  `only_known_exploited`. CISA KEV is the documented source: false means not
+  listed in that catalog, not proof of no exploitation. A valid KEV catalog is
+  nonempty and replaced atomically.
+  Until one is stored, `ListFindings`, `GetVulnerability` for a known ID, and
+  KEV-filtered `CountFindings` fail with `Unavailable`. Absence of a catalog is
+  not `false` or zero findings. Ordinary counts, inventory and suppressions do
+  not depend on KEV.
+- A failed feed refresh retains the last catalog. EPSS and KEV refreshes are
+  attempted independently, so an EPSS failure does not block the first KEV
+  import. Feed age remains an operational concern, not a new client protocol.
+- CVSS is returned only by `GetVulnerability`, as one entry per source/version.
+  Versions are `3.0`, `3.1` and `4.0`; `3.x` means a v3 score without a vector
+  that identifies its minor version. Both `score` and `vector` have protobuf
+  presence. Callers must inspect `Score != nil` before reading it; `GetScore()`
+  alone collapses absence to zero. Trivy and older stored records use zero for
+  missing scores, so zero is exposed only when a valid zero-impact vector
+  confirms it. Missing scores remain absent, including malformed/nonzero-impact
+  vectors without a source score. Existing stored CVSS records remain readable.
+- The public API no longer exposes finding title/raw fix status/aggregate CVSS,
+  source-severity matrices, advisory dates, KEV metadata, EPSS percentile or the
+  scanner DB version. Internal source data and scan bookkeeping are retained.
+
+This intentionally breaks generated client/source compatibility. Regenerate
+all v0s consumers and coordinate their rollout with the server; do not rely on
+old clients interpreting the new response fields. Removed protobuf field
+numbers and names are reserved, not reused. Keep rollback builds with matching
+clients available. No database migration or reset is required for this contract
+change; existing workload-scoped assessments and source data are unchanged.
+
 ## Health and diagnostics
 
 `GET /healthz` checks only database connectivity. It does not establish that

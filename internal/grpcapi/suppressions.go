@@ -41,8 +41,14 @@ func (s *Server) DeleteSuppressions(ctx context.Context, req *v0sv1.DeleteSuppre
 
 // ListSuppressions implements SuppressionService.
 func (s *Server) ListSuppressions(ctx context.Context, req *v0sv1.ListSuppressionsRequest) (*v0sv1.ListSuppressionsResponse, error) {
+	if err := rejectLegacyTeams(req, 1); err != nil {
+		return nil, err
+	}
+	if err := validateScope(req.GetTeam(), req.GetEnvironment(), req.GetWorkload()); err != nil {
+		return nil, err
+	}
 	filter := database.SuppressionFilter{
-		Teams:           req.GetTeams(),
+		Teams:           teamFilter(req.GetTeam()),
 		Environment:     req.GetEnvironment(),
 		Workload:        req.GetWorkload(),
 		ImageName:       req.GetImageName(),

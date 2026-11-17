@@ -271,22 +271,23 @@ func (r *Reconciler) updateDB(ctx context.Context) error {
 // enrich replaces the EPSS and KEV tables.
 func (r *Reconciler) enrich(ctx context.Context) error {
 	return r.DB.WithLock(ctx, "enrich", func(ctx context.Context) error {
+		var errs []error
 		epss, err := enrich.FetchEPSS(ctx, r.HTTP, enrich.DefaultEPSSURL)
 		if err != nil {
-			return err
+			errs = append(errs, err)
+		} else if err := r.DB.ReplaceEPSS(ctx, epss); err != nil {
+			errs = append(errs, err)
+		} else {
+			r.Metrics.enrichmentSuccess.WithLabelValues("epss").SetToCurrentTime()
 		}
-		if err := r.DB.ReplaceEPSS(ctx, epss); err != nil {
-			return err
-		}
-		r.Metrics.enrichmentSuccess.WithLabelValues("epss").SetToCurrentTime()
 		kev, err := enrich.FetchKEV(ctx, r.HTTP, enrich.DefaultKEVURL)
 		if err != nil {
-			return err
+			errs = append(errs, err)
+		} else if err := r.DB.ReplaceKEV(ctx, kev); err != nil {
+			errs = append(errs, err)
+		} else {
+			r.Metrics.enrichmentSuccess.WithLabelValues("kev").SetToCurrentTime()
 		}
-		if err := r.DB.ReplaceKEV(ctx, kev); err != nil {
-			return err
-		}
-		r.Metrics.enrichmentSuccess.WithLabelValues("kev").SetToCurrentTime()
-		return nil
+		return errors.Join(errs...)
 	})
 }

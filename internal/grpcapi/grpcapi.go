@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log/slog"
 	"runtime/debug"
-	"slices"
 	"strings"
 	"time"
 
@@ -47,6 +46,8 @@ func (s *Server) toStatus(ctx context.Context, err error) error {
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.Is(err, database.ErrNotFound):
 		return status.Error(codes.NotFound, err.Error())
+	case errors.Is(err, database.ErrUnavailable):
+		return status.Error(codes.Unavailable, "CISA KEV catalog is not available")
 	case errors.Is(err, context.Canceled):
 		return status.Error(codes.Canceled, "request canceled")
 	case errors.Is(err, context.DeadlineExceeded):
@@ -81,7 +82,13 @@ func page(size int32, token string) database.Page {
 
 // ListWorkloads implements VulnerabilityService.
 func (s *Server) ListWorkloads(ctx context.Context, req *v0sv1.ListWorkloadsRequest) (*v0sv1.ListWorkloadsResponse, error) {
-	filter := database.WorkloadFilter{Teams: req.GetTeams(), Environment: req.GetEnvironment()}
+	if err := rejectLegacyTeams(req, 1); err != nil {
+		return nil, err
+	}
+	if err := validateScope(req.GetTeam(), req.GetEnvironment(), req.GetWorkload()); err != nil {
+		return nil, err
+	}
+	filter := database.WorkloadFilter{Teams: teamFilter(req.GetTeam()), Environment: req.GetEnvironment(), Workload: req.GetWorkload()}
 	workloads, next, err := s.db.ListWorkloads(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
@@ -117,14 +124,11 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 			PackageKey:       f.Finding.PackageKey,
 			InstalledVersion: f.Finding.InstalledVersion,
 			FixedVersion:     f.Finding.FixedVersion,
-			Status:           f.Finding.Status,
 			Severity:         severityToProto(f.Finding.Severity),
 			SeveritySource:   f.Finding.SeveritySource,
 			DataSource:       f.Finding.DataSource,
-			Title:            f.Title,
-			CvssScore:        f.CVSSScore,
 			Epss:             epssToProto(f.EPSS),
-			Kev:              kevToProto(f.KEV),
+			KnownExploited:   f.KnownExploited,
 		}
 		if f.Suppression != nil {
 			pf.Suppression = suppressionToProto(*f.Suppression)
@@ -176,31 +180,24 @@ func (s *Server) GetVulnerability(ctx context.Context, req *v0sv1.GetVulnerabili
 		return nil, s.toStatus(ctx, err)
 	}
 	pv := &v0sv1.Vulnerability{
-		Id:          v.ID,
-		Aliases:     v.Aliases,
-		Title:       v.Title,
-		Description: v.Description,
-		Severities:  make(map[string]v0sv1.Severity, len(v.Severities)),
-		References:  v.References,
-		PublishedAt: timestamp(v.PublishedAt),
-		ModifiedAt:  timestamp(v.ModifiedAt),
-		Epss:        epssToProto(v.EPSS),
-		Kev:         kevToProto(v.KEV),
+		Id:             v.ID,
+		Aliases:        v.Aliases,
+		Title:          v.Title,
+		Description:    v.Description,
+		Cvss:           cvssToProto(v.CVSS),
+		References:     v.References,
+		Epss:           epssToProto(v.EPSS),
+		KnownExploited: v.KnownExploited,
 	}
-	for source, sev := range v.Severities {
-		pv.Severities[source] = severityToProto(sev)
-	}
-	for source, c := range v.CVSS {
-		pv.Cvss = append(pv.Cvss, &v0sv1.Cvss{Source: source, V3Vector: c.V3Vector, V3Score: c.V3Score, V40Vector: c.V40Vector, V40Score: c.V40Score})
-	}
-	// Map iteration order is random; keep the response stable.
-	slices.SortFunc(pv.Cvss, func(a, b *v0sv1.Cvss) int { return strings.Compare(a.Source, b.Source) })
 	return &v0sv1.GetVulnerabilityResponse{Vulnerability: pv}, nil
 }
 
 // SearchComponents implements VulnerabilityService.
 func (s *Server) SearchComponents(ctx context.Context, req *v0sv1.SearchComponentsRequest) (*v0sv1.SearchComponentsResponse, error) {
-	filter := database.ComponentFilter{Query: req.GetQuery(), Teams: req.GetTeams()}
+	if err := rejectLegacyTeams(req, 2); err != nil {
+		return nil, err
+	}
+	filter := database.ComponentFilter{Query: req.GetQuery(), Teams: teamFilter(req.GetTeam())}
 	matches, next, err := s.db.SearchComponents(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
@@ -228,16 +225,22 @@ func workloadRefsToProto(ws []database.WorkloadRef) []*v0sv1.WorkloadRef {
 }
 
 func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
+	if err := rejectLegacyTeams(f, 1); err != nil {
+		return database.FindingFilter{}, err
+	}
+	if err := validateScope(f.GetTeam(), f.GetEnvironment(), f.GetWorkload()); err != nil {
+		return database.FindingFilter{}, err
+	}
 	filter := database.FindingFilter{
-		Teams:           f.GetTeams(),
-		Environment:     f.GetEnvironment(),
-		Workload:        f.GetWorkload(),
-		ImageName:       f.GetImageName(),
-		ImageDigest:     f.GetImageDigest(),
-		VulnerabilityID: f.GetVulnerabilityId(),
-		Package:         f.GetPackage(),
-		HasFix:          f.GetHasFix(),
-		KEV:             f.GetKev(),
+		Teams:              teamFilter(f.GetTeam()),
+		Environment:        f.GetEnvironment(),
+		Workload:           f.GetWorkload(),
+		ImageName:          f.GetImageName(),
+		ImageDigest:        f.GetImageDigest(),
+		VulnerabilityID:    f.GetVulnerabilityId(),
+		Package:            f.GetPackage(),
+		HasFix:             f.GetHasFix(),
+		OnlyKnownExploited: f.GetOnlyKnownExploited(),
 	}
 	for _, sev := range f.GetSeverities() {
 		name, ok := v0sv1.Severity_name[int32(sev)]
@@ -261,12 +264,11 @@ func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
 
 func imageToProto(img v0s.Image) *v0sv1.Image {
 	return &v0sv1.Image{
-		Name:             img.Name,
-		Digest:           img.Digest,
-		Status:           v0sv1.ImageStatus(v0sv1.ImageStatus_value["IMAGE_STATUS_"+strings.ToUpper(string(img.Status()))]),
-		Error:            img.Error,
-		ScannedAt:        timestamp(img.ScannedAt),
-		ScannedDbVersion: timestamp(img.ScannedDBVersion),
+		Name:      img.Name,
+		Digest:    img.Digest,
+		Status:    v0sv1.ImageStatus(v0sv1.ImageStatus_value["IMAGE_STATUS_"+strings.ToUpper(string(img.Status()))]),
+		Error:     img.Error,
+		ScannedAt: timestamp(img.ScannedAt),
 	}
 }
 
@@ -278,14 +280,7 @@ func epssToProto(e *v0s.EPSS) *v0sv1.Epss {
 	if e == nil {
 		return nil
 	}
-	return &v0sv1.Epss{Score: e.Score, Percentile: e.Percentile, Date: date(e.Date)}
-}
-
-func kevToProto(k *v0s.KEV) *v0sv1.Kev {
-	if k == nil {
-		return nil
-	}
-	return &v0sv1.Kev{DateAdded: date(k.DateAdded), DueDate: date(k.DueDate), KnownRansomwareCampaign: k.KnownRansomwareCampaign}
+	return &v0sv1.Epss{Score: e.Score, Date: date(e.Date)}
 }
 
 // timestamp returns nil for the zero time.

@@ -82,6 +82,7 @@ type Workload struct {
 type WorkloadFilter struct {
 	Teams       []string
 	Environment string
+	Workload    string
 }
 
 type workloadCursor struct {
@@ -105,6 +106,9 @@ func (db *DB) ListWorkloads(ctx context.Context, filter WorkloadFilter, page Pag
 	}
 	if filter.Environment != "" {
 		where = append(where, "w.environment = "+args.add(filter.Environment))
+	}
+	if filter.Workload != "" {
+		where = append(where, "w.name = "+args.add(filter.Workload))
 	}
 	if page.Token != "" {
 		where = append(where, fmt.Sprintf("(w.environment, w.team, w.name) > (%s, %s, %s)",

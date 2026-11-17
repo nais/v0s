@@ -55,7 +55,7 @@ enum ImageStatus {
   IMAGE_STATUS_UNSPECIFIED = 0;
   // The SBOM is not fetched or the image not scanned yet.
   IMAGE_STATUS_PENDING = 1;
-  // Scanned; the findings are those of scanned_db_version.
+  // A scan completed; see scanned_at on the image.
   IMAGE_STATUS_SCANNED = 2;
   // No attested SBOM was found for the image.
   IMAGE_STATUS_NO_SBOM = 3;
@@ -71,16 +71,15 @@ enum SuppressionState {
 }
 
 message Image {
-  reserved 3, 4, 7;
+  reserved 3, 4, 6, 7;
+  reserved "scanned_db_version";
   string name = 1;
   string digest = 2;
   ImageStatus status = 8;
   // Why the last fetch or scan failed. Also set on a SCANNED image whose rescan with a newer
-  // vulnerability DB failed; its findings are still those of scanned_db_version.
+  // vulnerability DB failed; its findings are still those of the last successful scan.
   string error = 9;
   google.protobuf.Timestamp scanned_at = 5;
-  // UpdatedAt of the vulnerability DB used for the last scan.
-  google.protobuf.Timestamp scanned_db_version = 6;
 }
 
 message Workload {
@@ -95,9 +94,12 @@ message Workload {
   string resolve_error = 6;
 }
 
-// FindingFilter narrows findings. Empty fields do not filter. Repeated fields match any value.
+// FindingFilter narrows findings. Empty fields do not filter. Severities match any value.
+// A workload name requires both team and environment.
 message FindingFilter {
-  repeated string teams = 1;
+  reserved 1;
+  reserved "teams", "kev";
+  string team = 12;
   string environment = 2;
   string workload = 3;
   string image_name = 4;
@@ -109,8 +111,8 @@ message FindingFilter {
   repeated Severity severities = 8;
   // Only findings with a known fixed version.
   bool has_fix = 9;
-  // Only findings for vulnerabilities in CISA KEV.
-  bool kev = 10;
+  // Only findings for vulnerabilities known exploited in the wild according to CISA KEV.
+  bool only_known_exploited = 10;
   SuppressedFilter suppressed = 11;
 }
 
@@ -124,6 +126,8 @@ enum SuppressedFilter {
 
 // A vulnerability in a package in a workload's image.
 message Finding {
+  reserved 8, 12, 13, 15;
+  reserved "status", "title", "cvss_score", "kev";
   WorkloadRef workload = 1;
   Image image = 2;
   string vulnerability_id = 3;
@@ -131,37 +135,34 @@ message Finding {
   string package_key = 5;
   string installed_version = 6;
   string fixed_version = 7;
-  // Trivy fix status: affected, fixed, will_not_fix, fix_deferred, end_of_life, under_investigation, unknown.
-  string status = 8;
   // Severity as the source named in severity_source rates it.
   Severity severity = 9;
   string severity_source = 10;
   // Advisory source that produced the match, e.g. "ghsa", "alpine".
   string data_source = 11;
-  string title = 12;
-  // Highest CVSS v3 base score across sources, 0 if none.
-  double cvss_score = 13;
   Epss epss = 14;
-  Kev kev = 15;
+  // Known exploited in the wild according to CISA KEV, not proof this workload is exploitable.
+  // False means not listed, not proof of no exploitation.
+  // Reads fail with Unavailable until a catalog has been loaded.
+  bool known_exploited = 17;
   // This workload's suppression of the finding, unset if not suppressed.
   Suppression suppression = 16;
 }
 
 message Epss {
+  reserved 2;
+  reserved "percentile";
   double score = 1;
-  double percentile = 2;
   string date = 3;
 }
 
-message Kev {
-  string date_added = 1;
-  string due_date = 2;
-  bool known_ransomware_campaign = 3;
-}
-
 message ListWorkloadsRequest {
-  repeated string teams = 1;
+  reserved 1;
+  reserved "teams";
+  string team = 5;
   string environment = 2;
+  // Requires team and environment.
+  string workload = 6;
   int32 page_size = 3;
   string page_token = 4;
 }
@@ -216,32 +217,38 @@ message GetVulnerabilityResponse {
 }
 
 message Vulnerability {
+  reserved 5, 8, 9, 11;
+  reserved "severities", "published_at", "modified_at", "kev";
   string id = 1;
   repeated string aliases = 2;
   string title = 3;
   string description = 4;
-  // Severity per source, e.g. "nvd" -> HIGH.
-  map<string, Severity> severities = 5;
   repeated Cvss cvss = 6;
   repeated string references = 7;
-  google.protobuf.Timestamp published_at = 8;
-  google.protobuf.Timestamp modified_at = 9;
   Epss epss = 10;
-  Kev kev = 11;
+  // Known exploited in the wild according to CISA KEV.
+  // False means not listed, not proof of no exploitation.
+  // Reads fail with Unavailable until a catalog has been loaded.
+  bool known_exploited = 12;
 }
 
+// One CVSS version from one source. Missing scores are absent, not zero.
 message Cvss {
+  reserved 2, 3, 4, 5;
+  reserved "v3_vector", "v3_score", "v40_vector", "v40_score";
   string source = 1;
-  string v3_vector = 2;
-  double v3_score = 3;
-  string v40_vector = 4;
-  double v40_score = 5;
+  // "3.0", "3.1" or "4.0"; "3.x" when the source has a v3 score without a versioned vector.
+  string version = 6;
+  optional double score = 7;
+  optional string vector = 8;
 }
 
 message SearchComponentsRequest {
+  reserved 2;
+  reserved "teams";
   // Package key, full purl, or name prefix (case-insensitive) when it does not start with "pkg:".
   string query = 1;
-  repeated string teams = 2;
+  string team = 5;
   int32 page_size = 3;
   string page_token = 4;
 }
@@ -256,7 +263,7 @@ message ComponentMatch {
   string name = 2;
   string version = 3;
   Image image = 4;
-  // Workloads currently using the image, limited to the requested teams.
+  // Workloads currently using the image, limited to the requested team.
   repeated WorkloadRef workloads = 5;
 }
 
@@ -325,13 +332,16 @@ message DeleteSuppressionsResponse {
 }
 
 message ListSuppressionsRequest {
-  repeated string teams = 1;
+  reserved 1;
+  reserved "teams";
+  string team = 8;
   string image_name = 2;
   // Vulnerability ID or alias.
   string vulnerability_id = 3;
   int32 page_size = 4;
   string page_token = 5;
   string environment = 6;
+  // Requires team and environment.
   string workload = 7;
 }
 

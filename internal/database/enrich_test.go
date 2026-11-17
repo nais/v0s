@@ -2,10 +2,12 @@ package database_test
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/database/databasetest"
 	"github.com/nais/v0s/internal/v0s"
 )
@@ -68,5 +70,49 @@ func TestReplaceKEV(t *testing.T) {
 	want := []string{"CVE-2 2026-03-01 2026-03-22 t", "CVE-3 2026-03-01 none f"}
 	if !slices.Equal(got, want) {
 		t.Errorf("kev = %q, want %q", got, want)
+	}
+
+	for _, entries := range [][]v0s.KEV{
+		nil,
+		{{CVE: "CVE-4", DateAdded: added}, {CVE: "CVE-4", DateAdded: added}},
+	} {
+		if err := db.ReplaceKEV(ctx, entries); err == nil {
+			t.Fatal("invalid replacement succeeded")
+		}
+		got := queryStrings(t, db, `
+			SELECT concat_ws(' ', cve, date_added, coalesce(due_date::text, 'none'), known_ransomware_campaign) FROM kev ORDER BY cve`)
+		if !slices.Equal(got, want) {
+			t.Errorf("failed refresh changed catalog: %q, want %q", got, want)
+		}
+	}
+}
+
+func TestKEVCatalogAvailability(t *testing.T) {
+	db, exec := newFixture(t)
+	exec(`DELETE FROM kev`)
+	ctx := t.Context()
+	if _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{}); !errors.Is(err, database.ErrUnavailable) {
+		t.Errorf("findings without catalog: %v, want ErrUnavailable", err)
+	}
+	if _, err := db.GetVulnerability(ctx, "CVE-1"); !errors.Is(err, database.ErrUnavailable) {
+		t.Errorf("advisory without catalog: %v, want ErrUnavailable", err)
+	}
+	if _, err := db.CountFindings(ctx, database.FindingFilter{OnlyKnownExploited: true}, database.GroupBySeverity); !errors.Is(err, database.ErrUnavailable) {
+		t.Errorf("KEV count without catalog: %v, want ErrUnavailable", err)
+	}
+	if _, err := db.CountFindings(ctx, database.FindingFilter{}, database.GroupBySeverity); err != nil {
+		t.Errorf("ordinary count depends on KEV: %v", err)
+	}
+	if err := db.ReplaceKEV(ctx, []v0s.KEV{{CVE: "CVE-1", DateAdded: time.Now()}}); err != nil {
+		t.Fatal(err)
+	}
+	findings, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range findings {
+		if f.KnownExploited != (f.Finding.VulnerabilityID == "CVE-1") {
+			t.Errorf("unexpected membership: %+v", f)
+		}
 	}
 }

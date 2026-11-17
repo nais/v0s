@@ -1,11 +1,16 @@
 package reconcile
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"maps"
+	"net/http"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +18,7 @@ import (
 	"github.com/nais/v0s/internal/attest"
 	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/database/databasetest"
+	"github.com/nais/v0s/internal/enrich"
 	"github.com/nais/v0s/internal/v0s"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -20,6 +26,69 @@ import (
 func TestMain(m *testing.M) { databasetest.Main(m) }
 
 var discard = slog.New(slog.DiscardHandler)
+
+type feedTransport func(*http.Request) (*http.Response, error)
+
+func (f feedTransport) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestEnrichmentFeedsAreIndependent(t *testing.T) {
+	for _, failed := range []string{"epss", "kev"} {
+		t.Run(failed+" fails", func(t *testing.T) {
+			db, url := databasetest.NewWithURL(t)
+			called := map[string]bool{}
+			r := &Reconciler{
+				DB: db, Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
+				HTTP: &http.Client{Transport: feedTransport(func(req *http.Request) (*http.Response, error) {
+					feed := "kev"
+					if req.URL.String() == enrich.DefaultEPSSURL {
+						feed = "epss"
+					}
+					called[feed] = true
+					if feed == failed {
+						return &http.Response{StatusCode: http.StatusServiceUnavailable, Body: io.NopCloser(strings.NewReader(""))}, nil
+					}
+					body := []byte(`{"count":1,"vulnerabilities":[{"cveID":"CVE-2021-44228","dateAdded":"2021-12-10"}]}`)
+					if feed == "epss" {
+						var compressed bytes.Buffer
+						gz := gzip.NewWriter(&compressed)
+						if _, err := gz.Write([]byte("#model_version:v1,score_date:2026-11-17T00:00:00Z\ncve,epss,percentile\nCVE-2021-44228,0.9,0.99\n")); err != nil {
+							t.Fatal(err)
+						}
+						if err := gz.Close(); err != nil {
+							t.Fatal(err)
+						}
+						body = compressed.Bytes()
+					}
+					return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(bytes.NewReader(body))}, nil
+				})},
+			}
+			if err := r.enrich(t.Context()); err == nil {
+				t.Fatal("expected the feed failure to be returned")
+			}
+			if !called["epss"] || !called["kev"] {
+				t.Fatalf("feeds attempted: %v; want both", called)
+			}
+			conn, err := pgx.Connect(t.Context(), url)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close(t.Context())
+			for _, feed := range []string{"epss", "kev"} {
+				var count int
+				if err := conn.QueryRow(t.Context(), "SELECT count(*) FROM "+feed).Scan(&count); err != nil {
+					t.Fatal(err)
+				}
+				want := 1
+				if feed == failed {
+					want = 0
+				}
+				if count != want {
+					t.Errorf("%s rows = %d, want %d", feed, count, want)
+				}
+			}
+		})
+	}
+}
 
 // fakeInventory is a snapshot; a nil inventory fails.
 type fakeInventory map[string][]v0s.WorkloadImage
@@ -66,6 +135,9 @@ func (s fakeScanner) Scan(_ context.Context, sbom []byte) (v0s.ScanResult, time.
 func TestPipeline(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)
+	if err := db.ReplaceKEV(ctx, []v0s.KEV{{CVE: "CVE-2021-23337", DateAdded: time.Now()}}); err != nil {
+		t.Fatal(err)
+	}
 
 	workload := func(app, digest string) v0s.WorkloadImage {
 		return v0s.WorkloadImage{Environment: "dev", Team: "team", Workload: app, ImageName: "registry/" + app, Digest: digest}
