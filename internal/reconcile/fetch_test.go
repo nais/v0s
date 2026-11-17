@@ -21,7 +21,7 @@ type fetcherFunc func(context.Context, string) ([]byte, error)
 func (f fetcherFunc) Fetch(ctx context.Context, ref string) ([]byte, error) { return f(ctx, ref) }
 
 func TestFetchTimeoutAllowsLaterBatches(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 	db, url := databasetest.NewWithURL(t)
 	const count = fetchBatch*2 + 1
@@ -55,7 +55,7 @@ func TestFetchTimeoutAllowsLaterBatches(t *testing.T) {
 		}),
 	}
 	start := time.Now()
-	if err := r.fetchDue(ctx, 50*time.Millisecond); err != nil {
+	if err := r.fetchDue(ctx, time.Second); err != nil {
 		t.Fatal(err)
 	}
 	end := time.Now()

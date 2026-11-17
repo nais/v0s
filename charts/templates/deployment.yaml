@@ -6,6 +6,9 @@ metadata:
     app: {{ .Release.Name }}
 spec:
   replicas: {{ .Values.replicas }}
+  # Schema migrations may not be compatible with the previous binary.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: {{ .Release.Name }}
@@ -25,6 +28,27 @@ spec:
         fsGroup: 65532
         seccompProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: migrate
+          image: {{ printf "%s:%s" .Values.image.repository (required "Set image.tag or package the chart with --app-version" (.Values.image.tag | default .Chart.AppVersion)) | quote }}
+          args: [migrate]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "v0s.databaseMigrationSecretName" . | quote }}
+                  key: uri
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
       containers:
         - name: v0s
           image: {{ printf "%s:%s" .Values.image.repository (required "Set image.tag or package the chart with --app-version" (.Values.image.tag | default .Chart.AppVersion)) | quote }}
@@ -32,7 +56,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ printf "%s-app" (include "v0s.databaseClusterName" .) | quote }}
+                  name: {{ include "v0s.databaseRuntimeSecretName" . | quote }}
                   key: uri
             # Nais API is the required, sole source of workload inventory.
             - name: NAIS_API_GRPC_ADDRESS

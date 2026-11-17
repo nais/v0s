@@ -91,18 +91,34 @@ func list(s string) []string {
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	slog.SetDefault(log)
-	if err := run(log); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, log, os.Args[1:]); err != nil {
 		log.With("err", err).Error("exiting")
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) error {
+func run(ctx context.Context, log *slog.Logger, args []string) error {
+	if len(args) > 0 {
+		if len(args) != 1 || args[0] != "migrate" {
+			return fmt.Errorf("usage: v0s [migrate]")
+		}
+		url := env("DATABASE_URL", "")
+		if url == "" {
+			return fmt.Errorf("missing configuration: DATABASE_URL")
+		}
+		if err := database.Migrate(ctx, url); err != nil {
+			return err
+		}
+		log.Info("database migrations complete")
+		return nil
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := context.WithCancel(ctx)
 	defer stop()
 
 	db, err := database.Open(ctx, cfg.databaseURL)

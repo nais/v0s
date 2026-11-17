@@ -28,7 +28,7 @@ separate read grants. The runtime identity is not the `gh-v0s` publisher.
 
 ## Database provisioning
 
-By default, `postgresqlEnabled: true` installs `nais-postgresql:0.1.0` as part of
+By default, `postgresqlEnabled: true` installs `nais-postgresql:0.2.2` as part of
 this Helm release. This follows the STS chart pattern; the operator remains a
 separate Fasit feature. No extra database assignment or manual Secret is needed.
 
@@ -36,7 +36,20 @@ CNPG creates:
 
 - Cluster `v0s-db`, bootstrapped with database and owner `v0s`.
 - Primary Service `v0s-db-rw:5432`.
-- Secret `v0s-db-app`, whose `uri` key supplies `DATABASE_URL`.
+- Owner Secret `v0s-db-app`, used only by the migration init container.
+
+The shared chart manages a separate `appuser` role with `pg_read_all_data` and
+`pg_write_all_data`, without schema ownership. The shared chart provisions a retained
+`v0s-db-appuser` basic-auth Secret with `username`, `password` and `uri`; the main
+container reads only that Secret's `uri`. The generated URI does not specify
+`sslmode`; TLS behavior follows the client's defaults. An upgrade reuses the
+existing password. Keep the runtime username stable; do not delete the Secret
+to rotate credentials.
+
+v0s has no separate credential-generation template. Set
+`postgresql.appUser.existingSecret` only to use a separately managed Secret with
+all three keys and credentials for the configured runtime role. In that case
+v0s does not create or rotate the Secret. Keep `appUser.enabled=true`.
 
 The defaults are three total PostgreSQL instances, each with 10Gi storage and
 required node anti-affinity. Three eligible nodes and a suitable StorageClass
@@ -68,28 +81,53 @@ database:
 ```
 
 This keeps the existing database and its suppressions outside the app release.
-The chart creates no Cluster or database NetworkPolicies in this mode; it only
-references `<database.clusterName>-app.uri` and permits app egress to that cluster.
+The chart creates no Cluster, runtime Secret or database NetworkPolicies in this
+mode. It permits app egress to that cluster and references the existing
+`<database.clusterName>-app.uri` owner Secret only for migrations; runtime requires
+`<database.clusterName>-appuser.uri`. Override `database.migrationSecretName`
+and `database.runtimeSecretName` for independently named Secrets. Provision the
+read/write role and its Secret in the external database's owning release before
+upgrading v0s; this chart does not create them in external mode.
 Existing database ingress policies must allow v0s. Do not turn provisioning on
 for an existing cluster without an explicit, backed-up adoption/upgrade plan.
 
-### Resetting the disposable dev-nais pilot
+### Upgrading an existing deployment
 
-The operator has explicitly approved discarding the pilot data, including
-suppressions. Test the managed database path in dev-nais before NAV:
+The Deployment uses `Recreate`: old app replicas stop before the new pod's
+`migrate` init container applies forward migrations using the owner Secret.
+The main process then opens the database with the runtime role and checks the
+schema version without doing DDL. Each pod runs the idempotent migrator;
+an advisory lock serializes concurrent migration attempts. This deliberately
+introduces app downtime during upgrades rather than running incompatible
+binaries against the same schema.
 
-1. Publish and verify the new chart before removing the pilot database.
-2. Coordinate the dev-nais Fasit assignment update; leave provisioning enabled.
-3. Delete only the old `Cluster/v0s-db` in dev-nais `nais-system` and wait for its
-   owned pods, PVC and application Secret to disappear. Do not bulk-delete the
-   old manual manifest: its app resources are already managed by Fasit.
-4. Install the new chart through Fasit, letting the subchart bootstrap an empty
-   database. Expect temporary app downtime while the database is unavailable.
-5. Verify the new Cluster/PVC UIDs, Helm ownership and retention annotation,
-   three ready instances, application migrations, inventory, scans and API.
+1. Back up the current database and verify the recovery procedure. Keep cluster
+   name, database, owner, storage and PostgreSQL image unchanged.
+2. Verify whether the database is managed by this release or independently.
+   In external mode, prepare the runtime role/Secret first; do not enable
+   provisioning to adopt the existing cluster implicitly.
+3. Before the first incompatible schema upgrade, establish a safe Helm rollback
+   target with the old app's replicas recorded as zero, or arrange a controlled
+   upgrade without automatic rollback. Fasit's deployer uses `helm upgrade
+   --atomic`: if startup fails, it otherwise restores the old Deployment against
+   the already-migrated database. A live `kubectl scale` alone does not update
+   the saved Helm revision. Verify this safeguard before assigning the new chart.
+4. Publish and assign the new chart in the pilot environment first. Never reset
+   the database or delete Cluster/PVC resources to apply this upgrade.
+5. Confirm old replicas have stopped, `migrate` completed, the main container uses
+   the runtime role, all database instances remain ready and Cluster/PVC UIDs are
+   unchanged. Check schema version and preserved/copy counts for assessments.
+6. Verify inventory synchronization, scans, gRPC reads and workload-scoped
+   assessment writes before updating the next tenant/environment.
 
-This is destructive replacement, not migration or adoption. Do not use this
-procedure for NAV or any database whose contents must be retained.
+A failed migration prevents app startup. Investigate with writes stopped;
+do not bypass the init container or supply owner credentials to runtime.
+An older application image may be incompatible with the new schema, so an
+image rollback is not a database rollback.
+See the [Fasit upgrade arguments](https://github.com/nais/fasit/blob/d2938f4011b7b5fc7e087ad9cdb8ba8378dba5ca/internal/naisd/deploy_manager.go#L473-L498)
+for the automatic rollback behavior. Once both revisions use the schema-checking
+runtime, an incompatible older revision fails startup rather than serving the
+wrong schema; schema/data recovery is still a separate operation.
 
 ### Retention and backups
 
@@ -99,7 +137,7 @@ ownership and does not protect against direct Cluster deletion, namespace
 deletion or storage loss. Reinstallation may require adopting the retained
 Cluster. Do not copy STS's `keep: false` setting for v0s.
 
-**The subchart does not configure backups.** Replicas are not backups, and
+**Backups remain disabled in v0s's defaults.** Replicas are not backups, and
 asynchronous failover may lose recent writes. Suppressions are durable human
 assessments: configure backups and test restore before production use. An
 environment with no backups is not production-ready merely because pods run.

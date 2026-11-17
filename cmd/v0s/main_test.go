@@ -24,6 +24,25 @@ import (
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
 
+func TestMigrateCommandNeedsOnlyDatabaseConfiguration(t *testing.T) {
+	_, url := databasetest.NewWithURL(t)
+	t.Setenv("DATABASE_URL", url)
+	t.Setenv("NAIS_API_GRPC_ADDRESS", "")
+	t.Setenv("GITHUB_ORGANIZATIONS", "")
+	if err := run(t.Context(), slog.New(slog.DiscardHandler), []string{"migrate"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCommandRejectsInvalidConfiguration(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	for _, args := range [][]string{{"migrate"}, {"unknown"}, {"migrate", "extra"}} {
+		if err := run(t.Context(), slog.New(slog.DiscardHandler), args); err == nil {
+			t.Errorf("run(%v) unexpectedly succeeded", args)
+		}
+	}
+}
+
 type fakeScanner struct{}
 
 func (fakeScanner) Update(context.Context) (bool, error) { return false, nil }

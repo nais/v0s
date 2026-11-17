@@ -28,7 +28,7 @@ values:
 
   postgresqlEnabled:
     displayName: Provision PostgreSQL
-    description: Defaults to true. Set false to use an existing database without adopting or changing it.
+    description: Defaults to true. Set false to keep independently managed CNPG resources; application schema migrations still run.
     config:
       type: bool
 
@@ -46,7 +46,19 @@ values:
 
   database.clusterName:
     displayName: Existing CNPG cluster
-    description: Used only when postgresqlEnabled=false; must supply the application Secret in the release namespace.
+    description: Used only when postgresqlEnabled=false; supply separate runtime and owner Secrets in the release namespace.
+    config:
+      type: string
+
+  database.runtimeSecretName:
+    displayName: Existing read/write database Secret
+    description: External database only. Defaults to <clusterName>-appuser; uri must use the runtime role, not the owner.
+    config:
+      type: string
+
+  database.migrationSecretName:
+    displayName: Existing database owner Secret
+    description: External database only. Defaults to <clusterName>-app; uri is used only by the migration init container.
     config:
       type: string
 

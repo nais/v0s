@@ -76,6 +76,10 @@ tr:last-child td { border-bottom: 0; }
 .work-table { min-width: 700px; }
 .work-table th:first-child { width: 110px; }
 .code { padding: 16px; background: var(--paper); border-radius: 6px; }
+.diagram-scroll { overflow-x: auto; }
+.diagram { display: block; width: 100%; }
+.diagram.wide { min-width: 760px; }
+pre.code + pre.code { margin-top: 12px; }
 .demo-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); margin-top: 20px; font-size: 13px; }
 .demo-tools label { display: flex; align-items: center; gap: 8px; }
 .demo-tools select, .plain-button { padding: 6px 10px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; font-size: 13px; }
@@ -89,6 +93,7 @@ tr:last-child td { border-bottom: 0; }
   overflow: hidden; color-scheme: dark; font-size: 13px; line-height: 1.5;
 }
 .mock button, .mock select, .mock input, .mock textarea { color: var(--m-ink); }
+.mock a { color: #8cc4ff; }
 .mock button:focus-visible, .mock select:focus-visible, .mock input:focus-visible,
 .mock summary:focus-visible, .mock [tabindex]:focus-visible { outline: 2px solid #8cc4ff; outline-offset: -2px; }
 .mock-top { padding: 14px 18px; border-bottom: 1px solid var(--m-line); display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; }
@@ -227,16 +232,20 @@ tr:last-child td { border-bottom: 0; }
 <nav class="toc" aria-label="Innhold">
   <a href="#console">Console-mock</a>
   <a href="#cli">CLI-mock</a>
-  <a href="#api">API-forslag</a>
+  <a href="#api">GraphQL-kontrakt</a>
+  <a href="#field-review">Feltgjennomgang</a>
+  <a href="#api-examples">Konkrete API-kall</a>
   <a href="#difference">Gammel → ny</a>
+  <a href="#migration">Expand → contract</a>
   <a href="#work">Arbeid per repo</a>
   <a href="#sources">Kilder</a>
 </nav>
 <main id="main">
 <header>
-  <p class="eyebrow">Forslag · 16. november 2026 · ikke implementert i produktene</p>
+  <p class="eyebrow">Til gjennomgang · oppdatert 17. november 2026</p>
   <h1>Sårbarheter i API, Console og CLI</h1>
   <p class="lede">v0s erstatter v13s og Dependency-Track. Vi beholder funn, dekning og gjeldende vurderinger. Historikk, MTTR, risikoscore, prioriteringsklasser og sårbarhetscheckeren fjernes.</p>
+  <p class="note">Til de som eier API, Console, CLI og dagens v13s/Dependency-Track: <a href="#api">her er den foreslåtte GraphQL-kontrakten</a>, og <a href="#migration">her er migreringsplanen</a>. GraphQL-feltene er ikke implementert i nais/api. v0s har et gRPC-API; det er API-et som skal oversette til GraphQL.</p>
   <p class="small" style="margin-top:14px">Mockene nedenfor bruker samme eksempeldata. Ingen kall sendes til Nais, og ingen kommandoer kjøres på maskinen din. Last inn siden på nytt eller bruk «Nullstill» for å starte på nytt.</p>
   <div class="demo-tools">
     <label for="mock-mode">Eksempeltilstand
@@ -363,7 +372,7 @@ nais vuln search &lt;cve-id&gt;</pre>
   </div>
   <div class="cli-settings"><label><input id="cli-interactive" type="checkbox" checked> Interaktiv terminal</label><span>Slå av for å prøve oppførselen uten TTY. Endringer lagres bare i denne siden.</span></div>
   <p class="note"><strong>Prøv «Vurder» og «Velg pakke».</strong> CVE-20XX-0002 finnes bare i lodash og trenger ikke et pakkevalg. CVE-20XX-0001 finnes i både netty-codec-http2 og netty-handler i bestilling. Da må du velge én pakke før noe lagres. Console viser endringen med en gang.</p>
-  <p class="caption">Bare severity, ID, installert pakke og kjent fiks i standardlisten. CVE-søk viser CVSS, EPSS og KEV én gang, over de berørte workloadene. JSON beholder alle fakta. Mocken bruker dataene fra Console over, uten nettverk eller shell.</p>
+  <p class="caption">Bare severity, ID, installert pakke og kjent fiks i standardlisten. CVE-søk viser CVSS, EPSS og KEV én gang, over de berørte workloadene. JSON følger den nye minimumskontrakten; CVSS hentes i detaljoppslaget, ikke på hvert funn. Mocken bruker dataene fra Console over, uten nettverk eller shell.</p>
   <details>
     <summary>Filtre, JSON og brudd med dagens kommandoer</summary>
     <p><code>--severity high</code>, <code>--fixable</code> og <code>--kev</code> avgrenser funnene. <code>--suppressed include|only</code> viser vurderte funn.</p>
@@ -377,15 +386,17 @@ nais vuln search &lt;cve-id&gt;</pre>
 </section>
 
 <section id="api">
-  <p class="eyebrow">Foreslåtte GraphQL-felter</p>
-  <h2>Funn, antall og dekning er tre ulike lesinger</h2>
+  <p class="eyebrow">Målkontrakt i nais/api · forslag til kommentering</p>
+  <h2>Fem queries og to mutations er den nye flaten</h2>
+  <p class="intro">Dette er feltene klientene skal ende på, ikke bare en skisse av backendkall. SDL-en under viser argumenter, nullbarhet, filtre, connections og payloads. Nye typer er tatt med; eksisterende <code>Query</code>, <code>Mutation</code>, <code>Workload</code>, <code>Application</code>, <code>Job</code> og scalarene <code>Slug</code>, <code>Time</code>, <code>Date</code> og <code>Cursor</code> gjenbrukes.</p>
+  <p class="note"><strong>Forenklet etter API-gjennomgangen 17. november:</strong> ett valgfritt team i scope, CISA KEV som bool og eksplisitt CVSS-versjon i detaljoppslaget. Resten av feltene er gjennomgått etter samme regel: de må brukes til å vise, avgrense, forklare eller vurdere et funn. <a href="#field-review">Begrunnelse og kutt står i feltgjennomgangen.</a> Dette er et forslag til GraphQL-kontrakt, ikke en endring av dagens gRPC-API.</p>
   <p class="intro"><code>findings</code> returnerer radene. <code>summary</code> teller alle radene som matcher samme filter, ikke bare den viste siden. <code>coverage</code> teller workloads med og uten analyseresultater og tar derfor ikke et funnfilter.</p>
   <div class="table-wrap" tabindex="0" role="region" aria-label="Foreslåtte API-operasjoner">
     <table>
       <thead><tr><th scope="col">Felt</th><th scope="col">Resultat</th><th scope="col">v0s</th></tr></thead>
       <tbody>
         <tr><td><code>vulnerabilityFindings(scope, filter, first, after)</code></td><td>Funn med workload, image, pakke, severity, fiks, kilder, EPSS/KEV og vurdering.</td><td><code>ListFindings</code></td></tr>
-        <tr><td><code>vulnerabilitySummary(scope, filter)</code></td><td>Antall totalt, per severity, med kjent fiks og med KEV-oppføring.</td><td><code>CountFindings</code></td></tr>
+        <tr><td><code>vulnerabilityFindingSummary(scope, filter)</code></td><td>Antall totalt, per severity, med kjent fiks og med KEV-oppføring.</td><td><code>CountFindings</code></td></tr>
         <tr><td><code>vulnerabilityCoverage(scope)</code></td><td>Workloads totalt, analysert, ventende, uten SBOM, med feil eller uavklart image.</td><td><code>ListWorkloads</code> + API-inventory</td></tr>
         <tr><td><code>vulnerability(identifier)</code></td><td>Advisory-detaljer for ID eller alias.</td><td><code>GetVulnerability</code></td></tr>
         <tr><td><code>vulnerabilitySuppressions(scope, filter, first, after)</code></td><td>Gjeldende vurderinger, også når funnet ikke lenger finnes.</td><td><code>ListSuppressions</code></td></tr>
@@ -394,15 +405,28 @@ nais vuln search &lt;cve-id&gt;</pre>
       </tbody>
     </table>
   </div>
-  <p class="note">På <code>Workload</code> legges <code>vulnerabilityFindings</code>, <code>vulnerabilitySummary</code> og <code>vulnerabilityCoverage</code>. De bruker samme implementasjon som root-feltene. Team-siden summerer over teamets workloads; den får ingen egen risikomodell.</p>
-  <details id="schema">
-    <summary>SDL-utdrag: operasjoner, filtre og resultattyper</summary>
-    <p>Forslag, ikke dagens schema. Connection- og payload-typer er forkortet. Eksisterende Workload, Slug, Time og Cursor gjenbrukes.</p>
+  <p class="note"><strong>Navneendring fra forrige utkast:</strong> opptellingen heter nå <code>vulnerabilityFindingSummary</code>. Dagens <code>Query.vulnerabilitySummary</code> har allerede en annen returtype og et annet filter. Det nye navnet lar oss legge til den nye kontrakten uten å bryte den gamle, og blir stående etter migreringen. Vi introduserer ikke et midlertidig V2-felt som klientene må bytte bort fra igjen.</p>
+  <p class="note">På <code>Workload</code> legges de samme tre lesingene med workloadens scope implisitt. <code>Application</code> og <code>Job</code> må implementere feltene også. Team-siden bruker eksisterende workload-lister og ett aggregat over teamets workloads; den får ingen egen risikomodell.</p>
+  <h3 id="scope">Scope har bare tre felter</h3>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Alle felter og regler i VulnerabilityScopeInput">
+    <table>
+      <thead><tr><th scope="col">Felt og type</th><th scope="col">Når det er angitt</th><th scope="col">Utelatt eller null</th></tr></thead>
+      <tbody>
+        <tr><td><code>team: Slug</code></td><td>Ett bestemt team, ikke en liste av team.</td><td>Tenant-bredt innenfor brukerens lesetilgang.</td></tr>
+        <tr><td><code>environment: String</code></td><td>Ett bestemt miljø.</td><td>Alle miljøer innenfor valgt team eller tenant.</td></tr>
+        <tr><td><code>workload: String</code></td><td>Ett workload-navn. Krever både <code>team</code> og <code>environment</code>.</td><td>Alle workloads innenfor resten av scope.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">Feltene kombineres med AND. Utelatt scope, null og <code>{}</code> betyr samme tenant-brede utvalg innenfor lesetilgangen. Tomme strenger og workload uten team/miljø avvises. Scope utvider aldri brukerens rettigheter. Vi støtter ikke vilkårlige utvalg av flere team før en brukerflyt trenger det.</p>
+  <details id="schema" open>
+    <summary>GraphQL SDL: hele den foreslåtte sårbarhetsflaten</summary>
+    <p>Dette er målkontrakten etter contract-fasen. Gamle v13s-felter vises i sammenligningen under, ikke her. <code>VulnerabilityPageInfo</code> er ny: dagens generelle <code>PageInfo</code> krever blant annet <code>totalCount</code> og passer ikke for den nye forward-only-pagineringen.</p>
     <pre class="code"><code>extend type Query {
   vulnerabilityFindings(scope: VulnerabilityScopeInput, filter: VulnerabilityFindingFilter,
     first: Int, after: Cursor): VulnerabilityFindingConnection!
-  vulnerabilitySummary(scope: VulnerabilityScopeInput,
-    filter: VulnerabilityFindingFilter): VulnerabilitySummary!
+  vulnerabilityFindingSummary(scope: VulnerabilityScopeInput,
+    filter: VulnerabilityFindingFilter): VulnerabilityFindingSummary!
   vulnerabilityCoverage(scope: VulnerabilityScopeInput): VulnerabilityCoverageCounts!
   vulnerability(identifier: String!): Vulnerability
   vulnerabilitySuppressions(scope: VulnerabilityScopeInput, filter: VulnerabilitySuppressionFilter,
@@ -412,12 +436,26 @@ nais vuln search &lt;cve-id&gt;</pre>
 extend interface Workload {
   vulnerabilityFindings(filter: VulnerabilityFindingFilter,
     first: Int, after: Cursor): VulnerabilityFindingConnection!
-  vulnerabilitySummary(filter: VulnerabilityFindingFilter): VulnerabilitySummary!
+  vulnerabilityFindingSummary(filter: VulnerabilityFindingFilter): VulnerabilityFindingSummary!
+  vulnerabilityCoverage: VulnerabilityCoverage!
+}
+
+extend type Application {
+  vulnerabilityFindings(filter: VulnerabilityFindingFilter,
+    first: Int, after: Cursor): VulnerabilityFindingConnection!
+  vulnerabilityFindingSummary(filter: VulnerabilityFindingFilter): VulnerabilityFindingSummary!
+  vulnerabilityCoverage: VulnerabilityCoverage!
+}
+
+extend type Job {
+  vulnerabilityFindings(filter: VulnerabilityFindingFilter,
+    first: Int, after: Cursor): VulnerabilityFindingConnection!
+  vulnerabilityFindingSummary(filter: VulnerabilityFindingFilter): VulnerabilityFindingSummary!
   vulnerabilityCoverage: VulnerabilityCoverage!
 }
 
 input VulnerabilityScopeInput {
-  teams: [Slug!]
+  team: Slug
   environment: String
   workload: String
 }
@@ -427,18 +465,68 @@ input VulnerabilityFindingFilter {
   package: String
   severities: [VulnerabilitySeverity!]
   onlyWithFix: Boolean = false
-  onlyKnownExploited: Boolean = false
+  onlyInCisaKev: Boolean = false
   suppressed: SuppressedFilter = EXCLUDE
 }
 
 enum SuppressedFilter { EXCLUDE INCLUDE ONLY }
 enum VulnerabilitySeverity { UNKNOWN LOW MEDIUM HIGH CRITICAL }
 
-type VulnerabilitySummary {
+type VulnerabilityFindingConnection {
+  edges: [VulnerabilityFindingEdge!]!
+  pageInfo: VulnerabilityPageInfo!
+}
+
+type VulnerabilityFindingEdge {
+  cursor: Cursor!
+  node: VulnerabilityFinding!
+}
+
+type VulnerabilityPageInfo {
+  hasNextPage: Boolean!
+  endCursor: Cursor
+}
+
+type VulnerabilityFinding {
+  workload: VulnerabilityWorkloadRef!
+  image: VulnerabilityImage!
+  vulnerabilityIdentifier: String!
+  purl: String!
+  packageKey: String!
+  installedVersion: String!
+  fixedVersion: String
+  severity: VulnerabilitySeverity!
+  severitySource: String!
+  dataSource: String!
+  epss: VulnerabilityEpss
+  inCisaKev: Boolean!
+  suppression: VulnerabilitySuppression
+}
+
+type VulnerabilityWorkloadRef {
+  team: Slug!
+  environment: String!
+  name: String!
+}
+
+type VulnerabilityImage {
+  name: String!
+  digest: String!
+}
+
+type VulnerabilityFindingSummary {
   totalFindings: Int!
   countsBySeverity: VulnerabilitySeverityCounts!
   fixableFindings: Int!
-  knownExploitedFindings: Int!
+  inCisaKevFindings: Int!
+}
+
+type VulnerabilitySeverityCounts {
+  unknown: Int!
+  low: Int!
+  medium: Int!
+  high: Int!
+  critical: Int!
 }
 
 type VulnerabilityCoverageCounts {
@@ -455,7 +543,6 @@ type VulnerabilityCoverage {
   imageName: String
   imageDigest: String
   scannedAt: Time
-  scannedDbVersion: Time
   error: String
 }
 
@@ -465,6 +552,57 @@ enum VulnerabilityCoverageStatus {
 
 enum VulnerabilitySuppressionState {
   NOT_AFFECTED FALSE_POSITIVE ACCEPTED_RISK
+}
+
+type Vulnerability {
+  identifier: String!
+  aliases: [String!]!
+  title: String!
+  description: String!
+  cvss: [VulnerabilityCvss!]!
+  references: [String!]!
+  epss: VulnerabilityEpss
+  inCisaKev: Boolean!
+}
+
+type VulnerabilityCvss {
+  source: String!
+  version: String!
+  score: Float
+  vector: String
+}
+
+type VulnerabilityEpss {
+  score: Float!
+  date: Date!
+}
+
+input VulnerabilitySuppressionFilter {
+  vulnerabilityIdentifier: String
+  imageName: String
+}
+
+type VulnerabilitySuppression {
+  team: Slug!
+  environment: String!
+  workload: String!
+  imageName: String!
+  packageKey: String!
+  vulnerabilityIdentifier: String!
+  state: VulnerabilitySuppressionState!
+  reason: String!
+  updatedBy: String!
+  updatedAt: Time!
+}
+
+type VulnerabilitySuppressionConnection {
+  edges: [VulnerabilitySuppressionEdge!]!
+  pageInfo: VulnerabilityPageInfo!
+}
+
+type VulnerabilitySuppressionEdge {
+  cursor: Cursor!
+  node: VulnerabilitySuppression!
 }
 
 input VulnerabilitySuppressionKeyInput {
@@ -491,6 +629,14 @@ input DeleteVulnerabilitySuppressionsInput {
   keys: [VulnerabilitySuppressionKeyInput!]!
 }
 
+type SetVulnerabilitySuppressionsPayload {
+  suppressions: [VulnerabilitySuppression!]!
+}
+
+type DeleteVulnerabilitySuppressionsPayload {
+  deleted: [VulnerabilitySuppression!]!
+}
+
 extend type Mutation {
   setVulnerabilitySuppressions(input: SetVulnerabilitySuppressionsInput!):
     SetVulnerabilitySuppressionsPayload!
@@ -498,19 +644,222 @@ extend type Mutation {
     DeleteVulnerabilitySuppressionsPayload!
 }</code></pre>
   </details>
-  <details>
+  <details open>
     <summary>Regler for telling, filtrering og vurderinger</summary>
     <ul>
       <li>Ett funn er sårbarhet × full purl × workload. Samme image brukt av to workloads gir to forekomster. Vi viser ikke antall unike CVE-er som om det var antall funn.</li>
-      <li>Scope er team, miljø og eventuelt workload-navn. Et workload-navn krever ett konkret team og miljø. En tom teamliste avvises; utelatt teamfilter betyr tenant-bred lesing.</li>
+      <li>Scope er ett valgfritt team, miljø og eventuelt workload-navn, som beskrevet i <a href="#scope">hele scope-kontrakten</a>. Workload-navn krever team og miljø; teamlister støttes ikke.</li>
       <li>Funnfiltre gjelder både liste og opptelling. Dekningen følger bare scope. EXCLUDE er default. INCLUDE brukes for å finne andre berørte workloads, også de som er vurdert.</li>
       <li>Nye funn- og vurderingslister har first/after og hasNextPage/endCursor. Ingen sideindeks, obligatorisk totalCount eller vilkårlig orderBy. Filtrering skjer før paginering.</li>
       <li>En vurdering gjelder team + miljø + workload + image-repository + versjonsløs pakkenøkkel + sårbarhets-ID. Den overlever versjonsoppdateringer, men arves ikke av andre workloads eller miljøer.</li>
       <li>API autoriserer alle mål i batchen og setter aktøren fra innlogget bruker. v0s lagrer bare gjeldende state, begrunnelse, aktør og oppdateringstidspunkt. Ingen ny aktivitetslogg.</li>
       <li>En mislykket rescan kan beholde forrige analyse med SCANNED og en feil. Nytt image får ikke funn fra forrige image som fallback. Ny workload som ennå ikke er observert i v0s vises som PENDING.</li>
-      <li>Backendfeil gir feil, ikke null funn. Ingen klientstyrt freshness-protokoll foreslås. EPSS-score og percentil bruker 0–1 i API-et og formateres som prosent i klienten.</li>
+      <li>Backendfeil gir feil, ikke null funn. Ingen klientstyrt freshness-protokoll foreslås. EPSS-score bruker 0–1 i API-et og formateres som prosent i klienten; <code>date</code> viser hvilken dags estimat det er.</li>
+      <li><code>vulnerability(identifier)</code> er null ved ukjent ID. <code>suppression</code>, EPSS og ukjente valgfrie metadata kan være null. Feil fra en utilgjengelig backend skal derimot gi en GraphQL-feil; null er ikke en alternativ «ingen funn»-respons.</li>
+      <li>Ved ugyldig scope eller tom batch avvises hele kallet. Set returnerer de lagrede vurderingene; delete returnerer bare de vurderingene som faktisk fantes. En gjentatt delete gir derfor <code>deleted: []</code>.</li>
+      <li>En workloaddetalj får identiteten sin fra <code>VulnerabilityWorkloadRef</code>, ikke en gammel v13s-image-ID. API kobler denne til sitt eget inventory. Navn og scope i mockens CLI-JSON er ikke et nytt GraphQL-endepunkt.</li>
+      <li>CVSS hentes fra <code>vulnerability(identifier).cvss</code> når detaljene åpnes, ikke som en ekstra score på hvert funn. Hvert element har én kilde og én eksplisitt versjon, for eksempel <code>3.1</code> eller <code>4.0</code>. Vis versjon og kilde sammen med scoren; ikke velg maksimum på tvers av versjoner. Manglende score/vektor er null, og en tom liste betyr ingen CVSS-data. En reell score på 0 er ikke «ukjent».</li>
+      <li><code>inCisaKev</code> betyr registrert i CISAs <em>Known Exploited Vulnerabilities</em>-katalog, ikke bare «exploitable». <code>false</code> betyr ingen registrert oppføring i datagrunnlaget, ikke at sårbarheten aldri er utnyttet. Oppføringen bruker CVE-ID som nøkkel; klienten kan lenke til katalogen med eksisterende ID. Det trengs ikke eget nummer, URL-felt eller KEV-objekt.</li>
+      <li>Boolen forutsetter et tilgjengelig KEV-datagrunnlag. Hvis vi ikke kan fastslå katalogmedlemskap fordi datagrunnlaget mangler, skal feltet feile med GraphQL-feil, ikke returnere <code>false</code>. En backend som bare gir «ingen oppføring» uten å skille fra manglende datagrunnlag, må få dette skillet før kontrakten kan oppfylles.</li>
     </ul>
   </details>
+</section>
+
+<section id="field-review">
+  <p class="eyebrow">Feltgjennomgang · foreslått minimum, ikke implementert backend</p>
+  <h2>Et backendfelt er ikke i seg selv en grunn til å eksponere det</h2>
+  <p class="intro">Vi beholder felter som en konkret lese- eller vurderingsflyt trenger. Vi kutter metadata uten en slik bruk, men flytter ikke normalisering, paginering eller telling over på klientene bare for å få færre feltnavn.</p>
+  <h3>Disse feltene beholder vi</h3>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Begrunnelse for alle beholdte felter i minimumskontrakten">
+    <table>
+      <thead><tr><th scope="col">Felter</th><th scope="col">Hvorfor de trengs</th></tr></thead>
+      <tbody>
+        <tr><td>Argumenter: <code>scope</code>, <code>filter</code>, <code>first</code>, <code>after</code>, <code>identifier</code>, <code>input</code></td><td>Avgrense lesing, begrense og fortsette en side, slå opp én advisory og sende en skrivebatch. Samme scope/filter for liste og antall; dekning har bare scope.</td></tr>
+        <tr><td>Scope: <code>team</code>, <code>environment</code>, <code>workload</code></td><td>Tenantoversikt, teamside og én workload. Ingen vilkårlig teamliste. Alle kombinasjonsreglene står over SDL-en.</td></tr>
+        <tr><td>Funnfilter: <code>vulnerabilityIdentifier</code>, <code>package</code>, <code>severities</code>, <code>onlyWithFix</code>, <code>onlyInCisaKev</code>, <code>suppressed</code></td><td>Berørte workloads, én pakke, alvorlighetsgrader, kjent fiks, katalogmedlemskap og vurderte funn. <code>package</code> matcher versjonsløs pakkenøkkel eller full purl. Ingen EPSS-grenser, fasetter eller vilkårlig sortering.</td></tr>
+        <tr><td>Funn: <code>workload { team environment name }</code>, <code>image { name digest }</code>, <code>vulnerabilityIdentifier</code></td><td>Hvilken workload, hvilket faktisk analysert image og hvilken sårbarhet funnet gjelder. Digest hindrer at resultater forveksles med et nytt image med samme tag.</td></tr>
+        <tr><td>Funn: <code>purl</code>, <code>packageKey</code>, <code>installedVersion</code>, <code>fixedVersion</code></td><td>Eksakt pakke, varig vurderingsnøkkel og versjonene brukeren skal sammenligne. Klienten skal ikke selv implementere purl-parsing eller normalisering. <code>fixedVersion: null</code> betyr ingen kjent fiks, ikke at fiks er umulig.</td></tr>
+        <tr><td>Funn: <code>severity</code>, <code>severitySource</code>, <code>dataSource</code>, <code>epss</code>, <code>inCisaKev</code>, <code>suppression</code></td><td>Visning og forklaring av treffet. Kilden som setter severity kan være en annen enn advisory-kilden som ga treffet; derfor beholdes begge kildefeltene. EPSS og KEV vises i listen uten ett detaljoppslag per rad. Vurderingen forklarer hvorfor funnet er skjult.</td></tr>
+        <tr><td>Opptelling: <code>totalFindings</code>, <code>countsBySeverity { unknown low medium high critical }</code>, <code>fixableFindings</code>, <code>inCisaKevFindings</code></td><td>Kort og filtre skal telle hele det filtrerte utvalget, ikke siden som er lastet. Ingen distinkte CVE-/image-tall eller egen risikoscore.</td></tr>
+        <tr><td>Dekning: <code>totalWorkloads</code>, <code>scanned</code>, <code>pending</code>, <code>noSbom</code>, <code>failed</code>, <code>unresolvedImage</code></td><td>Skille kjente resultater fra manglende analyse på tvers av alle workloads, også de uten funn.</td></tr>
+        <tr><td>Workload-dekning: <code>status</code>, <code>imageName</code>, <code>imageDigest</code>, <code>scannedAt</code>, <code>error</code></td><td>Forklare hva som er analysert, når det skjedde og om et senere forsøk feilet. Image-feltene kan være null før imaget er kjent. Databaseversjon hører til driftsdiagnostikk.</td></tr>
+        <tr><td>Advisory: <code>identifier</code>, <code>aliases</code>, <code>title</code>, <code>description</code>, <code>references</code>, <code>cvss</code>, <code>epss</code>, <code>inCisaKev</code></td><td>Detaljer og kildelenker for én sårbarhet, også slått opp via alias. EPSS og KEV må også kunne leses uten funn i eget scope. Tittel og beskrivelse hører hjemme her, ikke gjentatt på hvert funn.</td></tr>
+        <tr><td>CVSS: <code>source</code>, <code>version</code>, <code>score</code>, <code>vector</code>. EPSS: <code>score</code>, <code>date</code></td><td>CVSS beskriver teknisk alvorlighet; kilde, versjon og vektor gjør tallet etterprøvbart. EPSS estimerer utnyttelse i praksis de neste 30 dagene, ikke risiko for vår workload. Datoen viser hvilket estimat vi viser. Signalene kombineres ikke til en ny score.</td></tr>
+        <tr><td>Vurderingsfilter: <code>vulnerabilityIdentifier</code>, <code>imageName</code></td><td>Finne lagrede vurderinger for en sårbarhet eller et bestemt image-repository, også etter at funnet er borte.</td></tr>
+        <tr><td>Vurdering/nøkkel: <code>team</code>, <code>environment</code>, <code>workload</code>, <code>imageName</code>, <code>packageKey</code>, <code>vulnerabilityIdentifier</code></td><td>Alle leddene avgrenser vurderingen. Image-repository og pakkenøkkel gjør den varig over versjonsoppdateringer, men uten spredning til andre workloads. Team sendes én gang per skrivebatch; resten finnes i hver nøkkel.</td></tr>
+        <tr><td>Vurdering: <code>state</code>, <code>reason</code>, <code>updatedBy</code>, <code>updatedAt</code>. Set/delete: <code>items</code>, <code>key</code>, <code>keys</code>, <code>suppressions</code>, <code>deleted</code></td><td>Beslutning, begrunnelse og hvem som sist endret den. Eksplisitte nøkler for atomisk batch; svaret bekrefter faktisk lagret/fjernet tilstand. Aktør og tid settes av serveren, ikke klienten. Ingen historikk.</td></tr>
+        <tr><td>Connections: <code>edges</code>, <code>node</code>, <code>cursor</code>, <code>pageInfo { hasNextPage endCursor }</code></td><td>Samme forward-only-mønster for funn og vurderinger. Klienten kan fortsette uten sideindeks eller obligatorisk totalCount. Ingen ny listevariant bare for å spare wrappers.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Dette tar vi ut av forrige utkast</h3>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Felter fjernet etter API-gjennomgangen">
+    <table>
+      <thead><tr><th scope="col">Tas ut</th><th scope="col">Erstatning eller begrunnelse</th></tr></thead>
+      <tbody>
+        <tr><td><code>teams: [Slug!]</code></td><td><code>team: Slug</code>. Flytene trenger ett team eller tenantoversikt, ikke et vilkårlig teamutvalg.</td></tr>
+        <tr><td><code>kev { dateAdded dueDate knownRansomwareCampaign }</code></td><td><code>inCisaKev: Boolean!</code>. CVE-ID er nok til å finne oppføringen i CISA-katalogen. Ingen egen KEV-ID. CISAs frist er ikke automatisk vår frist.</td></tr>
+        <tr><td><code>onlyKnownExploited</code>, <code>knownExploitedFindings</code></td><td><code>onlyInCisaKev</code>, <code>inCisaKevFindings</code>. Filter, antall og bool bruker samme presise katalogbegrep.</td></tr>
+        <tr><td><code>v3Vector</code>, <code>v3Score</code>, <code>v40Vector</code>, <code>v40Score</code></td><td>Én CVSS-liste med eksplisitt <code>version</code>, for eksempel 3.1 eller 4.0, og kilde, score og vektor per element. Dette er CVSS-versjoner, ikke API-versjoner.</td></tr>
+        <tr><td><code>VulnerabilityFinding.cvssScore</code></td><td>CVSS finnes bare på detaljoppslaget. Vi viderefører verken «høyeste v3-score» som en versjonsløs score eller 0 som verdi for manglende data.</td></tr>
+        <tr><td><code>VulnerabilityFinding.title</code>, <code>VulnerabilityFinding.status</code></td><td>Tittel finnes på advisory. Listen trenger installert/kjent fikset versjon, ikke Trivys rå statusstreng. End-of-life og utvidet fiksdiagnostikk er ikke med i minimumsflaten.</td></tr>
+        <tr><td><code>Vulnerability.severities</code>, <code>publishedAt</code>, <code>modifiedAt</code></td><td>Funnets severity og kilde beholdes; CVSS beholder sine kilder. Ingen skjerm trenger en ekstra matrise med severity per kilde eller advisory-tidslinje nå.</td></tr>
+        <tr><td><code>VulnerabilityEpss.percentile</code>, <code>VulnerabilityCoverage.scannedDbVersion</code></td><td>Ingen brukerflyt trenger percentilrangeringen eller skannerdatabasens versjon. Vi beholder EPSS-estimatets dato og analysens tidspunkt.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note"><strong>Oversettelse, ikke 1:1-speiling:</strong> dagens gRPC-felter kan beholdes internt. API mapper ett team til backendens teamliste, og KEV-objekt til katalogmedlemskap først når datagrunnlaget er kjent. CVSS-oppføringer må få korrekt versjon fra vektor/kildemetadata; ikke gjett 3.1 fra et generelt v3-felt. Backendens 0-verdi alene kan ikke skille manglende score fra reell null. Bevar tilstedeværelse i datakjeden før en score eksponeres som kjent. Disse mappingene må testes før flaten åpnes.</p>
+</section>
+
+<section id="api-examples">
+  <p class="eyebrow">Kall klientene skal bruke · forslag, ikke kjørbare kall mot dagens API</p>
+  <h2>Disse operasjonene dekker skjermbildene og CLI-et</h2>
+  <h3 id="query-workload">Funn, antall og dekning i samme request</h3>
+  <p class="intro">Console bruker dette for én workload; <code>nais app vuln list bestilling</code> bruker samme scope. På team-siden utelates <code>workload</code>. Liste og antall får nøyaktig samme filter, mens dekningen følger scope alene. Workload-tabellen bruker i tillegg de nye feltene på eksisterende workload-objekter, med batchede resolvere.</p>
+  <pre class="code" data-graphql><code>query WorkloadVulnerabilities(
+  $scope: VulnerabilityScopeInput!
+  $filter: VulnerabilityFindingFilter
+  $after: Cursor
+) {
+  vulnerabilityCoverage(scope: $scope) {
+    totalWorkloads scanned pending noSbom failed unresolvedImage
+  }
+  vulnerabilityFindingSummary(scope: $scope, filter: $filter) {
+    totalFindings
+    countsBySeverity { critical high medium low unknown }
+    fixableFindings
+    inCisaKevFindings
+  }
+  vulnerabilityFindings(scope: $scope, filter: $filter, first: 100, after: $after) {
+    edges {
+      cursor
+      node {
+        workload { team environment name }
+        image { name digest }
+        vulnerabilityIdentifier purl packageKey
+        installedVersion fixedVersion severity severitySource dataSource
+        epss { score date }
+        inCisaKev
+        suppression { state reason updatedBy updatedAt }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}</code></pre>
+  <pre class="code" data-variables-for="WorkloadVulnerabilities"><code>{
+  "scope": { "team": "eksempelteam", "environment": "prod", "workload": "bestilling" },
+  "filter": { "suppressed": "EXCLUDE" },
+  "after": null
+}</code></pre>
+  <p class="caption">CLI henter videre til <code>hasNextPage</code> er false. Console kan vise én side av gangen. Opptellingen gjelder hele utvalget i begge tilfeller.</p>
+
+  <h3 id="query-advisory">Advisory og andre berørte workloads</h3>
+  <p class="intro">Brukes av CVE-detaljer, <code>nais vuln search</code> og vurderingsdialogen. INCLUDE er viktig: en tidligere vurdert workload skal også kunne velges. Pakkevalg gjøres fra funnene før klienten sender en entydig vurderingsnøkkel.</p>
+  <pre class="code" data-graphql><code>query AffectedWorkloads($team: Slug!, $identifier: String!, $after: Cursor) {
+  vulnerability(identifier: $identifier) {
+    identifier aliases title description references
+    cvss { source version score vector }
+    epss { score date }
+    inCisaKev
+  }
+  vulnerabilityFindings(
+    scope: { team: $team }
+    filter: { vulnerabilityIdentifier: $identifier, suppressed: INCLUDE }
+    first: 100
+    after: $after
+  ) {
+    edges {
+      node {
+        workload { team environment name }
+        image { name digest }
+        packageKey purl
+        suppression { state reason }
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}</code></pre>
+  <pre class="code" data-variables-for="AffectedWorkloads"><code>{
+  "team": "eksempelteam",
+  "identifier": "CVE-20XX-0001",
+  "after": null
+}</code></pre>
+
+  <h3 id="mutation-assessment">Én batch, bare for de valgte workloadene</h3>
+  <p class="intro">To valgte workloads betyr to eksplisitte nøkler, ikke en image-global vurdering. Aktør og oppdateringstid kommer fra API og v0s, ikke fra klienten.</p>
+  <pre class="code" data-graphql><code>mutation AssessWorkloads($input: SetVulnerabilitySuppressionsInput!) {
+  setVulnerabilitySuppressions(input: $input) {
+    suppressions {
+      team environment workload imageName packageKey vulnerabilityIdentifier
+      state reason updatedBy updatedAt
+    }
+  }
+}</code></pre>
+  <pre class="code" data-variables-for="AssessWorkloads"><code>{
+  "input": {
+    "team": "eksempelteam",
+    "items": [
+      {
+        "key": {
+          "environment": "prod",
+          "workload": "bestilling",
+          "imageName": "registry.example/bestilling",
+          "packageKey": "pkg:maven/io.netty/netty-codec-http2",
+          "vulnerabilityIdentifier": "CVE-20XX-0001"
+        },
+        "state": "NOT_AFFECTED",
+        "reason": "Den berørte kodebanen brukes ikke."
+      },
+      {
+        "key": {
+          "environment": "prod",
+          "workload": "bestilling-worker",
+          "imageName": "registry.example/bestilling",
+          "packageKey": "pkg:maven/io.netty/netty-codec-http2",
+          "vulnerabilityIdentifier": "CVE-20XX-0001"
+        },
+        "state": "NOT_AFFECTED",
+        "reason": "Den berørte kodebanen brukes ikke."
+      }
+    ]
+  }
+}</code></pre>
+
+  <h3 id="query-assessments">Finn og fjern en vurdering uten et aktivt funn</h3>
+  <p class="intro">Vurderingsfanen og <code>unsuppress</code> leser lagrede vurderinger, ikke bare dagens funn. Nøklene i svaret kan brukes direkte i delete-inputen.</p>
+  <pre class="code" data-graphql><code>  query StoredAssessments($scope: VulnerabilityScopeInput!, $after: Cursor) {
+  vulnerabilitySuppressions(scope: $scope, first: 100, after: $after) {
+    edges {
+      node {
+        team environment workload imageName packageKey vulnerabilityIdentifier
+        state reason updatedBy updatedAt
+      }
+    }
+    pageInfo { hasNextPage endCursor }
+  }
+}</code></pre>
+  <pre class="code" data-variables-for="StoredAssessments"><code>{
+  "scope": { "team": "eksempelteam", "environment": "prod", "workload": "bestilling" },
+  "after": null
+}</code></pre>
+  <pre class="code" data-graphql><code>mutation RemoveAssessments($input: DeleteVulnerabilitySuppressionsInput!) {
+  deleteVulnerabilitySuppressions(input: $input) {
+    deleted { environment workload imageName packageKey vulnerabilityIdentifier }
+  }
+}</code></pre>
+  <pre class="code" data-variables-for="RemoveAssessments"><code>{
+  "input": {
+    "team": "eksempelteam",
+    "keys": [{
+      "environment": "prod",
+      "workload": "bestilling",
+      "imageName": "registry.example/bestilling",
+      "packageKey": "pkg:maven/io.netty/netty-codec-http2",
+      "vulnerabilityIdentifier": "CVE-20XX-0001"
+    }]
+  }
+}</code></pre>
+  <p class="note"><strong>Til kontraktgjennomgangen:</strong> kommenter særlig på feltnavn og nullbarhet i SDL-en, om skjermbildene mangler opplysninger, og feiloppførselen. Nye fasetter, vilkårlig sortering, historikk og egen CVE-katalog er ikke del av denne flaten.</p>
 </section>
 
 <section id="difference">
@@ -521,6 +870,7 @@ extend type Mutation {
       <tbody>
         <tr><td><code>ContainerImage.vulnerabilities</code> og image-summary</td><td>Funn og opptelling på Workload. Vurderingen tilhører workloaden, ikke alle som deler image.</td></tr>
         <tr><td>Ulike summary-typer på image, team og tenant</td><td>Én opptellingsmodell. Dekning er en egen lesing.</td></tr>
+        <tr><td><code>Query.vulnerabilitySummary(filter): TenantVulnerabilitySummary!</code></td><td><code>vulnerabilityFindingSummary(scope, filter): VulnerabilityFindingSummary!</code>. Nytt navn gjør expand-fasen additiv; det gamle fjernes først etter at konsumentene har flyttet.</td></tr>
         <tr><td><code>Team/Query.vulnerabilitySummaries</code></td><td>Eksisterende workload-lister med opptelling og dekning per workload.</td></tr>
         <tr><td><code>hasSBOM</code>, SBOM-prosent og pipeline-tidspunkt</td><td>Status, analysert image/digest, analysetidspunkt og feil.</td></tr>
         <tr><td><code>cve</code>, <code>CVE.workloads</code> og egen CVE-katalog</td><td>ID-oppslag + felles funnliste. Katalog, spesialsortering og distinkte impact-tall fjernes.</td></tr>
@@ -532,6 +882,102 @@ extend type Mutation {
     </table>
   </div>
   <p class="caption">Generelle plattform-issues og annen aktivitetslogg berøres ikke. Nytt komponent-/inventarsøk og label-filtrering inngår ikke i første leveranse.</p>
+</section>
+
+<section id="migration">
+  <p class="eyebrow">Utrullingsforslag · porter mellom fasene, ikke datoer vi har lovet</p>
+  <h2>Utvid API-et først. Flytt lesing. Bytt skriver én gang.</h2>
+  <p class="intro">Gamle og nye lesinger kan eksistere samtidig. Gamle og nye vurderingslagre skal ikke være skrivbare samtidig. Vi bruker derfor expand–migrate–contract med en kort, planlagt skrivestans ved datamigreringen. Sletting av gammel infrastruktur er en egen, siste operasjon.</p>
+  <figure>
+    <div class="diagram-scroll" tabindex="0" role="region" aria-label="Migreringsløp">
+    <svg class="diagram wide" viewBox="0 0 920 174" role="img" aria-label="Først kjører gammelt og nytt lese-API parallelt. Deretter fryses gamle vurderingswrites og data importeres. Så er v0s eneste skriver før gamle konsumenter og v13s fjernes.">
+      <g fill="var(--paper)" stroke="var(--line)">
+        <rect x="10" y="24" width="270" height="124" rx="8"/>
+        <rect x="325" y="24" width="270" height="124" rx="8" stroke-dasharray="6 4"/>
+        <rect x="640" y="24" width="270" height="124" rx="8"/>
+      </g>
+      <g fill="var(--ink)" font-family="system-ui, sans-serif" font-size="15" text-anchor="middle">
+        <text x="145" y="53" font-weight="700">1 · Expand + lesepilot</text>
+        <text x="145" y="81">Gammelt API → v13s</text>
+        <text x="145" y="105">Nytt API → v0s</text>
+        <text x="145" y="130">Bare gammel vurderingsskriver</text>
+        <text x="460" y="53" font-weight="700">2 · Skrive-cutover</text>
+        <text x="460" y="81">Frys → eksporter → importer</text>
+        <text x="460" y="105">Kontroller → åpne nye writes</text>
+        <text x="460" y="130">Gamle writes forblir stengt</text>
+        <text x="775" y="53" font-weight="700">3 · Contract</text>
+        <text x="775" y="81">Alle konsumenter → nytt API</text>
+        <text x="775" y="105">v0s er eneste vurderingslager</text>
+        <text x="775" y="130">Fjern gammelt etter verifisering</text>
+      </g>
+      <g stroke="var(--dim)" stroke-width="2" fill="none">
+        <path d="M288 86 H315 M307 80 L315 86 L307 92"/>
+        <path d="M603 86 H630 M622 80 L630 86 L622 92"/>
+      </g>
+    </svg>
+    </div>
+    <figcaption class="caption">Bytt per tenant/miljø der data og utrulling er atskilt. Ikke gi to ulike skjermer hver sin skriveautoritet for de samme vurderingene.</figcaption>
+  </figure>
+
+  <h3 id="migration-gates">Hver fase har en eier og en stoppregel</h3>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Faser og godkjenningsporter for migreringen">
+    <table class="work-table">
+      <thead><tr><th scope="col">Fase</th><th scope="col">Leveranse og ansvar</th><th scope="col">Port før neste fase</th></tr></thead>
+      <tbody>
+        <tr><td><strong>0 · Avtal kontrakt og datakart</strong></td><td>API, Console, CLI og v13s-eiere gjennomgår SDL, skjermkartet og vurderingsmappingen sammen. Registrer alle gamle GraphQL-operasjoner, automatiserte klienter og eventuelle direkte Dependency-Track-writes. Avtal hvem som kan stoppe utrullingen.</td><td>Én ansvarlig for cutover, godkjent mapping og en testet gjenopprettingsprosedyre. Nytt schema er validert sammen med det gamle, inkludert alle Workload-implementasjoner.</td></tr>
+        <tr><td><strong>1 · Expand</strong></td><td>API legger til målkontrakten additivt. Eksisterende felter beholder signatur, typer og v13s-kilde. Nye felter bruker bare v0s. Nye mutations finnes, men er sperret for ordinære klientwrites frem til cutover. Klientenes nye leseflyt ligger bak en tilbakeførbar skjerm-/tenantbryter.</td><td>API kan rulles ut uten klientendring. Autorisasjon, feil, paginering og batching er testet. Inventory-API-et som v0s leser, fungerer også når v0s er nede; ingen avhengighetssirkel.</td></tr>
+        <tr><td><strong>2 · Flytt lesing i pilot</strong></td><td>Console flytter én workloadvisning først, deretter teamaggregat og advisory. CLI bygges mot samme schema og prøves på de samme workloadene. Nye vurderingsflater er tydelig read-only mens gammel kilde fortsatt eier writes. En prøveimport kan brukes i et isolert testmål, ikke som løpende dobbeltskriving.</td><td>Reelle app- og job-eksempler virker i begge klienter. Coverage og telling er forståelige; avvik mot v13s er forklart. Ingen blind forventning om like funntall fra to forskjellige skannere/databaser.</td></tr>
+        <tr><td><strong>3 · Flytt vurderinger og skriver</strong></td><td>V13s-eiere og API/v0s-eiere gjennomfører skrivefrys, endelig eksport, kontrollert import og etterkontroll etter sjekklisten under. Ny Console og ny CLI-versjon er tilgjengelige før nye writes åpnes.</td><td>Alle kildeobjekter er gjort rede for, test av rettigheter og les-etter-skriv er bestått, og tvetydige vurderinger er avklart. Gamle mutations og andre gamle skriveveier forblir sperret.</td></tr>
+        <tr><td><strong>4 · Flytt resten av konsumentene</strong></td><td>Console slår på nye flater i de resterende tenantene/miljøene etter samme porter. CLI varsler om nye kommandoer og endret JSON. API merker gammel flate deprecated og måler bruk per felt/operasjon uten å logge vurderingstekst.</td><td>Alle støttede klientversjoner bruker ny flate. Eierne har signert av skjermkartet. Gamle felt har null reell bruk gjennom et på forhånd avtalt observasjonsvindu, også fra jobbkjøringer og sjeldne klienter.</td></tr>
+        <tr><td><strong>5 · Contract</strong></td><td>API fjerner gammel GraphQL-flate, v13s-klient, sårbarhetschecker og tilhørende lagring. Console/CLI sletter gamle queryer, generert kode, ruter og brytere. V13s/Dependency-Track-ressurser avvikles først som en separat godkjent operasjon.</td><td>Schema- og klientbygg passerer uten gamle typer. Ingen gamle kall eller avhengigheter observeres. Gjeldende vurderinger kan gjenopprettes i v0s før gammel database og tilganger slettes.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note"><strong>Ingen skjult fallback:</strong> nytt API skal ikke bytte til v13s hvis v0s feiler, og gamle felter skal ikke plutselig endre datakilde. Ellers blir verken pilot, telling eller rollback etterprøvbar.</p>
+
+  <h3 id="migration-screens">Skjermbildene flyttes én konkret flyt om gangen</h3>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Migreringskart for Console og CLI">
+    <table class="work-table">
+      <thead><tr><th scope="col">Dagens flate</th><th scope="col">Ny lesing / handling</th><th scope="col">Ferdig når</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1 · App-/job-detalj: sårbarheter</strong><br>Image-baserte funn og summary</td><td>Workloadens <code>vulnerabilityFindings</code>, <code>vulnerabilityFindingSummary</code> og <code>vulnerabilityCoverage</code>. CLI: <code>app|job vuln list</code>.</td><td>SCANNED med null funn skilles fra PENDING, NO_SBOM, FAILED og uavklart image. To workloads med samme image kan ha ulike vurderinger.</td></tr>
+        <tr><td><strong>2 · Team: workloadliste og funnliste</strong><br>Team-/image-summary og risikokolonner</td><td>Eksisterende workloadliste + batchede workload-felter. Root-queryene får teamscope for teamets kort, funnliste og filtre. CLI: <code>nais vuln list</code>.</td><td>Aggregatet stemmer med workloadene, ikke med antall unike images/CVE-er. Filtre gjelder likt for alle sider og antall. Ingen N+1-kall eller summering bare av siden som er lastet.</td></tr>
+        <tr><td><strong>3 · CVE-detalj og «berørte workloads»</strong><br><code>cve</code>, <code>CVE.workloads</code></td><td><code>vulnerability(identifier)</code> + filtrert <code>vulnerabilityFindings</code>, inkludert vurderte funn der det trengs. CLI: <code>nais vuln search</code>.</td><td>ID/alias, flere pakker, flere sider og eksplisitt valg av berørte workloads virker. Global CVE-katalog og tidligere impact-sortering portereres ikke.</td></tr>
+        <tr><td><strong>4 · Vurderingsdialog og vurderingsfane</strong><br>Image-global oppdatering, eventuelt én write per image</td><td>Liste over gjeldende vurderinger + atomisk set/delete-batch med workloadnøkler. CLI: <code>app|job vuln suppress|unsuppress</code>.</td><td>Å velge to workloads skriver akkurat to nøkler. Feil rettighet på én gir ingen writes. Fjerning virker også når funnet har forsvunnet; pakkevalg og avbryt uten TTY er håndtert.</td></tr>
+        <tr><td><strong>5 · Historikk, MTTR, score, prioriteringssider og sårbarhetsissues</strong></td><td>Fjernes, ikke erstattes av nye API-varianter. Manglende SBOM vises under dekning. Generelle plattform-issues beholdes.</td><td>Ruter, menyvalg, grafer, eksportfunksjoner, query-fragmenter og gamle sårbarhetsaktiviteter er fjernet. Gamle bokmerker får en bevisst overgang til relevant ny side eller «fjernet».</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 id="migration-assessments">Vurderingsdata krever en egen cutover, ikke bare et nytt endepunkt</h3>
+  <ol>
+    <li><strong>Prøvekjør mapping før skrivefrys.</strong> Eksporter gjeldende vurderinger fra gammel kilde, ikke bare funnene som vises akkurat nå. Map team, image-repository, normalisert pakkenøkkel og CVE/alias til eksplisitte nåværende environment/workload-nøkler. Ingen matching på bare et tag eller et gammelt image-ID. Delte images krever et godkjent valg av hvilke workloads som arver den gamle vurderingen ved import.</li>
+    <li><strong>Lag en avstemmingsrapport, ikke stille tap.</strong> Tell kildevurderinger, målworkload-kopier, dubletter, manglende match og konflikter. Én kildevurdering kan gi flere målposter, så kildetall og måltall trenger ikke være like. NOT_AFFECTED og FALSE_POSITIVE kan mappes direkte. Andre gamle statuser må avklares; IN_TRIAGE, RESOLVED og NOT_SET blir ikke ACCEPTED_RISK automatisk. Ugyldig eller manglende begrunnelse må også avklares.</li>
+    <li><strong>Steng alle gamle skriveveier og la pågående writes bli ferdige.</strong> Det omfatter gammel GraphQL-mutation, automatisering og eventuelle direkte Dependency-Track-writes. Ta deretter den endelige eksporten med et definert cutover-tidspunkt. Oppbevar eksport og rapport tilgangsstyrt, ikke i Git eller klientlogger. Kontroller at ingen skriver mellom eksport og skifte av autoritet.</li>
+    <li><strong>Importer idempotent med stopp ved konflikt.</strong> En kontrollert engangsjobb bevarer gjeldende status og begrunnelse, med avtalt håndtering av opprinnelig aktør og tidspunkt. Ordinær <code>SetSuppressions</code> setter oppdateringstid ved import og én aktør per batch; den er ikke i seg selv en metadata-tro importmekanisme. Eventuell spesialimport skal ikke bli et offentlig API for å forfalske aktør/tid. Ingen automatisk overskriving av avvikende eksisterende v0s-vurderinger.</li>
+    <li><strong>Avstem og prøv hele flyten før åpning.</strong> Alle kildevurderinger må være importert, eksplisitt forkastet med godkjent grunn, eller manuelt avklart. Bekreft vurderinger uten aktive funn, delte images og gjentatt import uten endring. Test restore av gjeldende v0s-data i et isolert mål, og deretter autorisasjon, opprett/endring/fjerning og les-etter-skriv med klientene.</li>
+    <li><strong>Åpne bare nye writes.</strong> v0s er nå eneste eier. Gamle mutation-kall avvises tydelig med beskjed om klientoppgradering; de rutes ikke til et gammelt lager. Gamle image-vurderinger skal ikke spre seg til workloads som opprettes etter cutover.</li>
+  </ol>
+  <p class="note"><strong>To ulike migreringer:</strong> v0s-migreringen <code>0002_workload_suppressions.sql</code> flytter allerede eksisterende v0s-vurderinger til workload-scope og beholder originalene. Den importerer ikke vurderinger fra v13s/Dependency-Track. Eksport, mapping og engangsimport mellom systemene er eget arbeid. Ingen av delene krever sletting eller reinitialisering av databasen.</p>
+  <p class="caption">Eksporten er et midlertidig migrerings- og gjenopprettingsgrunnlag, ikke en ny historikkfunksjon. Etter avtalt gjenopprettingsvindu håndteres den etter avtalt lagringspraksis. Produktet viser fortsatt bare gjeldende vurderinger.</p>
+
+  <h3 id="migration-rollback">Leseflyt kan rulles tilbake. Skriveautoritet kan ikke bare slås tilbake.</h3>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Tilbakeføring før og etter skrive-cutover">
+    <table class="work-table">
+      <thead><tr><th scope="col">Tidspunkt</th><th scope="col">Trygg reaksjon</th><th scope="col">Ikke gjør dette</th></tr></thead>
+      <tbody>
+        <tr><td>Før skrive-cutover</td><td>Skru av ny leseflyt og gå tilbake til gammel Console/API-lesing. Gammel kilde eier fortsatt writes. Feilsøk v0s uten å endre den autoriteten.</td><td>Ikke åpne nye writes bare fordi de nye lesingene virker.</td></tr>
+        <tr><td>Under skrivefrys/import</td><td>Behold begge skriveveier stengt mens feil undersøkes. Avbryt import og gjenåpne gammel skriver bare når det er bekreftet at ingen ordinære nye writes er akseptert og eventuell delimport er isolert eller kontrollert tilbakeført.</td><td>Ikke bland en delvis import med gjenåpnede skriveruter eller start importen på nytt uten avstemming.</td></tr>
+        <tr><td>Etter første nye write</td><td>Behold v0s som autoritet. Rull tilbake til en v0s-kompatibel klient/API-versjon, eller vis vedlikehold/read-only mens feilen rettes. Bevar alle nye og slettede vurderinger i gjeldende v0s-tilstand.</td><td>Ikke slå på v13s-writes eller restore en gammel eksport over nye data. Ulike vurderinger per workload lar seg ikke nødvendigvis representere tapsfritt i en gammel image-global modell.</td></tr>
+        <tr><td>Etter contract</td><td>Bruk verifisert restore og fremoverretting innen den nye kontrakten. Infrastrukturavvikling krever egen godkjenning, datakontroll og plan for gjenoppretting.</td><td>Ikke anta at gammel applikasjonskode kan kjøre mot et nytt databaseschema. En kode-rollback er ikke automatisk en schema-downgrade.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 id="migration-contract">Gammelt fjernes først når vi har bevis for at det er ubrukt</h3>
+  <p class="intro">Avtal observasjonsvindu og minimum støttet CLI-versjon før første pilot. Contract-porten er null gamle feltkall gjennom hele vinduet, godkjent skjermkart, ingen gamle skriveveier og en verifisert restore av gjeldende vurderinger — ikke bare at den nye siden ser riktig ut.</p>
+  <p>Fjern deretter gamle schemafelter/-typer, resolvere, klientbibliotek, genererte queryer og gamle UI-ruter. Stans sårbarhetscheckeren før dens issue-rader slettes; fjern også sårbarhetsspesifikke historikk-/aktivitetsdata og publisering av slike hendelser. Annen issue- og aktivitetsfunksjonalitet beholdes. Til slutt kan v13s/Dependency-Track-utrullinger, konfigurasjon og tilganger avvikles. Sletting av database, lagring og backup er en separat destruktiv beslutning etter datakontroll, ikke en bieffekt av å bytte Helm-release.</p>
+  <p class="note"><strong>Det vi må lande før start:</strong> API-/klienteierne godkjenner målkontrakten; v13s-/v0s-eierne godkjenner mapping og importmekanisme; utrullingsansvarlig godkjenner skrivefrys, observasjonsvindu og gjenopprettingsport. Ingen av disse aktivitetene er utført av denne HTML-mocken.</p>
 </section>
 
 <section id="work">
@@ -546,14 +992,7 @@ extend type Mutation {
       </tbody>
     </table>
   </div>
-  <h3>Foreslått rekkefølge</h3>
-  <ol>
-    <li><strong>Implementer API-feltene først.</strong> Start med dekning, funn og opptelling for én workload. Bruk noen få aggregerte backendkall; ikke hent alle funn eller gjør ett sett kall per workload for å bygge teamoversikten.</li>
-    <li><strong>Oppdater Console og CLI mot det nye schemaet.</strong> Nye og gamle felter kan eksistere samtidig under utrullingen, men uten et varig kompatibilitetslag.</li>
-    <li><strong>Stans gamle writes før migrering.</strong> Avklar hvilke workloads gamle image-vurderinger skal gjelde for. Ikke gjør IN_TRIAGE, RESOLVED eller NOT_SET om til ACCEPTED_RISK. Kontroller backup/restore før v0s blir eneste lager for vurderinger.</li>
-    <li><strong>Bytt konsumentene og fjern resten.</strong> Slett gamle felter, klientkode, issues og v13s/DT-avhengigheter. Varsle CLI-/JSON-brudd og endringer i dokumenterte metrikker. En eventuell rollback må bevare vurderinger som er skrevet i v0s.</li>
-  </ol>
-  <p class="note">Første leveranse bør være én reell workload vist i begge klienter. Deretter teamaggregatet og batchvurderingene. Mockene over er eksempler til bruk i tester, ikke en implementert backend.</p>
+  <p class="note">Rekkefølge og godkjenningsporter er beskrevet i <a href="#migration">expand–contract-planen</a>. Første vertikale leveranse er én reell workload vist i begge klienter, med de nye vurderingshandlingene sperret frem til skrive-cutover. Mockene er testeksempler, ikke implementert produktfunksjonalitet.</p>
 </section>
 
 <section id="sources">
@@ -565,7 +1004,8 @@ extend type Mutation {
       <li><strong>API</strong> · <code>c5fdd944ef6ac1b3a8b8e4a7d5ba3789b9556760</code><br><a href="https://github.com/nais/api/blob/c5fdd944ef6ac1b3a8b8e4a7d5ba3789b9556760/internal/graph/schema/vulnerability.graphqls">GraphQL-schema</a> · <a href="https://github.com/nais/api/blob/c5fdd944ef6ac1b3a8b8e4a7d5ba3789b9556760/internal/vulnerability/queries.go">v13s-kall</a> · <a href="https://github.com/nais/api/blob/c5fdd944ef6ac1b3a8b8e4a7d5ba3789b9556760/internal/issue/checker/workload_v13s.go">Issuechecker</a></li>
       <li><strong>CLI</strong> · <code>b5adb7cf45b2c453bd274c0a32b48b0b0c19cada</code><br><a href="https://github.com/nais/cli/blob/b5adb7cf45b2c453bd274c0a32b48b0b0c19cada/internal/vulnerability/vulnerability.go">Queryer og sidegrenser</a> · <a href="https://github.com/nais/cli/tree/b5adb7cf45b2c453bd274c0a32b48b0b0c19cada/internal/vulnerability/command">Kommandoer</a> · <a href="https://github.com/nais/cli/blob/b5adb7cf45b2c453bd274c0a32b48b0b0c19cada/internal/flags/flag.go">Globale flagg</a></li>
       <li><strong>Console</strong> · <code>cb764ec129cc507d03cadc23a84271768ace57e6</code><br><a href="https://github.com/nais/console-frontend/blob/cb764ec129cc507d03cadc23a84271768ace57e6/src/routes/team/%5Bteam%5D/vulnerabilities/query.gql">Team-query</a> · <a href="https://github.com/nais/console-frontend/blob/cb764ec129cc507d03cadc23a84271768ace57e6/src/lib/domain/vulnerability/BulkSuppressCVE.svelte">Dagens batchdialog</a></li>
-      <li><strong>v0s</strong> · lokal arbeidskopi på <code>58d7246</code> med ucommittede endringer.<br><a href="../proto/v0s/v1/v0s.proto">gRPC-kontrakt</a> · <a href="../CONTEXT.md">Domenespråk</a> · <a href="pitch.html#console">Opprinnelige Console-mockuper</a></li>
+      <li><strong>v0s</strong> · <code>c72a99106d03a0a0ef5e00ae35fce9270049a8c2</code><br><a href="https://github.com/nais/v0s/blob/c72a99106d03a0a0ef5e00ae35fce9270049a8c2/proto/v0s/v1/v0s.proto">gRPC-kontrakt</a> · <a href="https://github.com/nais/v0s/blob/c72a99106d03a0a0ef5e00ae35fce9270049a8c2/internal/database/migrations/0002_workload_suppressions.sql">Workload-migrering i v0s</a> · <a href="https://github.com/nais/v0s/blob/c72a99106d03a0a0ef5e00ae35fce9270049a8c2/CONTEXT.md">Domenespråk</a> · <a href="https://github.com/nais/v0s/blob/c72a99106d03a0a0ef5e00ae35fce9270049a8c2/docs/pitch.html">Opprinnelige Console-mockuper</a></li>
+      <li><strong>Begreper kontrollert 17. november 2026</strong><br><a href="https://www.first.org/cvss/">FIRST: CVSS og versjon 4.0</a> · <a href="https://www.first.org/epss/">FIRST: EPSS, estimat for de neste 30 dagene</a> · <a href="https://www.cisa.gov/known-exploited-vulnerabilities-catalog">CISA: Known Exploited Vulnerabilities-katalogen</a></li>
     </ul>
   </details>
 </section>
@@ -576,10 +1016,10 @@ extend type Mutation {
   const $ = id => document.getElementById(id);
   const labels = { NOT_AFFECTED: 'Not affected', FALSE_POSITIVE: 'False positive', ACCEPTED_RISK: 'Accepted risk' };
   const packages = {
-    netty: { id: 'CVE-20XX-0001', name: 'netty-codec-http2', key: 'pkg:maven/io.netty/netty-codec-http2', version: '4.1.100.Final', fix: '4.1.118.Final', severity: 'HIGH', cvss: 7.5, epss: .018, percentile: .92, kev: true, source: 'ghsa' },
-    handler: { id: 'CVE-20XX-0001', name: 'netty-handler', key: 'pkg:maven/io.netty/netty-handler', version: '4.1.100.Final', fix: '4.1.118.Final', severity: 'HIGH', cvss: 7.5, epss: .018, percentile: .92, kev: true, source: 'ghsa' },
-    lodash: { id: 'CVE-20XX-0002', name: 'lodash', key: 'pkg:npm/lodash', version: '4.17.20', fix: null, severity: 'MEDIUM', cvss: 5.3, epss: .124, percentile: .97, kev: false, source: 'ghsa' },
-    minimist: { id: 'CVE-20XX-0003', name: 'minimist', key: 'pkg:npm/minimist', version: '1.2.5', fix: '1.2.6', severity: 'LOW', cvss: 3.1, epss: .003, percentile: .71, kev: false, source: 'ghsa' },
+    netty: { id: 'CVE-20XX-0001', name: 'netty-codec-http2', key: 'pkg:maven/io.netty/netty-codec-http2', version: '4.1.100.Final', fix: '4.1.118.Final', severity: 'HIGH', cvss: 7.5, epss: .018, inCisaKev: true, source: 'ghsa' },
+    handler: { id: 'CVE-20XX-0001', name: 'netty-handler', key: 'pkg:maven/io.netty/netty-handler', version: '4.1.100.Final', fix: '4.1.118.Final', severity: 'HIGH', cvss: 7.5, epss: .018, inCisaKev: true, source: 'ghsa' },
+    lodash: { id: 'CVE-20XX-0002', name: 'lodash', key: 'pkg:npm/lodash', version: '4.17.20', fix: null, severity: 'MEDIUM', cvss: 5.3, epss: .124, inCisaKev: false, source: 'ghsa' },
+    minimist: { id: 'CVE-20XX-0003', name: 'minimist', key: 'pkg:npm/minimist', version: '1.2.5', fix: '1.2.6', severity: 'LOW', cvss: 3.1, epss: .003, inCisaKev: false, source: 'ghsa' },
   };
   const imageName = 'ghcr.io/eksempelteam/bestilling';
   const workloads = [
@@ -627,13 +1067,13 @@ extend type Mutation {
       && (!filter.severity || f.p.severity === filter.severity)
       && (!filter.severities?.length || filter.severities.includes(f.p.severity))
       && (!filter.fix || f.p.fix)
-      && (!filter.kev || f.p.kev)
+      && (!filter.inCisaKev || f.p.inCisaKev)
       && (filter.suppressed === 'INCLUDE' || (filter.suppressed === 'ONLY' ? !!f.suppression : !f.suppression)));
   }
   function summary(rows) {
     const counts = { unknown: 0, low: 0, medium: 0, high: 0, critical: 0 };
     rows.forEach(f => counts[f.p.severity.toLowerCase()]++);
-    return { totalFindings: rows.length, countsBySeverity: counts, fixableFindings: rows.filter(f => f.p.fix).length, knownExploitedFindings: rows.filter(f => f.p.kev).length };
+    return { totalFindings: rows.length, countsBySeverity: counts, fixableFindings: rows.filter(f => f.p.fix).length, inCisaKevFindings: rows.filter(f => f.p.inCisaKev).length };
   }
   function coverage(scope) {
     const ws = scoped(scope);
@@ -646,7 +1086,7 @@ extend type Mutation {
     const w = workloads.find(w => w.key === $('console-workload').value);
     return {
       scope: view === 'team' ? { environment: $('console-environment').value } : { environment: w.environment, workload: w.name },
-      filter: { severities: [...$('console-severities').querySelectorAll('input:checked')].map(input => input.value), suppressed: $('console-suppressed').value, fix: $('console-fix').checked, kev: $('console-kev').checked },
+      filter: { severities: [...$('console-severities').querySelectorAll('input:checked')].map(input => input.value), suppressed: $('console-suppressed').value, fix: $('console-fix').checked, inCisaKev: $('console-kev').checked },
       w,
     };
   }
@@ -723,12 +1163,19 @@ extend type Mutation {
       const wl = cell(tr, f.w.name);
       wl.append(node('small', f.w.environment));
       const epss = cell(tr, (f.p.epss * 100).toFixed(1) + '%');
-      if (f.p.kev) epss.append(node('small', 'CISA KEV', 'warn'));
+      if (f.p.inCisaKev) epss.append(node('small', 'CISA KEV', 'warn'));
       cell(tr, f.p.fix || 'No known fix', f.p.fix ? 'good' : 'muted');
       cell(tr, f.suppression ? labels[f.suppression.state] : 'Not assessed', 'muted');
       const detail = cell(detailsRow, undefined, 'detail-cell');
       detail.colSpan = 7;
-      detail.append(node('p', 'Source: ' + f.p.source + ' · CVSS: ' + f.p.cvss + ' · Installed: ' + f.p.version + ' · EPSS date: 2026-11-16'));
+      const advisory = advisoryDetails(f.p);
+      detail.append(node('p', 'Severity source: ' + f.p.source + ' · Advisory source: ' + f.p.source + ' · Installed: ' + f.p.version + ' · EPSS date: ' + advisory.epss.date));
+      detail.append(node('p', cvssText(advisory.cvss)));
+      if (advisory.inCisaKev) {
+        const link = node('a', 'Find this CVE in CISA KEV');
+        link.href = 'https://www.cisa.gov/known-exploited-vulnerabilities-catalog?search_api_fulltext=' + encodeURIComponent(advisory.identifier);
+        detail.append(link);
+      }
       detail.append(node('p', 'Package key: ' + f.p.key));
       if (f.suppression) detail.append(node('p', labels[f.suppression.state] + ': ' + f.suppression.reason));
       detail.append(action(f.suppression ? 'Edit assessment' : 'Assess finding', () => openAssessment(f)));
@@ -796,13 +1243,13 @@ extend type Mutation {
       const image = node('details');
       image.append(node('summary', w.status === 'SCANNED' ? 'Analysed · image details' : 'Missing SBOM · image details'));
       image.append(node('p', 'Image: ' + imageName), node('p', 'Digest: ' + w.digest));
-      if (w.status === 'SCANNED') image.append(node('p', 'Scanned: 2026-11-16 08:30 UTC · Trivy DB: 2026-11-16 07:00 UTC'));
+      if (w.status === 'SCANNED') image.append(node('p', 'Scanned: 2026-11-16 08:30 UTC'));
       if (scanError(w)) image.append(node('p', scanError(w), 'warn'));
       $('console-image').append(image);
     } else if (scoped(scope).some(w => scanError(w))) {
       $('console-coverage').append(node('div', 'Last rescan failed for bestilling · prod. Previous results are retained.', 'warn'));
     }
-    const metrics = [['Findings', s.totalFindings], ['High', s.countsBySeverity.high], ['Medium', s.countsBySeverity.medium], ['Low', s.countsBySeverity.low], ['Known fix', s.fixableFindings], ['KEV', s.knownExploitedFindings]];
+    const metrics = [['Findings', s.totalFindings], ['High', s.countsBySeverity.high], ['Medium', s.countsBySeverity.medium], ['Low', s.countsBySeverity.low], ['Known fix', s.fixableFindings], ['CISA KEV', s.inCisaKevFindings]];
     metrics.forEach(([label, count]) => {
       const metric = node('span');
       metric.dataset.metric = label;
@@ -880,10 +1327,26 @@ extend type Mutation {
       vulnerabilityIdentifier: f.p.id, purl: f.p.key + '@' + f.p.version, packageKey: f.p.key,
       installedVersion: f.p.version, fixedVersion: f.p.fix,
       severity: f.p.severity, severitySource: f.p.source, dataSource: f.p.source,
-      cvssScore: f.p.cvss, epss: { score: f.p.epss, percentile: f.p.percentile, date: '2026-11-16' },
-      kev: f.p.kev ? { dateAdded: '2026-11-01', knownRansomwareCampaign: false } : null,
-      suppression: f.suppression,
+      epss: { score: f.p.epss, date: '2026-11-16' },
+      inCisaKev: f.p.inCisaKev,
+      suppression: f.suppression ? {
+        team: 'eksempelteam', environment: f.w.environment, workload: f.w.name,
+        imageName: f.suppression.imageName, packageKey: f.suppression.packageKey,
+        vulnerabilityIdentifier: f.suppression.identifier, state: f.suppression.state,
+        reason: f.suppression.reason, updatedBy: f.suppression.updatedBy, updatedAt: f.suppression.updatedAt,
+      } : null,
     };
+  }
+  function advisoryDetails(p) {
+    return {
+      identifier: p.id, aliases: [], title: p.id + ' (mock advisory)',
+      description: 'Illustrative advisory, not a real CVE.', references: [],
+      cvss: [{ source: p.source, version: '3.1', score: p.cvss, vector: null }],
+      epss: { score: p.epss, date: '2026-11-16' }, inCisaKev: p.inCisaKev,
+    };
+  }
+  function cvssText(scores) {
+    return scores.length ? scores.map(s => 'CVSS ' + s.version + ' (' + s.source + '): ' + (s.score ?? 'unknown')).join(' · ') : 'CVSS unavailable';
   }
   function tokenize(line) {
     const result = [];
@@ -992,14 +1455,14 @@ Proposed commands and output. Local mock, not a shell.`;
     }
     if (['--state', '--reason', '--package'].some(flag => Object.hasOwn(flags, flag))) throw new Error('--state, --reason and --package apply only to suppress or unsuppress.');
     const scope = { environment, workload: workload?.name || '' };
-    const filter = { severity, suppressed, fix: !!flags['--fixable'], kev: !!flags['--kev'], identifier: isSearch ? command[1] : '' };
-    const apiScope = flags['--all-teams'] ? {} : { teams: ['eksempelteam'] };
+    const filter = { severity, suppressed, fix: !!flags['--fixable'], inCisaKev: !!flags['--kev'], identifier: isSearch ? command[1] : '' };
+    const apiScope = flags['--all-teams'] ? {} : { team: 'eksempelteam' };
     apiScope.environment = scope.environment;
     if (scope.workload) apiScope.workload = scope.workload;
     const apiFilter = { suppressed };
     if (severity) apiFilter.severities = [severity];
     if (filter.fix) apiFilter.onlyWithFix = true;
-    if (filter.kev) apiFilter.onlyKnownExploited = true;
+    if (filter.inCisaKev) apiFilter.onlyInCisaKev = true;
     if (filter.identifier) apiFilter.vulnerabilityIdentifier = filter.identifier;
     const advisory = isSearch ? Object.values(packages).find(p => p.id.toUpperCase() === command[1].toUpperCase()) : null;
     if (isSearch && !advisory) throw cliError('Vulnerability not found in this mock: ' + command[1], 1);
@@ -1007,7 +1470,7 @@ Proposed commands and output. Local mock, not a shell.`;
     let pages = 0;
     const api = [];
     if (advisory) api.push({ field: 'vulnerability', identifier: command[1] });
-    api.push({ field: 'vulnerabilitySummary', scope: apiScope, filter: apiFilter }, { field: 'vulnerabilityCoverage', scope: apiScope });
+    api.push({ field: 'vulnerabilityFindingSummary', scope: apiScope, filter: apiFilter }, { field: 'vulnerabilityCoverage', scope: apiScope });
     do {
       const offset = pages * 2;
       complete.push(...rows.slice(offset, offset + 2));
@@ -1018,12 +1481,12 @@ Proposed commands and output. Local mock, not a shell.`;
     const warnings = scoped(scope).filter(w => w.status !== 'SCANNED').map(w => 'warning: ' + workloadLabel(w) + ' has no SBOM; findings unknown.');
     scoped(scope).filter(w => scanError(w)).forEach(w => warnings.push('warning: ' + workloadLabel(w) + ': ' + scanError(w)));
     const result = { scope: apiScope, summary: s, coverage: cov, findings: complete.map(exported) };
-    if (advisory) result.vulnerability = { identifier: advisory.id, cvssScore: advisory.cvss, epss: advisory.epss, kev: advisory.kev };
+    if (advisory) result.vulnerability = advisoryDetails(advisory);
     let stdout;
     if (output === 'json') stdout = JSON.stringify(result, null, 2);
     else {
       const lines = [(flags['--all-teams'] ? 'All teams' : 'eksempelteam') + ' / ' + environment + (workload ? ' / ' + workloadLabel(workload) : '')];
-      if (advisory) lines.push(advisory.id + ' · ' + advisory.name, 'CVSS ' + advisory.cvss + ' · EPSS ' + (advisory.epss * 100).toFixed(1) + '%' + (advisory.kev ? ' · CISA KEV' : ''));
+      if (advisory) lines.push(advisory.id + ' · ' + advisory.name, cvssText(result.vulnerability.cvss) + ' · EPSS ' + (advisory.epss * 100).toFixed(1) + '%' + (advisory.inCisaKev ? ' · CISA KEV' : ''));
       if (workload && workload.status !== 'SCANNED') lines.push('', 'No analysis available (' + workload.status + ').');
       else {
         const counts = Object.entries(s.countsBySeverity).filter(([, count]) => count).reverse().map(([severity, count]) => count + ' ' + severity);
@@ -1041,7 +1504,7 @@ Proposed commands and output. Local mock, not a shell.`;
     const reason = (flags['--reason'] || '').trim();
     if (operation === 'suppress' && (!Object.hasOwn(labels, state) || !reason)) throw new Error('Suppress requires --state NOT_AFFECTED|FALSE_POSITIVE|ACCEPTED_RISK and a non-empty --reason.');
     if (operation === 'unsuppress' && (flags['--state'] || flags['--reason'])) throw new Error('Unsuppress does not take --state or --reason.');
-    const scope = { teams: ['eksempelteam'], environment: w.environment, workload: w.name };
+    const scope = { team: 'eksempelteam', environment: w.environment, workload: w.name };
     const api = [{
       field: operation === 'suppress' ? 'vulnerabilityFindings' : 'vulnerabilitySuppressions',
       scope,

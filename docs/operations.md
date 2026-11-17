@@ -48,8 +48,12 @@ source, not an optional integration or a Helm subchart. The feature dependency
 does not replace verification of the `Workloads.ListImages` gRPC contract.
 
 New installs provision PostgreSQL through the shared `nais-postgresql` Helm
-subchart, not a separate Fasit assignment. It creates `v0s-db` and CNPG supplies
-`v0s-db-app.uri` for the application. The pinned dependency is bundled in the
+subchart, not a separate Fasit assignment. The pinned version is 0.2.2. It creates
+`v0s-db`; CNPG's `v0s-db-app.uri` is reserved for the migration init container.
+The main container uses the separate `v0s-db-appuser.uri` read/write role.
+The shared chart provisions both the role and its retained password Secret;
+v0s does not duplicate credential generation. Upgrades retain its password.
+The pinned dependency is bundled in the
 published chart. `nais-netpols-management` supplies namespace-wide DNS and
 Kubernetes API egress; v0s needs no API-server or Service-IP CIDR inputs. The
 default is three PostgreSQL instances with 10Gi per instance and required node
@@ -57,15 +61,15 @@ anti-affinity. Review sizing and eligible nodes before rollout.
 
 To retain an existing independent database, set `postgresqlEnabled=false` and
 keep `database.clusterName` unchanged. That mode creates no Cluster and does
-not adopt, replace or migrate the existing database. For the disposable dev-nais
-pilot, the operator has instead approved deleting the old database and testing
-fresh chart provisioning; follow the chart README's scoped reset procedure.
-This approval does not apply to NAV.
+not adopt or replace the existing database. Prepare its runtime read/write role
+and Secret in the owning release first; the owner Secret remains available only
+to the migration init container. This upgrade preserves databases and assessments,
+including the pilot; no database reset is part of the rollout.
 
 Managed databases default to `postgresql.keep=true`, retaining the Cluster on
 uninstall but not its chart-owned NetworkPolicies. Retention is not protection
-against direct or namespace deletion. Neither this chart nor the database
-subchart configures backups: configure and verify recovery separately before
+against direct or namespace deletion. Backups are disabled in v0s's defaults:
+configure and verify recovery separately before
 production use. See the chart README for the lifecycle and adoption caveats.
 
 Apply the management module's v0s identity resources through Atlantis before
@@ -84,6 +88,17 @@ reference and version from the Actions summary, not the container image URL.
 ## Runtime configuration
 
 Configuration is read from environment variables by [`cmd/v0s`](../cmd/v0s/main.go).
+Run `v0s migrate` with the owner's `DATABASE_URL` before starting the service;
+it needs no inventory, registry or scanner configuration. Normal startup uses
+the read/write user's URL and checks the schema version without migrating.
+The chart handles both commands and keeps owner credentials out of runtime.
+Its `Recreate` strategy stops old replicas before migrations, with deliberate
+application downtime while the new pod starts.
+Fasit also uses Helm's `--atomic` rollback, which does not undo database changes.
+Before the first incompatible upgrade, verify a safe rollback revision with
+the old app recorded at zero replicas, or arrange an upgrade without automatic
+rollback; scaling only the live Deployment is insufficient. Follow the
+[upgrade procedure](../charts/README.md#upgrading-an-existing-deployment).
 
 | Variable | Required / default |
 |---|---|
@@ -233,7 +248,9 @@ Back up before upgrading and compare the old records, copied workload assessment
 and unmatched originals afterwards. Inventory completeness at migration time
 determines which assessments can be copied. Later syncs do not propagate legacy
 assessments. Do not mix old and new binaries: stop old replicas before starting
-the upgraded service, because old queries and writes lack workload scope.
+the upgraded service, because old queries and writes lack workload scope. The
+current chart enforces this for its Deployment and runs `v0s migrate` first;
+stop any separately managed old pods before upgrading as well.
 Update clients to supply environment and workload for set/delete calls;
 requests missing them are rejected, and old suppression page tokens must be
 discarded. Rolling back requires a coordinated schema/data recovery; old binaries

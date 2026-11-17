@@ -24,17 +24,46 @@ type DB struct {
 	pool *pgxpool.Pool
 }
 
-// Open connects to Postgres and applies pending migrations.
+// Open connects to Postgres and checks that Migrate has prepared the expected schema.
+// The runtime user needs read/write access, not schema ownership.
 func Open(ctx context.Context, url string) (*DB, error) {
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
 		return nil, fmt.Errorf("connecting: %w", err)
 	}
-	if err := migrate(ctx, pool); err != nil {
+	files, err := migrationFiles()
+	if err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("migrating: %w", err)
+		return nil, err
+	}
+	expected, err := migrationVersion(files[len(files)-1])
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+	var current int
+	if err := pool.QueryRow(ctx, "SELECT coalesce(max(version), 0) FROM schema_migrations").Scan(&current); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("checking schema; run v0s migrate first: %w", err)
+	}
+	if current != expected {
+		pool.Close()
+		return nil, fmt.Errorf("database schema version %d, want %d; run v0s migrate before starting", current, expected)
 	}
 	return &DB{pool: pool}, nil
+}
+
+// Migrate applies pending migrations using the database owner's credentials.
+func Migrate(ctx context.Context, url string) error {
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		return fmt.Errorf("connecting for migration: %w", err)
+	}
+	defer pool.Close()
+	if err := migrate(ctx, pool); err != nil {
+		return fmt.Errorf("migrating: %w", err)
+	}
+	return nil
 }
 
 // Close closes the connection pool.
@@ -43,13 +72,32 @@ func (db *DB) Close() { db.pool.Close() }
 // Ping checks that the database is reachable.
 func (db *DB) Ping(ctx context.Context) error { return db.pool.Ping(ctx) }
 
-func migrate(ctx context.Context, pool *pgxpool.Pool) error {
+func migrationFiles() ([]string, error) {
 	files, err := fs.Glob(migrations, "migrations/*.sql")
+	if err != nil {
+		return nil, err
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no embedded database migrations")
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func migrationVersion(file string) (int, error) {
+	base := strings.TrimPrefix(file, "migrations/")
+	version, err := strconv.Atoi(strings.SplitN(base, "_", 2)[0])
+	if err != nil {
+		return 0, fmt.Errorf("migration %s: invalid version prefix", base)
+	}
+	return version, nil
+}
+
+func migrate(ctx context.Context, pool *pgxpool.Pool) error {
+	files, err := migrationFiles()
 	if err != nil {
 		return err
 	}
-	sort.Strings(files)
-
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return err
@@ -68,12 +116,19 @@ func migrate(ctx context.Context, pool *pgxpool.Pool) error {
 	if err := conn.QueryRow(ctx, "SELECT coalesce(max(version), 0) FROM schema_migrations").Scan(&current); err != nil {
 		return err
 	}
+	latest, err := migrationVersion(files[len(files)-1])
+	if err != nil {
+		return err
+	}
+	if current > latest {
+		return fmt.Errorf("database schema version %d is newer than this binary's version %d; refusing to migrate backwards", current, latest)
+	}
 
 	for _, f := range files {
 		base := strings.TrimPrefix(f, "migrations/")
-		version, err := strconv.Atoi(strings.SplitN(base, "_", 2)[0])
+		version, err := migrationVersion(f)
 		if err != nil {
-			return fmt.Errorf("migration %s: invalid version prefix", base)
+			return err
 		}
 		if version <= current {
 			continue

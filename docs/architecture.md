@@ -89,7 +89,10 @@ domain types in `internal/v0s`, live under `internal/`; the generated public
 gRPC client stays in `api/v0s/v1`. There is one Go module.
 
 `internal/database` owns hand-written SQL and embedded, numbered migrations
-applied under an advisory lock. Postgres holds shared application state; each
+applied by `v0s migrate` under an advisory lock using the database owner. The
+service uses a separate read/write role, checks the schema version on startup
+and does not perform DDL. The chart stops old replicas before the migration
+init container runs. Postgres holds shared application state; each
 replica's Trivy DB is a replaceable local cache.
 
 Findings are listed and counted per workload. Severity and fix information come

@@ -19,6 +19,30 @@ import (
 
 const chartDir = "../../charts"
 
+type containerSpec struct {
+	Name, Image string
+	Args        []string
+	Env         []struct {
+		Name, Value string
+		ValueFrom   struct {
+			SecretKeyRef struct{ Name, Key string } `yaml:"secretKeyRef"`
+		} `yaml:"valueFrom"`
+	}
+	SecurityContext map[string]any `yaml:"securityContext"`
+	VolumeMounts    []struct {
+		MountPath string `yaml:"mountPath"`
+	} `yaml:"volumeMounts"`
+}
+
+func databaseSecret(container containerSpec) string {
+	for _, env := range container.Env {
+		if env.Name == "DATABASE_URL" && env.ValueFrom.SecretKeyRef.Key == "uri" {
+			return env.ValueFrom.SecretKeyRef.Name
+		}
+	}
+	return ""
+}
+
 func helm(t *testing.T, args ...string) []byte {
 	t.Helper()
 	out, err := exec.CommandContext(t.Context(), "helm", args...).CombinedOutput()
@@ -65,30 +89,23 @@ func TestDeploymentUsesNaisAPIAndExistingDatabase(t *testing.T) {
 	resources := render(t, chartDir, "--set", "database.clusterName=durable-db")
 	var deployment struct {
 		Spec struct {
+			Strategy struct{ Type string }
 			Template struct {
 				Spec struct {
 					ServiceAccountName           string         `yaml:"serviceAccountName"`
 					AutomountServiceAccountToken *bool          `yaml:"automountServiceAccountToken"`
 					SecurityContext              map[string]any `yaml:"securityContext"`
-					Containers                   []struct {
-						Image string
-						Env   []struct {
-							Name, Value string
-							ValueFrom   struct {
-								SecretKeyRef struct{ Name, Key string } `yaml:"secretKeyRef"`
-							} `yaml:"valueFrom"`
-						}
-						SecurityContext map[string]any `yaml:"securityContext"`
-						VolumeMounts    []struct {
-							MountPath string `yaml:"mountPath"`
-						} `yaml:"volumeMounts"`
-					}
+					Containers                   []containerSpec
+					InitContainers               []containerSpec `yaml:"initContainers"`
 				}
 			}
 		}
 	}
 	decode(t, resources["Deployment"], &deployment)
 	pod := deployment.Spec.Template.Spec
+	if deployment.Spec.Strategy.Type != "Recreate" {
+		t.Fatal("old replicas must stop before schema migration")
+	}
 	if pod.ServiceAccountName != "v0s-test" || pod.AutomountServiceAccountToken == nil || *pod.AutomountServiceAccountToken {
 		t.Fatal("expected a dedicated service account without a mounted Kubernetes API token")
 	}
@@ -112,11 +129,22 @@ func TestDeploymentUsesNaisAPIAndExistingDatabase(t *testing.T) {
 			api = env.Value == "nais-api:3001"
 		case "DATABASE_URL":
 			ref := env.ValueFrom.SecretKeyRef
-			database = ref.Name == "durable-db-app" && ref.Key == "uri"
+			database = ref.Name == "durable-db-appuser" && ref.Key == "uri"
 		}
 	}
 	if !api || !database {
 		t.Fatal("expected Nais API inventory and the existing database's URI secret")
+	}
+	if len(pod.InitContainers) != 1 {
+		t.Fatalf("expected one migration init container, got %d", len(pod.InitContainers))
+	}
+	migration := pod.InitContainers[0]
+	if migration.Image != container.Image || !slices.Equal(migration.Args, []string{"migrate"}) ||
+		len(migration.Env) != 1 || databaseSecret(migration) != "durable-db-app" {
+		t.Fatal("migration must use the release image and only the owner database credentials")
+	}
+	if migration.SecurityContext["readOnlyRootFilesystem"] != true || migration.SecurityContext["allowPrivilegeEscalation"] != false {
+		t.Fatal("migration must retain the restricted container security context")
 	}
 	var mounts []string
 	for _, mount := range container.VolumeMounts {
@@ -276,7 +304,10 @@ func TestPackagedChartUsesReleaseImageAndKeepsFeature(t *testing.T) {
 	var deployment struct {
 		Spec struct {
 			Template struct {
-				Spec struct{ Containers []struct{ Image string } }
+				Spec struct {
+					Containers     []containerSpec
+					InitContainers []containerSpec `yaml:"initContainers"`
+				}
 			}
 		}
 	}
@@ -284,5 +315,9 @@ func TestPackagedChartUsesReleaseImageAndKeepsFeature(t *testing.T) {
 	containers := deployment.Spec.Template.Spec.Containers
 	if len(containers) != 1 || !strings.HasSuffix(containers[0].Image, ":"+version) {
 		t.Fatalf("packaged chart must use its release image: %v", containers)
+	}
+	init := deployment.Spec.Template.Spec.InitContainers
+	if len(init) != 1 || init[0].Image != containers[0].Image {
+		t.Fatal("packaged migration must use the same release image as runtime")
 	}
 }

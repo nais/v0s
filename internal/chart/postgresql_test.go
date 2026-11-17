@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,6 +69,14 @@ func TestChartProvisionsRetainedDatabaseAndConnectsToIt(t *testing.T) {
 						Size         string
 						StorageClass string `yaml:"storageClass"`
 					}
+					Managed struct {
+						Roles []struct {
+							Name, Ensure   string
+							Login          bool
+							InRoles        []string              `yaml:"inRoles"`
+							PasswordSecret struct{ Name string } `yaml:"passwordSecret"`
+						}
+					}
 				}
 			}
 			decode(t, resources["Cluster/"+name], &cluster)
@@ -82,19 +92,41 @@ func TestChartProvisionsRetainedDatabaseAndConnectsToIt(t *testing.T) {
 			if cluster.Spec.Bootstrap.InitDB.Database != "v0s" || cluster.Spec.Bootstrap.InitDB.Owner != "v0s" {
 				t.Fatalf("unexpected bootstrap database: %+v", cluster.Spec.Bootstrap)
 			}
+			roles := cluster.Spec.Managed.Roles
+			if len(roles) != 1 || roles[0].Name != "appuser" || !roles[0].Login || roles[0].Ensure != "present" ||
+				!slices.Equal(roles[0].InRoles, []string{"pg_read_all_data", "pg_write_all_data"}) ||
+				roles[0].PasswordSecret.Name != name+"-appuser" {
+				t.Fatal("runtime role must have read/write grants and a separate credential Secret")
+			}
+			if _, exists := resources["Secret/"+name+"-appuser"]; !exists {
+				t.Fatal("the runtime role's password Secret must actually be provisioned")
+			}
+			var secret struct {
+				Type       string
+				Metadata   struct{ Annotations map[string]string }
+				StringData map[string]string `yaml:"stringData"`
+			}
+			decode(t, resources["Secret/"+name+"-appuser"], &secret)
+			if secret.Type != "kubernetes.io/basic-auth" || secret.Metadata.Annotations["helm.sh/resource-policy"] != "keep" {
+				t.Fatal("runtime credentials must be a retained basic-auth Secret")
+			}
+			uri, err := url.Parse(secret.StringData["uri"])
+			if err != nil || uri.User == nil {
+				t.Fatal("runtime Secret must supply a valid database URI")
+			}
+			password, _ := uri.User.Password()
+			if uri.Scheme != "postgresql" || uri.Host != name+"-rw.trusted-system:5432" || uri.Path != "/v0s" ||
+				uri.User.Username() != roles[0].Name || secret.StringData["username"] != roles[0].Name ||
+				password == "" || password != secret.StringData["password"] {
+				t.Fatal("runtime URI must match the provisioned role, password and database")
+			}
 			var deployment struct {
 				Spec struct {
 					Template struct {
 						Metadata struct{ Labels map[string]string }
 						Spec     struct {
-							Containers []struct {
-								Env []struct {
-									Name      string
-									ValueFrom struct {
-										SecretKeyRef struct{ Name, Key string } `yaml:"secretKeyRef"`
-									} `yaml:"valueFrom"`
-								}
-							}
+							Containers     []containerSpec
+							InitContainers []containerSpec `yaml:"initContainers"`
 						}
 					}
 				}
@@ -104,15 +136,11 @@ func TestChartProvisionsRetainedDatabaseAndConnectsToIt(t *testing.T) {
 			if pod.Metadata.Labels["app.kubernetes.io/instance"] != "v0s-test" {
 				t.Fatal("application must match the database's same-release ingress selector")
 			}
-			var connected bool
-			for _, container := range pod.Spec.Containers {
-				for _, env := range container.Env {
-					ref := env.ValueFrom.SecretKeyRef
-					connected = connected || env.Name == "DATABASE_URL" && ref.Name == name+"-app" && ref.Key == "uri"
-				}
+			if len(pod.Spec.Containers) != 1 || databaseSecret(pod.Spec.Containers[0]) != name+"-appuser" {
+				t.Fatal("runtime must use the read/write user's URI Secret")
 			}
-			if !connected {
-				t.Fatal("application must use the provisioned database's URI secret")
+			if len(pod.Spec.InitContainers) != 1 || databaseSecret(pod.Spec.InitContainers[0]) != name+"-app" {
+				t.Fatal("migration must use the database owner's URI Secret")
 			}
 
 			type peer struct {

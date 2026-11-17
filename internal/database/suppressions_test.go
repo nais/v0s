@@ -349,7 +349,7 @@ func TestMigrateWorkloadSuppressions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close(ctx)
-	// Reconstruct the deployed v1 schema, then exercise the real startup migration.
+	// Reconstruct the deployed v1 schema, then exercise the migration command's database path.
 	_, err = conn.Exec(ctx, fixture+`
 			DROP TABLE suppressions;
 			ALTER TABLE legacy_suppressions RENAME TO suppressions;
@@ -366,6 +366,9 @@ func TestMigrateWorkloadSuppressions(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Close()
+	if err := database.Migrate(ctx, url); err != nil {
+		t.Fatal(err)
+	}
 	migrated, err := database.Open(ctx, url)
 	if err != nil {
 		t.Fatal(err)
@@ -389,6 +392,9 @@ func TestMigrateWorkloadSuppressions(t *testing.T) {
 		t.Fatal(err)
 	}
 	migrated.Close()
+	if err := database.Migrate(ctx, url); err != nil {
+		t.Fatal(err)
+	}
 	reopened, err := database.Open(ctx, url)
 	if err != nil {
 		t.Fatal(err)

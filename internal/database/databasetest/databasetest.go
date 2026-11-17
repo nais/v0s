@@ -91,6 +91,9 @@ func NewWithURL(t testing.TB) (*database.DB, string) {
 		url = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable", cfg.User, cfg.Password, cfg.Host, cfg.Port, name)
 	}
 
+	if err := database.Migrate(ctx, url); err != nil {
+		t.Fatalf("migrating database: %v", err)
+	}
 	db, err := database.Open(ctx, url)
 	if err != nil {
 		t.Fatalf("opening database: %v", err)

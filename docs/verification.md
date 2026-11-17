@@ -35,6 +35,13 @@ out of the current design docs.
   batch-assess selected workloads, and verify unselected workloads are unchanged.
   Verify the assessment survives a rebuild, restart and database recovery.
   Check migration counts and unmatched records in `legacy_suppressions`.
+- On upgrade, retain Cluster/PVC identities and verify the migration init
+  container completes before runtime starts. Runtime must use the read/write
+  role, not the owner, and must be unable to create or alter permanent tables.
+  Keep the database and owner unchanged; do not reset data to apply migrations.
+  Verify that Fasit/Helm automatic rollback cannot restart an incompatible old
+  binary against a migrated schema; a live scale-to-zero is not a saved rollback
+  revision.
 - Measure source-SBOM gaps: missing OS packages and runtime binaries. A successful
   scan with zero findings is not a completeness or safety claim.
 

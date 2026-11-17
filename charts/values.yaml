@@ -21,6 +21,11 @@ postgresql:
     # Bootstrap only; does not modify an existing database or owner.
     name: v0s
     owner: v0s
+  appUser:
+    enabled: true
+    name: appuser
+    # Override only when supplying a Secret with username, password and uri.
+    existingSecret: ""
   storage:
     # The management cluster's standard-rwo does not support N4 nodes.
     storageClass: dynamic-rwo
@@ -28,9 +33,12 @@ postgresql:
     # DNS and API-server access come from nais-netpols-management.
     enabled: true
 
-# Used only when postgresqlEnabled=false. CNPG supplies <clusterName>-app.uri.
+# Used only when postgresqlEnabled=false; both users/Secrets must already exist.
 database:
   clusterName: v0s-db
+  # Defaults: <clusterName>-appuser for runtime; <clusterName>-app for migrations.
+  runtimeSecretName: ""
+  migrationSecretName: ""
 
 github:
   organizations:
