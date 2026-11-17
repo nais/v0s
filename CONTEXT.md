@@ -67,9 +67,11 @@ version bumps.
 
 **Suppression**
 : A team's current assessment that a vulnerability does not matter for a package
-in an image name, keyed by `(team, image name, package key, vulnerability ID)`.
-It applies to the team's own workloads only: another team using the same image
-is not affected. It has a state (not affected, false positive or accepted risk),
+in one workload, keyed by `(team, environment, workload name, image name,
+package key, vulnerability ID)`. Other workloads and environments never inherit
+it, even within the same team or image. Image and package versions are not part
+of the key, but changing the image repository stops the assessment applying.
+It has a state (not affected, false positive or accepted risk),
 a reason in the team's words, and who last set it. Setting it again replaces
 it; deleting it removes it. There is no expiry or history of changes in v0s;
 callers keep any activity log they need. These assessments are durable data
@@ -77,7 +79,9 @@ owned here; unlike inventory and scan results, they cannot be rebuilt from
 external sources.
 
 **Suppressed**
-: A finding is suppressed when its workload's team has a suppression of it.
+: A finding is suppressed when its workload has a matching suppression.
+Clients can list findings by vulnerability (including suppressed ones), select
+other workloads and set separate assessments for them in an atomic batch.
 
 **EPSS and KEV**
 : Source data from FIRST and CISA, supplied alongside findings. v0s does not

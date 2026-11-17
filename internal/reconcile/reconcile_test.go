@@ -186,6 +186,7 @@ func TestSyncDeletesUnusedImages(t *testing.T) {
 		DB:        db,
 		Inventory: fakeInventory{"dev": {workload("dev", "kept")}},
 		Log:       discard,
+		Metrics:   NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
 	}
 	if err := r.sync(ctx); err != nil {
 		t.Fatal(err)
@@ -247,7 +248,10 @@ func TestFailedSnapshotKeepsWorkloads(t *testing.T) {
 	if err := db.SyncWorkloadImages(ctx, "dev", []v0s.WorkloadImage{w}); err != nil {
 		t.Fatal(err)
 	}
-	r := &Reconciler{DB: db, Inventory: fakeInventory(nil), Log: discard}
+	r := &Reconciler{
+		DB: db, Inventory: fakeInventory(nil), Log: discard,
+		Metrics: NewMetrics(prometheus.NewRegistry(), db, fakeScanner{}),
+	}
 	if err := r.sync(ctx); err == nil {
 		t.Error("sync with an unavailable inventory succeeded, want an error")
 	}

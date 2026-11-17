@@ -18,7 +18,8 @@ service VulnerabilityService {
   // ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
   rpc ListWorkloads(ListWorkloadsRequest) returns (ListWorkloadsResponse);
   // ListFindings lists the findings of workloads. A finding in an image used by several
-  // workloads is listed once for each of them.
+  // workloads is listed once for each of them. Filter by vulnerability and include
+  // suppressed findings to discover other affected workloads before an explicit batch assessment.
   rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse);
   // CountFindings counts findings as ListFindings lists them, grouped by one dimension.
   rpc CountFindings(CountFindingsRequest) returns (CountFindingsResponse);
@@ -32,6 +33,7 @@ service VulnerabilityService {
 // state is kept; the caller keeps the history of changes if it wants one.
 service SuppressionService {
   // SetSuppressions sets suppressions atomically, replacing any with the same key.
+  // Each item targets one workload in the authorized team; no other workloads inherit it.
   rpc SetSuppressions(SetSuppressionsRequest) returns (SetSuppressionsResponse);
   // DeleteSuppressions deletes suppressions atomically. Deleting one that does not exist is not an error.
   rpc DeleteSuppressions(DeleteSuppressionsRequest) returns (DeleteSuppressionsResponse);
@@ -141,7 +143,7 @@ message Finding {
   double cvss_score = 13;
   Epss epss = 14;
   Kev kev = 15;
-  // The workload's team's suppression of the finding, unset if not suppressed.
+  // This workload's suppression of the finding, unset if not suppressed.
   Suppression suppression = 16;
 }
 
@@ -264,18 +266,19 @@ message WorkloadRef {
   string name = 3;
 }
 
-// Identifies a team's suppression.
+// Identifies a suppression within the request's team. Environment and workload are required.
 message SuppressionKey {
   string image_name = 1;
   // Package key or full purl. Version, qualifiers and subpath are dropped.
   string package = 2;
   // Vulnerability ID or alias. Must resolve to exactly one vulnerability.
   string vulnerability_id = 3;
+  string environment = 4;
+  string workload = 5;
 }
 
-// A team's assessment of a vulnerability in a package in an image name. It applies to the
-// team's own workloads only, whatever the image version: another team using the same image
-// is not affected.
+// An assessment for one environment/team/workload and image name, independent of image and
+// package versions. Other workloads never inherit it, even when they share the image.
 message Suppression {
   reserved 9;
   string team = 1;
@@ -287,6 +290,8 @@ message Suppression {
   string detail = 6;
   string updated_by = 7;
   google.protobuf.Timestamp updated_at = 8;
+  string environment = 10;
+  string workload = 11;
 }
 
 message NewSuppression {
@@ -326,10 +331,12 @@ message ListSuppressionsRequest {
   string vulnerability_id = 3;
   int32 page_size = 4;
   string page_token = 5;
+  string environment = 6;
+  string workload = 7;
 }
 
 message ListSuppressionsResponse {
-  // Ordered by team, image name, package key and vulnerability ID.
+  // Ordered by team, environment, workload, image name, package key and vulnerability ID.
   repeated Suppression suppressions = 1;
   string next_page_token = 2;
 }

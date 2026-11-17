@@ -176,8 +176,9 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 		FROM generate_series(1, 3) e CROSS JOIN generate_series(1, 3) t CROSS JOIN generate_series(1, 40) n;
 		INSERT INTO workloads (environment, team, name, image_reference, resolve_error)
 		VALUES ('c2', 'team-2', 'app-020a', 'repo/missing:1', 'not found');
-		INSERT INTO suppressions (team, image_name, package_key, vulnerability_id, state, detail, updated_by)
-		VALUES ('team-2', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'assessed', 'user');
+		INSERT INTO suppressions (team, environment, workload, image_name, package_key, vulnerability_id, state, detail, updated_by)
+		SELECT 'team-2', environment, name, 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'assessed', 'user'
+		FROM workloads WHERE team = 'team-2';
 		INSERT INTO epss (cve, score, percentile, date) VALUES ('CVE-1', 0.1, 0.9, '2026-01-02');
 	`)
 	ctx := context.Background()

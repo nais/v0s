@@ -4,6 +4,11 @@ Run in shadow mode: v0s has no consumers, and v13s/Dependency-Track remain
 untouched. Start in dev-nais for behaviour; proceed to nav for scale only after
 separate approval. Local tests do not establish production readiness.
 
+The [2026-11-10 evidence summary](status-2026-11-10.md) records the separately
+approved NAV deployment and read-only comparison. It does not close this
+checklist: critical/high review, consumer migration, recovery and live
+verification of the later performance fixes remain open.
+
 Use a current v0s build, a compatible Nais API and the current schema; see
 [Operations](operations.md). Update the [comparison tool](../tools/compare/README.md)
 before using it. Record tenant, time, workload snapshot, image digests, v0s build
@@ -24,8 +29,12 @@ out of the current design docs.
 - Search for a known package/version with findings and one without. Both should
   return the workloads using it.
 - Set, replace, list and delete a suppression on a real finding. Verify the finding
-  and counts change only for that team's workloads, including an image shared
-  across teams. Verify the assessment survives a restart and database recovery.
+  and counts change only for the selected environment/team/workload, including
+  an image shared by apps and jobs in the same team and across teams/environments.
+  Discover other affected workloads with suppressed findings included, explicitly
+  batch-assess selected workloads, and verify unselected workloads are unchanged.
+  Verify the assessment survives a rebuild, restart and database recovery.
+  Check migration counts and unmatched records in `legacy_suppressions`.
 - Measure source-SBOM gaps: missing OS packages and runtime binaries. A successful
   scan with zero findings is not a completeness or safety claim.
 

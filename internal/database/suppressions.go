@@ -12,8 +12,7 @@ import (
 )
 
 // Suppression is a team's current assessment that a vulnerability does not
-// matter for a package in an image name, in the team's own workloads. It
-// applies until it is deleted.
+// matter for a package in an image name, in one workload. It applies until deleted.
 type Suppression struct {
 	SuppressionKey
 	Team      string
@@ -26,18 +25,20 @@ type Suppression struct {
 // SuppressionKey identifies a team's suppression. Stored keys hold a package key
 // and a vulnerability ID; requests may give a purl and an alias.
 type SuppressionKey struct {
+	Environment     string
+	Workload        string
 	ImageName       string
 	Package         string // package key, or a purl whose version, qualifiers and subpath are dropped
 	VulnerabilityID string // ID, or an alias naming exactly one vulnerability
 }
 
 // suppressionColumns are the columns of suppressions s that collectSuppression reads.
-const suppressionColumns = `s.team, s.image_name, s.package_key, s.vulnerability_id, s.state, s.detail,
+const suppressionColumns = `s.team, s.environment, s.workload, s.image_name, s.package_key, s.vulnerability_id, s.state, s.detail,
 	s.updated_by, s.updated_at`
 
 func collectSuppression(row pgx.CollectableRow) (Suppression, error) {
 	var s Suppression
-	err := row.Scan(&s.Team, &s.ImageName, &s.Package, &s.VulnerabilityID, &s.State, &s.Detail, &s.UpdatedBy, &s.UpdatedAt)
+	err := row.Scan(&s.Team, &s.Environment, &s.Workload, &s.ImageName, &s.Package, &s.VulnerabilityID, &s.State, &s.Detail, &s.UpdatedBy, &s.UpdatedAt)
 	return s, err
 }
 
@@ -60,6 +61,9 @@ func (n NewSuppression) validate() error {
 
 // canonical returns k with its package as a package key and its vulnerability as an ID.
 func (k SuppressionKey) canonical(ctx context.Context, q pgxQuerier) (SuppressionKey, error) {
+	if k.Environment == "" || k.Workload == "" {
+		return SuppressionKey{}, fmt.Errorf("environment and workload are required: %w", ErrInvalid)
+	}
 	if k.ImageName == "" {
 		return SuppressionKey{}, fmt.Errorf("image name is required: %w", ErrInvalid)
 	}
@@ -82,7 +86,8 @@ func (k SuppressionKey) canonical(ctx context.Context, q pgxQuerier) (Suppressio
 		return SuppressionKey{}, fmt.Errorf("%q names several vulnerabilities (%s): %w",
 			k.VulnerabilityID, strings.Join(ids, ", "), ErrInvalid)
 	}
-	return SuppressionKey{ImageName: k.ImageName, Package: pkg, VulnerabilityID: ids[0]}, nil
+	k.Package, k.VulnerabilityID = pkg, ids[0]
+	return k, nil
 }
 
 // SetSuppressions sets team's suppressions, replacing any with the same key, in one
@@ -109,18 +114,18 @@ func (db *DB) SetSuppressions(ctx context.Context, team string, items []NewSuppr
 				return fmt.Errorf("suppression %d: %w", i, err)
 			}
 			if j, ok := seen[key]; ok {
-				return fmt.Errorf("suppression %d: same image, package and vulnerability as suppression %d: %w", i, j, ErrInvalid)
+				return fmt.Errorf("suppression %d: same workload, image, package and vulnerability as suppression %d: %w", i, j, ErrInvalid)
 			}
 			seen[key] = i
 
 			rows, err := tx.Query(ctx, `
-				INSERT INTO suppressions AS s (team, image_name, package_key, vulnerability_id, state, detail, updated_by)
-				VALUES ($1, $2, $3, $4, $5, $6, $7)
-				ON CONFLICT (team, image_name, package_key, vulnerability_id) DO UPDATE
+				INSERT INTO suppressions AS s (team, environment, workload, image_name, package_key, vulnerability_id, state, detail, updated_by)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+				ON CONFLICT (team, environment, workload, image_name, package_key, vulnerability_id) DO UPDATE
 				SET state = excluded.state, detail = excluded.detail, updated_by = excluded.updated_by,
 					updated_at = now()
 				RETURNING `+suppressionColumns,
-				team, key.ImageName, key.Package, key.VulnerabilityID, item.State, item.Detail, actor)
+				team, key.Environment, key.Workload, key.ImageName, key.Package, key.VulnerabilityID, item.State, item.Detail, actor)
 			if err != nil {
 				return fmt.Errorf("suppression %d: %w", i, err)
 			}
@@ -157,9 +162,10 @@ func (db *DB) DeleteSuppressions(ctx context.Context, team string, keys []Suppre
 			}
 			rows, err := tx.Query(ctx, `
 				DELETE FROM suppressions s
-				WHERE s.team = $1 AND s.image_name = $2 AND s.package_key = $3 AND s.vulnerability_id = $4
+				WHERE s.team = $1 AND s.environment = $2 AND s.workload = $3
+					AND s.image_name = $4 AND s.package_key = $5 AND s.vulnerability_id = $6
 				RETURNING `+suppressionColumns,
-				team, key.ImageName, key.Package, key.VulnerabilityID)
+				team, key.Environment, key.Workload, key.ImageName, key.Package, key.VulnerabilityID)
 			if err != nil {
 				return fmt.Errorf("suppression %d: %w", i, err)
 			}
@@ -183,12 +189,16 @@ func (db *DB) DeleteSuppressions(ctx context.Context, team string, keys []Suppre
 // SuppressionFilter narrows suppressions. Empty fields do not filter.
 type SuppressionFilter struct {
 	Teams           []string
+	Environment     string
+	Workload        string
 	ImageName       string
 	VulnerabilityID string // ID or alias
 }
 
 type suppressionCursor struct {
 	Team            string `json:"t"`
+	Environment     string `json:"e"`
+	Workload        string `json:"w"`
 	ImageName       string `json:"i"`
 	PackageKey      string `json:"p"`
 	VulnerabilityID string `json:"v"`
@@ -200,12 +210,21 @@ func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, pa
 	if err := decodePageToken(page.Token, &cursor); err != nil {
 		return nil, "", err
 	}
+	if page.Token != "" && (cursor.Environment == "" || cursor.Workload == "") {
+		return nil, "", fmt.Errorf("page token predates workload-scoped suppressions: %w", ErrInvalid)
+	}
 	var (
 		args  sqlArgs
 		where []string
 	)
 	if len(filter.Teams) > 0 {
 		where = append(where, "s.team = ANY("+args.add(filter.Teams)+")")
+	}
+	if filter.Environment != "" {
+		where = append(where, "s.environment = "+args.add(filter.Environment))
+	}
+	if filter.Workload != "" {
+		where = append(where, "s.workload = "+args.add(filter.Workload))
 	}
 	if filter.ImageName != "" {
 		where = append(where, "s.image_name = "+args.add(filter.ImageName))
@@ -214,8 +233,8 @@ func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, pa
 		where = append(where, vulnerabilityMatch("s.vulnerability_id", filter.VulnerabilityID, &args))
 	}
 	if page.Token != "" {
-		where = append(where, fmt.Sprintf("(s.team, s.image_name, s.package_key, s.vulnerability_id) > (%s, %s, %s, %s)",
-			args.add(cursor.Team), args.add(cursor.ImageName), args.add(cursor.PackageKey), args.add(cursor.VulnerabilityID)))
+		where = append(where, fmt.Sprintf("(s.team, s.environment, s.workload, s.image_name, s.package_key, s.vulnerability_id) > (%s, %s, %s, %s, %s, %s)",
+			args.add(cursor.Team), args.add(cursor.Environment), args.add(cursor.Workload), args.add(cursor.ImageName), args.add(cursor.PackageKey), args.add(cursor.VulnerabilityID)))
 	}
 	limit := page.limit()
 
@@ -223,7 +242,7 @@ func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, pa
 		SELECT `+suppressionColumns+`
 		FROM suppressions s
 		WHERE `+and(where)+`
-		ORDER BY s.team, s.image_name, s.package_key, s.vulnerability_id
+		ORDER BY s.team, s.environment, s.workload, s.image_name, s.package_key, s.vulnerability_id
 		LIMIT `+args.add(limit+1), args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("listing suppressions: %w", err)
@@ -237,7 +256,7 @@ func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, pa
 	if len(suppressions) > limit {
 		suppressions = suppressions[:limit]
 		last := suppressions[limit-1]
-		next, err = encodePageToken(suppressionCursor{last.Team, last.ImageName, last.Package, last.VulnerabilityID})
+		next, err = encodePageToken(suppressionCursor{last.Team, last.Environment, last.Workload, last.ImageName, last.Package, last.VulnerabilityID})
 		if err != nil {
 			return nil, "", err
 		}

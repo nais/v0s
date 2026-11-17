@@ -1,5 +1,4 @@
--- Until the first release this is the whole schema, edited in place: an existing database
--- is recreated rather than migrated.
+-- Initial schema. Subsequent changes are applied through numbered migrations.
 
 -- Images are identified by repository name and manifest digest. Tags are not facts we keep.
 CREATE TABLE images (

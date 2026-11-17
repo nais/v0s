@@ -37,7 +37,8 @@ type VulnerabilityServiceClient interface {
 	// ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
 	ListWorkloads(ctx context.Context, in *ListWorkloadsRequest, opts ...grpc.CallOption) (*ListWorkloadsResponse, error)
 	// ListFindings lists the findings of workloads. A finding in an image used by several
-	// workloads is listed once for each of them.
+	// workloads is listed once for each of them. Filter by vulnerability and include
+	// suppressed findings to discover other affected workloads before an explicit batch assessment.
 	ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error)
 	// CountFindings counts findings as ListFindings lists them, grouped by one dimension.
 	CountFindings(ctx context.Context, in *CountFindingsRequest, opts ...grpc.CallOption) (*CountFindingsResponse, error)
@@ -116,7 +117,8 @@ type VulnerabilityServiceServer interface {
 	// ListWorkloads lists team workloads, the image each is deployed with, and its SBOM/scan coverage.
 	ListWorkloads(context.Context, *ListWorkloadsRequest) (*ListWorkloadsResponse, error)
 	// ListFindings lists the findings of workloads. A finding in an image used by several
-	// workloads is listed once for each of them.
+	// workloads is listed once for each of them. Filter by vulnerability and include
+	// suppressed findings to discover other affected workloads before an explicit batch assessment.
 	ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error)
 	// CountFindings counts findings as ListFindings lists them, grouped by one dimension.
 	CountFindings(context.Context, *CountFindingsRequest) (*CountFindingsResponse, error)
@@ -306,6 +308,7 @@ const (
 // state is kept; the caller keeps the history of changes if it wants one.
 type SuppressionServiceClient interface {
 	// SetSuppressions sets suppressions atomically, replacing any with the same key.
+	// Each item targets one workload in the authorized team; no other workloads inherit it.
 	SetSuppressions(ctx context.Context, in *SetSuppressionsRequest, opts ...grpc.CallOption) (*SetSuppressionsResponse, error)
 	// DeleteSuppressions deletes suppressions atomically. Deleting one that does not exist is not an error.
 	DeleteSuppressions(ctx context.Context, in *DeleteSuppressionsRequest, opts ...grpc.CallOption) (*DeleteSuppressionsResponse, error)
@@ -359,6 +362,7 @@ func (c *suppressionServiceClient) ListSuppressions(ctx context.Context, in *Lis
 // state is kept; the caller keeps the history of changes if it wants one.
 type SuppressionServiceServer interface {
 	// SetSuppressions sets suppressions atomically, replacing any with the same key.
+	// Each item targets one workload in the authorized team; no other workloads inherit it.
 	SetSuppressions(context.Context, *SetSuppressionsRequest) (*SetSuppressionsResponse, error)
 	// DeleteSuppressions deletes suppressions atomically. Deleting one that does not exist is not an error.
 	DeleteSuppressions(context.Context, *DeleteSuppressionsRequest) (*DeleteSuppressionsResponse, error)

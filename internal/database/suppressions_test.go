@@ -7,19 +7,19 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/nais/v0s/internal/database"
+	"github.com/nais/v0s/internal/database/databasetest"
 )
 
 func TestSuppressionMatching(t *testing.T) {
 	ctx := context.Background()
 	const (
-		columns = "INSERT INTO suppressions (team, image_name, package_key, vulnerability_id, state, detail, updated_by) VALUES "
-		// Team a's suppression of lodash in repo/app, which both teams' images are named.
-		teamA = columns + "('team-a', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me');"
-		teamB = columns + "('team-b', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me');"
+		columns = "INSERT INTO suppressions (environment, workload, team, image_name, package_key, vulnerability_id, state, detail, updated_by) VALUES "
+		teamA   = columns + "('c1', 'app', 'team-a', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me');"
+		teamB   = columns + "('c1', 'other', 'team-b', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me');"
 		// Team b also uses team a's image sha256:a.
-		shared       = "INSERT INTO workloads (environment, team, name, image_reference, image_id) VALUES ('c1', 'team-b', 'shared', 'repo/app:1', 1);"
-		sharedLodash = "team-b/shared CVE-1 pkg:npm/lodash@4.17.20"
+		shared = "INSERT INTO workloads (environment, team, name, image_reference, image_id) VALUES ('c1', 'team-b', 'shared', 'repo/app:1', 1);"
 	)
 
 	tests := []struct {
@@ -29,15 +29,16 @@ func TestSuppressionMatching(t *testing.T) {
 		suppressed []string
 	}{
 		// Not team b's lodash: it has the same image name, package and vulnerability, but is team b's.
-		{name: "active", seed: teamA, suppressed: []string{appLodash, workerLodash}},
+		{name: "only selected workload", seed: teamA, suppressed: []string{appLodash}},
 		{name: "another team's suppression", seed: teamA, teams: []string{"team-b"}},
 		// A suppression is keyed on the package, not the version, so team b's covers 4.17.19.
-		{name: "each team its own", seed: teamA + teamB, suppressed: []string{appLodash, workerLodash, otherLodash}},
-		{name: "other image name", seed: columns + "('team-a', 'repo/old', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me')"},
-		{name: "other package", seed: columns + "('team-a', 'repo/app', 'pkg:npm/express', 'CVE-1', 'accepted_risk', 'd', 'me')"},
+		{name: "each workload its own", seed: teamA + teamB, suppressed: []string{appLodash, otherLodash}},
+		{name: "other image name", seed: columns + "('c1', 'app', 'team-a', 'repo/old', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me')"},
+		{name: "other package", seed: columns + "('c1', 'app', 'team-a', 'repo/app', 'pkg:npm/express', 'CVE-1', 'accepted_risk', 'd', 'me')"},
 		// Team b uses sha256:a too and has not suppressed it.
-		{name: "shared image, one team", seed: teamA + shared, suppressed: []string{appLodash, workerLodash}},
-		{name: "shared image, both teams", seed: teamA + teamB + shared, suppressed: []string{appLodash, workerLodash, otherLodash, sharedLodash}},
+		{name: "shared image, one team", seed: teamA + shared, suppressed: []string{appLodash}},
+		{name: "shared image, both teams", seed: teamA + teamB + shared, suppressed: []string{appLodash, otherLodash}},
+		{name: "same workload name, other environment", seed: teamA + "INSERT INTO workloads (environment, team, name, image_reference, image_id) VALUES ('c2', 'team-a', 'app', 'repo/app:1', 1);", suppressed: []string{appLodash}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -52,7 +53,7 @@ func TestSuppressionMatching(t *testing.T) {
 				t.Errorf("suppressed findings = %q, want %q", got, tt.suppressed)
 			}
 			for _, f := range only {
-				if s := f.Suppression; s == nil || s.Team != f.Workload.Team || s.Package != f.Finding.PackageKey || s.VulnerabilityID != f.Finding.VulnerabilityID {
+				if s := f.Suppression; s == nil || s.Team != f.Workload.Team || s.Environment != f.Workload.Environment || s.Workload != f.Workload.Name || s.Package != f.Finding.PackageKey || s.VulnerabilityID != f.Finding.VulnerabilityID {
 					t.Errorf("finding %s/%s %s: suppression %+v, want its team's", f.Workload.Team, f.Workload.Name, f.Finding.PURL, s)
 				}
 			}
@@ -65,7 +66,7 @@ func TestSuppressionMatching(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(excluded)+len(only) != len(all) || slices.ContainsFunc(findingKeys(excluded), func(k string) bool { return slices.Contains(tt.suppressed, k) }) {
+			if len(excluded)+len(only) != len(all) {
 				t.Errorf("unsuppressed findings = %q, want the other findings of %q", findingKeys(excluded), findingKeys(all))
 			}
 			for _, f := range excluded {
@@ -80,22 +81,22 @@ func TestSuppressionMatching(t *testing.T) {
 func TestCountFindingsSuppression(t *testing.T) {
 	db, exec := newFixture(t)
 	// Team a suppresses lodash in repo/app, and team b also uses team a's sha256:a.
-	exec(`INSERT INTO suppressions (team, image_name, package_key, vulnerability_id, state, detail, updated_by)
-		VALUES ('team-a', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me');
+	exec(`INSERT INTO suppressions (environment, workload, team, image_name, package_key, vulnerability_id, state, detail, updated_by)
+		VALUES ('c1', 'app', 'team-a', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'd', 'me');
 		INSERT INTO workloads (environment, team, name, image_reference, image_id) VALUES ('c1', 'team-b', 'shared', 'repo/app:1', 1);`)
 
 	got, err := db.CountFindings(context.Background(), database.FindingFilter{}, database.GroupByTeam)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Team a: express in its two workloads. Team b: lodash in sha256:b, and lodash and express in sha256:a.
-	want := []database.FindingCount{{Key: "team-a", Count: 2}, {Key: "team-b", Count: 3}}
+	// Team a: app's express and both worker findings. Team b's findings are unchanged.
+	want := []database.FindingCount{{Key: "team-a", Count: 3}, {Key: "team-b", Count: 3}}
 	if !slices.Equal(got, want) {
 		t.Errorf("CountFindings by team = %v, want %v", got, want)
 	}
 }
 
-var lodashKey = database.SuppressionKey{ImageName: "repo/app", Package: "pkg:npm/lodash", VulnerabilityID: "CVE-1"}
+var lodashKey = database.SuppressionKey{Environment: "c1", Workload: "app", ImageName: "repo/app", Package: "pkg:npm/lodash", VulnerabilityID: "CVE-1"}
 
 func lodashSuppression(state string) database.NewSuppression {
 	return database.NewSuppression{SuppressionKey: lodashKey, State: state, Detail: "not used"}
@@ -208,6 +209,8 @@ func TestSetSuppressions(t *testing.T) {
 			{name: "missing actor", team: "team-a", items: with(func(*database.NewSuppression) {})},
 			{name: "no suppressions", team: "team-a", actor: "me"},
 			{name: "missing image name", team: "team-a", items: with(func(s *database.NewSuppression) { s.ImageName = "" }), actor: "me"},
+			{name: "missing environment", team: "team-a", items: with(func(s *database.NewSuppression) { s.Environment = "" }), actor: "me"},
+			{name: "missing workload", team: "team-a", items: with(func(s *database.NewSuppression) { s.Workload = "" }), actor: "me"},
 			{name: "ambiguous alias", team: "team-a", items: with(func(s *database.NewSuppression) { s.VulnerabilityID = "GHSA-2" }), actor: "me"},
 			{name: "not a purl", team: "team-a", items: with(func(s *database.NewSuppression) { s.Package = "lodash" }), actor: "me"},
 			{name: "unknown state", team: "team-a", items: with(func(s *database.NewSuppression) { s.State = "" }), actor: "me"},
@@ -229,7 +232,8 @@ func TestDeleteSuppressions(t *testing.T) {
 	db, _ := newFixture(t)
 	set(t, db, lodashSuppression("accepted_risk"))
 	// The same key, given as a purl with version and an alias.
-	key := database.SuppressionKey{ImageName: "repo/app", Package: "pkg:npm/lodash@4.17.20", VulnerabilityID: "GHSA-1"}
+	key := lodashKey
+	key.Package, key.VulnerabilityID = "pkg:npm/lodash@4.17.20", "GHSA-1"
 
 	if deleted, err := db.DeleteSuppressions(ctx, "team-b", []database.SuppressionKey{key}); err != nil || len(deleted) != 0 {
 		t.Errorf("deleting as another team = %+v, %v; want nothing deleted", deleted, err)
@@ -262,6 +266,11 @@ func TestListSuppressionsPagination(t *testing.T) {
 	express.Package = "pkg:npm/express"
 	express.VulnerabilityID = "CVE-2"
 	set(t, db, lodashSuppression("accepted_risk"), express)
+	worker := lodashSuppression("not_affected")
+	worker.Workload = "worker"
+	prod := lodashSuppression("accepted_risk")
+	prod.Environment = "prod"
+	set(t, db, worker, prod)
 	if _, err := db.SetSuppressions(ctx, "team-b", []database.NewSuppression{lodashSuppression("accepted_risk")}, "me"); err != nil {
 		t.Fatal(err)
 	}
@@ -276,15 +285,116 @@ func TestListSuppressionsPagination(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, s := range suppressions {
-			got = append(got, s.Team+" "+s.Package)
+			got = append(got, s.Team+" "+s.Environment+" "+s.Workload+" "+s.Package)
 		}
 		if next == "" {
 			break
 		}
 		page.Token = next
 	}
-	want := []string{"team-a pkg:npm/express", "team-a pkg:npm/lodash", "team-b pkg:npm/lodash"}
+	want := []string{"team-a c1 app pkg:npm/express", "team-a c1 app pkg:npm/lodash", "team-a c1 worker pkg:npm/lodash", "team-a prod app pkg:npm/lodash", "team-b c1 app pkg:npm/lodash"}
 	if !slices.Equal(got, want) {
 		t.Errorf("suppressions = %q, want %q", got, want)
+	}
+}
+
+func TestWorkloadSuppressionBatch(t *testing.T) {
+	db, exec := newFixture(t)
+	ctx := context.Background()
+	set(t, db, lodashSuppression("not_affected"))
+
+	// Discovery includes already assessed findings, without restricting the image.
+	filter := database.FindingFilter{Teams: []string{"team-a"}, VulnerabilityID: "GHSA-1", Package: "pkg:npm/lodash", Suppressed: database.SuppressedInclude}
+	findings, _, err := db.ListFindings(ctx, filter, database.Page{})
+	if err != nil || len(findings) != 2 {
+		t.Fatalf("discover workloads = %v, %v; want app and worker", findings, err)
+	}
+	var selected []database.NewSuppression
+	for _, f := range findings {
+		selected = append(selected, database.NewSuppression{
+			SuppressionKey: database.SuppressionKey{Environment: f.Workload.Environment, Workload: f.Workload.Name, ImageName: f.Image.Name, Package: f.Finding.PackageKey, VulnerabilityID: f.Finding.VulnerabilityID},
+			State:          "accepted_risk", Detail: "explicitly selected",
+		})
+	}
+	set(t, db, selected...)
+	if _, err := db.DeleteSuppressions(ctx, "team-a", []database.SuppressionKey{lodashKey}); err != nil {
+		t.Fatal(err)
+	}
+	only, _, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	if err != nil || !slices.Equal(findingKeys(only), []string{workerLodash}) {
+		t.Fatalf("after deleting app assessment = %v, %v; want worker only", findingKeys(only), err)
+	}
+	listed, _, err := db.ListSuppressions(ctx, database.SuppressionFilter{Teams: []string{"team-a"}, Environment: "c1", Workload: "worker"}, database.Page{Size: 1})
+	if err != nil || len(listed) != 1 || listed[0].Workload != "worker" {
+		t.Fatalf("list worker assessments = %v, %v", listed, err)
+	}
+	// A new digest and package version in the same repository retain this workload's assessment.
+	exec(`UPDATE workloads SET image_id = 2 WHERE team = 'team-a' AND name = 'worker'`)
+	only, _, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	if err != nil || len(only) != 1 || only[0].Workload.Name != "worker" || only[0].Image.Digest != "sha256:b" {
+		t.Fatalf("after rebuild = %v, %v; want worker's new image assessed", only, err)
+	}
+	exec(`UPDATE workloads SET image_id = 3 WHERE team = 'team-a' AND name = 'worker'`)
+	only, _, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	if err != nil || len(only) != 0 {
+		t.Fatalf("after repository change = %v, %v; want no inherited assessment", only, err)
+	}
+}
+
+func TestMigrateWorkloadSuppressions(t *testing.T) {
+	db, url := databasetest.NewWithURL(t)
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(ctx)
+	// Reconstruct the deployed v1 schema, then exercise the real startup migration.
+	_, err = conn.Exec(ctx, fixture+`
+			DROP TABLE suppressions;
+			ALTER TABLE legacy_suppressions RENAME TO suppressions;
+			ALTER INDEX legacy_suppressions_pkey RENAME TO suppressions_pkey;
+			DELETE FROM schema_migrations WHERE version = 2;
+			INSERT INTO suppressions (team, image_name, package_key, vulnerability_id, state, detail, updated_by, updated_at)
+			VALUES ('team-a', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'original reason', 'original actor', '2026-01-02'),
+			       ('team-a', 'repo/absent', 'pkg:npm/lodash', 'CVE-1', 'not_affected', 'unmatched', 'me', '2026-01-02');
+			INSERT INTO workloads (environment, team, name, image_reference, image_id)
+			VALUES ('prod', 'team-a', 'app', 'repo/app:2', 2);
+			INSERT INTO workloads (environment, team, name, image_reference, resolve_error)
+			VALUES ('prod', 'team-a', 'unresolved', 'repo/app:missing', 'not found');`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	migrated, err := database.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	all := listSuppressions(t, migrated)
+	if len(all) != 3 {
+		t.Fatalf("migrated = %+v, want three current matching workloads", all)
+	}
+	for _, s := range all {
+		if s.Team != "team-a" || s.Detail != "original reason" || s.UpdatedBy != "original actor" || s.UpdatedAt.Format("2006-01-02") != "2026-01-02" {
+			t.Errorf("migration changed attribution or scope: %+v", s)
+		}
+	}
+	var preserved int
+	if err := conn.QueryRow(ctx, "SELECT count(*) FROM legacy_suppressions").Scan(&preserved); err != nil || preserved != 2 {
+		t.Errorf("original assessments = %d, %v; want both preserved", preserved, err)
+	}
+	// Reopening does not reapply legacy assessments over subsequent edits or deletes.
+	if _, err := migrated.DeleteSuppressions(ctx, "team-a", []database.SuppressionKey{lodashKey}); err != nil {
+		t.Fatal(err)
+	}
+	migrated.Close()
+	reopened, err := database.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if all := listSuppressions(t, reopened); len(all) != 2 {
+		t.Errorf("after restart = %+v, want deleted assessment to stay deleted", all)
 	}
 }

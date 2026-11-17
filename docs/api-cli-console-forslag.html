@@ -1,0 +1,1240 @@
+<!doctype html>
+<html lang="nb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Forslag til sårbarhets-API med klikkbare Console- og CLI-mocker som bruker samme eksempeldata.">
+<title>Sårbarheter i API, Console og CLI</title>
+<style>
+:root {
+  --bg: #f7f8fa; --paper: #fff; --ink: #1b2129; --ink-2: #3c4450; --dim: #586372;
+  --line: #cdd4dd; --soft: #edf0f4; --accent: #0067c5; --accent-soft: #e6f0ff; --accent-ink: #003e83;
+  --ok-soft: #e0f3e7; --ok-ink: #16603a; --warn-soft: #fff0cf; --warn-ink: #704700;
+  --cut-soft: #fde7e5; --cut-ink: #932d28;
+  --sans: "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not(:has(#theme:checked)) {
+  --bg: #0e1116; --paper: #161c24; --ink: #edf0f5; --ink-2: #c6cfda; --dim: #a4afbe;
+  --line: #3c4858; --soft: #222c39; --accent: #7abaff; --accent-soft: #112d4f; --accent-ink: #b6d8ff;
+  --ok-soft: #143522; --ok-ink: #a1e4b7; --warn-soft: #392b10; --warn-ink: #f7d58d;
+  --cut-soft: #3c2022; --cut-ink: #ffbab4; color-scheme: dark;
+} }
+@media (prefers-color-scheme: light) { :root:has(#theme:checked) {
+  --bg: #0e1116; --paper: #161c24; --ink: #edf0f5; --ink-2: #c6cfda; --dim: #a4afbe;
+  --line: #3c4858; --soft: #222c39; --accent: #7abaff; --accent-soft: #112d4f; --accent-ink: #b6d8ff;
+  --ok-soft: #143522; --ok-ink: #a1e4b7; --warn-soft: #392b10; --warn-ink: #f7d58d;
+  --cut-soft: #3c2022; --cut-ink: #ffbab4; color-scheme: dark;
+} }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.65 var(--sans); }
+a { color: var(--accent); text-underline-offset: 3px; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+h1, h2, h3, p, figure { margin: 0; }
+h1, h2, h3 { line-height: 1.2; letter-spacing: -.025em; }
+h1 { font-size: clamp(32px, 4vw, 46px); margin: 12px 0 18px; max-width: 24ch; }
+h2 { font-size: 28px; margin: 8px 0 14px; }
+h3 { font-size: 19px; margin: 18px 0 10px; }
+p + p { margin-top: 12px; }
+code { font: .84em/1.5 var(--mono); overflow-wrap: anywhere; }
+pre { font: 12px/1.65 var(--mono); overflow-x: auto; margin: 0; tab-size: 2; }
+pre code { font: inherit; overflow-wrap: normal; }
+button, select, input, textarea { font: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: .6; }
+[hidden] { display: none !important; }
+.page { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 38px; max-width: 1370px; margin: auto; padding: 46px 28px 80px; }
+main { min-width: 0; }
+.toc { position: sticky; top: 28px; align-self: start; font-size: 13px; }
+.toc a { display: block; padding: 8px 0; border-bottom: 1px solid var(--line); text-decoration: none; color: var(--dim); }
+.eyebrow { font: 11px/1.6 var(--mono); color: var(--dim); }
+.lede { color: var(--ink-2); max-width: 76ch; font-size: 18px; }
+.small, .caption { color: var(--dim); font-size: 13px; }
+.caption { margin-top: 12px; }
+section { margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--line); scroll-margin-top: 20px; }
+.intro { color: var(--ink-2); margin-bottom: 20px; max-width: 80ch; }
+.note { border-left: 3px solid var(--accent); padding-left: 15px; margin-top: 20px; color: var(--ink-2); font-size: 14px; }
+.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.box { padding: 18px; background: var(--paper); border: 1px solid var(--line); border-radius: 7px; min-width: 0; }
+.box h3 { margin-top: 0; }
+ul, ol { padding-left: 22px; }
+li { margin: 7px 0; }
+details { border: 1px solid var(--line); border-radius: 6px; background: var(--paper); padding: 13px 16px; margin-top: 18px; }
+summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+details p, details ul, details pre { margin-top: 14px; }
+.table-wrap { overflow-x: auto; background: var(--paper); border: 1px solid var(--line); border-radius: 7px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; vertical-align: top; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+th { background: var(--soft); font-weight: 600; }
+td { color: var(--ink-2); }
+tr:last-child td { border-bottom: 0; }
+.compare { min-width: 660px; table-layout: fixed; }
+.compare th:first-child { width: 42%; }
+.work-table { min-width: 700px; }
+.work-table th:first-child { width: 110px; }
+.code { padding: 16px; background: var(--paper); border-radius: 6px; }
+.demo-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 22px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 7px; background: var(--paper); margin-top: 20px; font-size: 13px; }
+.demo-tools label { display: flex; align-items: center; gap: 8px; }
+.demo-tools select, .plain-button { padding: 6px 10px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; font-size: 13px; }
+.demo-tools .plain-button { margin-left: auto; }
+.view-switch { display: inline-flex; gap: 4px; background: var(--soft); border-radius: 6px; padding: 4px; margin-bottom: 14px; }
+.view-switch button { background: transparent; border: 0; padding: 7px 16px; border-radius: 4px; color: var(--ink-2); font-size: 14px; }
+.view-switch button[aria-pressed="true"] { background: var(--paper); color: var(--accent); }
+.mock {
+  --m-bg: #0c1119; --m-panel: #111823; --m-line: #344154; --m-ink: #e6edf5; --m-dim: #adbbce;
+  background: var(--m-bg); color: var(--m-ink); border: 1px solid var(--m-line); border-radius: 9px;
+  overflow: hidden; color-scheme: dark; font-size: 13px; line-height: 1.5;
+}
+.mock button, .mock select, .mock input, .mock textarea { color: var(--m-ink); }
+.mock button:focus-visible, .mock select:focus-visible, .mock input:focus-visible,
+.mock summary:focus-visible, .mock [tabindex]:focus-visible { outline: 2px solid #8cc4ff; outline-offset: -2px; }
+.mock-top { padding: 14px 18px; border-bottom: 1px solid var(--m-line); display: flex; flex-wrap: wrap; gap: 10px 24px; align-items: center; }
+.mock-brand { color: #ff93c4; font-weight: 650; font-size: 15px; }
+.mock-top > span { color: var(--m-dim); font-size: 12px; }
+.mock-top .mock-label { margin-left: auto; font: 10px var(--mono); }
+.mock-layout { display: grid; grid-template-columns: minmax(0, 1fr) 205px; grid-template-areas: "main filters"; gap: 24px; align-items: start; padding: 24px 20px; }
+.mock-main { grid-area: main; min-width: 0; }
+.mock-filter-panel { grid-area: filters; min-width: 0; }
+.mock-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 18px; }
+.mock-heading h3 { margin: 0; font-size: 23px; }
+.mock-heading > span { color: var(--m-dim); }
+.mock-workload-select { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; color: var(--m-dim); }
+.mock select { background: #111e2e; border: 1px solid #465b76; border-radius: 4px; padding: 7px 9px; font-size: 12px; }
+.mock-tabs { display: flex; gap: 20px; border-bottom: 1px solid var(--m-line); margin-bottom: 17px; }
+.mock-tabs button { font: 12px var(--sans); padding: 0 0 10px; border: 0; border-bottom: 2px solid transparent; background: none; color: var(--m-dim); }
+.mock-tabs button[aria-pressed="true"] { border-color: #e6edf5; color: var(--m-ink); }
+.mock-coverage { padding: 11px 13px; background: var(--m-panel); border: 1px solid var(--m-line); border-radius: 5px; margin-bottom: 15px; color: var(--m-dim); }
+.mock-coverage strong { color: var(--m-ink); font-weight: 550; }
+.mock-coverage .warn { color: #f7d58d; }
+.mock details { background: var(--m-panel); border-color: var(--m-line); margin: 12px 0; padding: 11px 13px; }
+.mock summary { color: var(--m-dim); font-size: 12px; }
+.mock details p { margin-top: 9px; font-size: 12px; color: var(--m-dim); overflow-wrap: anywhere; }
+.mock-metrics { display: flex; flex-wrap: wrap; gap: 10px 20px; font-size: 12px; margin: 17px 0; color: var(--m-dim); }
+.mock-metrics b { font-size: 16px; color: var(--m-ink); font-weight: 600; margin-right: 4px; }
+.mock .mock-filters { margin: 0; padding: 16px; background: var(--m-panel); border: 1px solid var(--m-line); border-radius: 6px; }
+.mock .mock-filters > summary { color: var(--m-ink); font-size: 13px; font-weight: 550; }
+.mock-filters label { color: var(--m-ink); font-size: 12px; }
+.mock-filters .filter-select { display: grid; gap: 8px; margin-top: 21px; }
+.mock-filters select { width: 100%; }
+.mock-filters fieldset { border: 0; border-top: 1px solid var(--m-line); padding: 14px 0 0; margin: 24px 0 0; min-width: 0; }
+.mock-filters legend { color: var(--m-dim); font-size: 12px; padding: 0 0 4px; }
+.mock-filters .check { display: flex; align-items: center; gap: 8px; padding: 7px 0; font-size: 12px; }
+.mock-filters .check input { margin: 0; width: 14px; height: 14px; }
+.mock-filters .filter-count { margin-left: auto; border-radius: 12px; background: #202b3d; color: var(--m-dim); padding: 0 6px; font: 10px/1.8 var(--mono); }
+.mock-filters .reset-filters { margin-top: 20px; }
+.mock input[type="checkbox"] { accent-color: #85baff; }
+.mock-table-wrap { overflow-x: auto; }
+.mock table { min-width: 690px; color: var(--m-ink); font-size: 12px; }
+.mock th { background: none; color: var(--m-dim); font-size: 10px; font-weight: 500; border-bottom-color: var(--m-line); }
+.mock td { color: var(--m-ink); border-bottom-color: var(--m-line); vertical-align: middle; }
+.mock td, .mock th { padding: 12px 9px; }
+.mock td small { display: block; color: var(--m-dim); font-size: 10px; margin-top: 4px; }
+.mock .pkg { min-width: 180px; }
+.mock .pkg strong { font-weight: 550; }
+.mock .chip { font-size: 11px; border-radius: 4px; padding: 3px 6px; display: inline-block; background: #253146; color: #c6d9f4; white-space: nowrap; }
+.mock .high { background: #422423; color: #ffb6a8; }
+.mock .medium { background: #352c16; color: #f3cf7a; }
+.mock .low { background: #163327; color: #a0dfb9; }
+.mock .muted { color: var(--m-dim); }
+.mock .good { color: #a0dfb9; }
+.mock .warn { color: #f7d58d; }
+.mock .link { color: #a7d0ff; background: none; border: 0; padding: 0; font-size: inherit; text-align: left; text-decoration: underline; text-underline-offset: 3px; }
+.mock .expand { background: none; border: 0; padding: 0 5px; font-size: 19px; width: 24px; }
+.mock .detail-cell { background: var(--m-panel); padding: 16px; color: var(--m-dim); font-size: 12px; }
+.mock .detail-cell p { margin-bottom: 10px; overflow-wrap: anywhere; }
+.mock .action { background: #263d5a; border: 1px solid #59799f; border-radius: 4px; padding: 7px 10px; font-size: 11px; }
+.mock-empty, .mock-error { padding: 18px 0; color: var(--m-dim); font-size: 13px; }
+.mock-error { color: #ffbab4; }
+.mock-bottom { color: var(--m-dim); margin-top: 15px; font-size: 11px; }
+.mock-dialog { background: #111823; color: #e6edf5; border: 1px solid #465b76; border-radius: 9px; padding: 24px; width: min(540px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; font-size: 13px; color-scheme: dark; }
+.mock-dialog::backdrop { background: #000a; }
+.mock-dialog h3 { margin-top: 0; }
+.mock-dialog p, .mock-dialog legend { color: #adbbce; font-size: 12px; }
+.mock-dialog fieldset { border: 0; padding: 0; margin: 17px 0; min-width: 0; }
+.target { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #344154; padding: 10px 0; }
+.target span { min-width: 0; }
+.target small { color: #adbbce; display: block; }
+.mock-dialog .field { display: block; margin-top: 14px; }
+.mock-dialog select, .mock-dialog textarea { display: block; width: 100%; margin-top: 6px; padding: 9px; border: 1px solid #465b76; border-radius: 4px; background: #0c1119; color: #e6edf5; font: 13px var(--sans); }
+.mock-dialog textarea { resize: vertical; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+.dialog-actions button { padding: 7px 12px; border-radius: 4px; background: #263d5a; color: #e6edf5; border: 1px solid #59799f; font-size: 12px; }
+.dialog-error { color: #ffbab4 !important; margin-top: 12px; }
+.cli-commands { margin: 20px 0; padding: 16px 18px; border-left: 2px solid var(--line); font: 13px/1.9 var(--mono); overflow-x: auto; }
+.cli-presets { display: flex; flex-wrap: wrap; gap: 0 24px; margin-top: 24px; border-bottom: 1px solid var(--line); }
+.cli-presets button { border: 0; border-bottom: 2px solid transparent; color: var(--dim); background: none; padding: 9px 0; font: 13px var(--sans); }
+.cli-presets button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+.cli-settings { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-top: 12px; color: var(--dim); font-size: 12px; }
+.cli-settings label { display: flex; gap: 7px; align-items: center; }
+.cli-choice { margin-top: 18px; font: 12px var(--mono); }
+.cli-choice label { display: block; color: #9edbb3; margin-bottom: 8px; }
+.cli-choice input { width: 65px; background: #111823; color: #e6edf5; border: 1px solid #59799f; border-radius: 3px; padding: 7px; font: inherit; }
+.cli-choice button { background: #1a2533; color: #e6edf5; border: 1px solid #465b76; border-radius: 4px; padding: 7px 12px; font: 12px var(--sans); }
+.cli-choice-error { color: #f7d58d; font-size: 12px; margin-top: 10px; }
+.terminal { background: #0b1119; color: #e6edf5; border: 1px solid #344154; border-radius: 0 0 7px 7px; overflow: hidden; color-scheme: dark; }
+.terminal-screen { min-height: 240px; max-height: 650px; overflow: auto; padding: 24px; }
+.terminal pre { font-size: 12px; line-height: 1.85; white-space: pre; }
+.terminal .stderr { color: #f7d58d; margin-top: 20px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.terminal .cli-high { color: #ffb6a8; }
+.terminal .cli-medium { color: #f3cf7a; }
+.terminal .cli-low { color: #a0dfb9; }
+.terminal .cli-unknown { color: #b9c9dd; }
+.terminal-form { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid #344154; padding: 16px 24px; font: 13px var(--mono); }
+.terminal-form > span { color: #9edbb3; }
+.terminal-form input { min-width: 0; flex: 1; background: transparent; color: #e6edf5; border: 0; font: inherit; padding: 7px 2px; }
+.terminal-form button { background: #1a2533; color: #e6edf5; border: 1px solid #465b76; border-radius: 4px; padding: 7px 13px; font: 12px var(--sans); }
+.terminal-status { border-top: 1px solid #344154; color: #adbbce; padding: 7px 24px; font: 11px var(--mono); }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+.theme-toggle { position: absolute; right: 20px; top: 12px; padding: 5px 10px; background: var(--paper); border: 1px solid var(--line); border-radius: 15px; color: var(--ink-2); font-size: 12px; cursor: pointer; }
+#theme:focus-visible + .theme-toggle { outline: 3px solid var(--accent); outline-offset: 3px; }
+.skip { position: absolute; left: 15px; top: -80px; background: var(--paper); padding: 12px; z-index: 20; }
+.skip:focus { top: 12px; }
+@media (max-width: 1000px) {
+  .page { grid-template-columns: minmax(0, 1fr); gap: 25px; padding-top: 62px; max-width: 950px; }
+  .toc { position: static; display: flex; flex-wrap: wrap; gap: 5px 18px; }
+  .toc a { border: 0; padding: 0; }
+}
+@media (max-width: 1099px) {
+  .mock-layout { grid-template-columns: minmax(0, 1fr); grid-template-areas: "filters" "main"; gap: 18px; }
+}
+@media (max-width: 640px) {
+  .page { padding: 62px 18px 50px; }
+  .two { grid-template-columns: minmax(0, 1fr); }
+  h2 { font-size: 24px; }
+  .mock-layout { padding: 18px 12px; }
+  .demo-tools .plain-button { margin-left: 0; }
+  .terminal-screen { padding: 18px 12px; }
+  .terminal-form { padding: 12px; font-size: 12px; }
+  .cli-presets { gap: 0 20px; }
+}
+@media print {
+  .page { display: block; padding: 0; }
+  .toc, .theme-toggle, .skip, .demo-tools, .cli-presets, .terminal-form { display: none; }
+  section { margin-top: 25px; }
+  .terminal-screen { max-height: none; }
+}
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<a href="#main" class="skip">Hopp til innhold</a>
+<input type="checkbox" id="theme" class="sr-only" aria-label="Bytt mellom lyst og mørkt tema">
+<label for="theme" class="theme-toggle">Lyst / mørkt</label>
+<div class="page">
+<nav class="toc" aria-label="Innhold">
+  <a href="#console">Console-mock</a>
+  <a href="#cli">CLI-mock</a>
+  <a href="#api">API-forslag</a>
+  <a href="#difference">Gammel → ny</a>
+  <a href="#work">Arbeid per repo</a>
+  <a href="#sources">Kilder</a>
+</nav>
+<main id="main">
+<header>
+  <p class="eyebrow">Forslag · 16. november 2026 · ikke implementert i produktene</p>
+  <h1>Sårbarheter i API, Console og CLI</h1>
+  <p class="lede">v0s erstatter v13s og Dependency-Track. Vi beholder funn, dekning og gjeldende vurderinger. Historikk, MTTR, risikoscore, prioriteringsklasser og sårbarhetscheckeren fjernes.</p>
+  <p class="small" style="margin-top:14px">Mockene nedenfor bruker samme eksempeldata. Ingen kall sendes til Nais, og ingen kommandoer kjøres på maskinen din. Last inn siden på nytt eller bruk «Nullstill» for å starte på nytt.</p>
+  <div class="demo-tools">
+    <label for="mock-mode">Eksempeltilstand
+      <select id="mock-mode"><option value="normal">Vanlig visning</option><option value="rescan">Siste rescan feilet</option><option value="unavailable">Intern feil</option></select>
+    </label>
+    <span class="small">Team: <code>eksempelteam</code> · miljøer: prod og dev</span>
+    <button type="button" class="plain-button" id="reset-mock">Nullstill</button>
+  </div>
+  <noscript><p class="note">Mockene trenger JavaScript. API-forslaget og arbeidslisten nedenfor kan leses uten.</p></noscript>
+</header>
+
+<section id="console">
+  <p class="eyebrow">Mock · bygger på app- og teamvisningen i v0s-pitchen</p>
+  <h2>Se funnene, åpne detaljene og prøv en vurdering</h2>
+  <p class="intro">Velg en workload i tabellen, eller bytt direkte til workload-visningen. Åpne en funnrad for å se pakke, kilde og vurdering. I vurderingsdialogen kan du velge andre berørte workloads; de får hver sin vurdering.</p>
+  <div class="view-switch" role="group" aria-label="Console-visning">
+    <button type="button" id="view-team" aria-pressed="true">Teamoversikt</button>
+    <button type="button" id="view-workload" aria-pressed="false">Workload</button>
+  </div>
+  <div class="mock" lang="en" aria-label="Interactive Nais Console mock">
+    <div class="mock-top"><b class="mock-brand">Nais Console</b><span>eksempelteam</span><span class="mock-label">MOCK · LOCAL DATA</span></div>
+    <div class="mock-layout">
+      <aside class="mock-filter-panel" aria-label="Vulnerability filters">
+        <details class="mock-filters" id="console-filters" open>
+          <summary>Filters</summary>
+          <label id="environment-picker" class="filter-select">Environment<select id="console-environment"><option value="">All environments</option><option value="prod">prod</option><option value="dev">dev</option></select></label>
+          <label class="filter-select">Suppressed findings<select id="console-suppressed"><option value="EXCLUDE">Exclude</option><option value="INCLUDE">Include</option><option value="ONLY">Only suppressed</option></select></label>
+          <fieldset id="console-severities">
+            <legend>Severity</legend>
+            <label class="check"><input type="checkbox" name="severity" value="CRITICAL"> Critical <span class="filter-count" data-severity-count="critical">0</span></label>
+            <label class="check"><input type="checkbox" name="severity" value="HIGH"> High <span class="filter-count" data-severity-count="high">0</span></label>
+            <label class="check"><input type="checkbox" name="severity" value="MEDIUM"> Medium <span class="filter-count" data-severity-count="medium">0</span></label>
+            <label class="check"><input type="checkbox" name="severity" value="LOW"> Low <span class="filter-count" data-severity-count="low">0</span></label>
+            <label class="check"><input type="checkbox" name="severity" value="UNKNOWN"> Unknown <span class="filter-count" data-severity-count="unknown">0</span></label>
+          </fieldset>
+          <fieldset>
+            <legend>Finding</legend>
+            <label class="check"><input type="checkbox" id="console-fix"> Known fix</label>
+            <label class="check"><input type="checkbox" id="console-kev"> In CISA KEV</label>
+          </fieldset>
+          <button type="button" class="link reset-filters" id="console-clear-filters">Reset filters</button>
+        </details>
+      </aside>
+      <div class="mock-main">
+        <div class="mock-heading"><h3 id="console-title">Vulnerabilities</h3><span id="console-subtitle">Team overview</span></div>
+        <label id="workload-picker" class="mock-workload-select" hidden>Workload
+          <select id="console-workload">
+            <option value="prod/bestilling">bestilling · prod</option>
+            <option value="prod/bestilling-worker">bestilling-worker · prod</option>
+            <option value="dev/bestilling">bestilling · dev</option>
+            <option value="prod/rapport-jobb">rapport-jobb · prod</option>
+          </select>
+        </label>
+        <div id="console-coverage" class="mock-coverage"></div>
+        <div id="console-image"></div>
+        <div id="console-metrics" class="mock-metrics"></div>
+        <div class="mock-tabs" role="group" aria-label="Show">
+          <button type="button" id="tab-workloads" aria-pressed="true">Workloads</button>
+          <button type="button" id="tab-findings" aria-pressed="false">Findings</button>
+          <button type="button" id="tab-assessments" aria-pressed="false">Assessments</button>
+        </div>
+        <div id="console-content"></div>
+        <p id="console-bottom" class="mock-bottom"></p>
+      </div>
+    </div>
+  </div>
+  <p class="caption">Fiktive funn og versjonsopplysninger. Samme pakkenavn og arbeidsflyt som i <a href="pitch.html#console">pitchen</a>. bestilling og bestilling-worker i prod deler image, men ikke vurderinger. rapport-jobb mangler SBOM. Ingen kolonnesortering er foreslått i denne API-versjonen.</p>
+  <p id="mock-notice" class="small" role="status" aria-live="polite"></p>
+
+  <dialog id="assessment-dialog" class="mock-dialog" lang="en" aria-labelledby="assessment-title" aria-describedby="assessment-description">
+    <form id="assessment-form">
+      <h3 id="assessment-title">Assess finding</h3>
+      <p id="assessment-description">Each selected workload gets a separate assessment. Changes are saved only in this page.</p>
+      <p id="assessment-package" style="margin-top:10px"></p>
+      <fieldset><legend>Affected workloads in this team · all environments, including suppressed findings</legend><div id="assessment-targets"></div></fieldset>
+      <label class="field">Assessment<select name="state" required><option value="">Choose assessment</option><option value="NOT_AFFECTED">Not affected</option><option value="FALSE_POSITIVE">False positive</option><option value="ACCEPTED_RISK">Accepted risk</option></select></label>
+      <label class="field">Reason<textarea name="reason" rows="3" required></textarea></label>
+      <p id="assessment-error" class="dialog-error" role="alert"></p>
+      <div class="dialog-actions"><button type="button" id="assessment-delete">Remove selected assessments</button><button type="button" id="assessment-cancel">Cancel</button><button type="submit">Save assessment</button></div>
+    </form>
+  </dialog>
+</section>
+
+<section id="cli">
+  <p class="eyebrow">Ny kommandoflate · interaktiv mock, ikke dagens CLI</p>
+  <h2>Én listekommando, med eller uten workload</h2>
+  <p class="intro"><code>nais vuln list</code> viser teamets funn. Under <code>app</code> og <code>job</code> kan du liste funn og lagre eller fjerne en vurdering for én workload. <code>vulnerabilities</code> er alias for <code>vuln</code> alle steder.</p>
+  <pre class="cli-commands" tabindex="0" aria-label="Foreslåtte kommandoer">nais vuln list
+nais app vuln list &lt;navn&gt;
+nais job vuln list &lt;navn&gt;
+nais app vuln suppress &lt;navn&gt; &lt;cve-id&gt; --state NOT_AFFECTED --reason "Begrunnelse"
+nais app vuln unsuppress &lt;navn&gt; &lt;cve-id&gt;
+nais vuln search &lt;cve-id&gt;</pre>
+  <p class="small">Team og miljø hentes fra CLI-ens defaults; her er de <code>eksempelteam</code> og <code>prod</code>. Overstyr med <code>--team</code> og <code>--environment</code>. Eksemplene under kan kjøres og redigeres.</p>
+  <div class="cli-presets" role="group" aria-label="Kjør eksempelkommando i mocken">
+    <button type="button" data-command="nais vuln list" aria-pressed="true">Team</button>
+    <button type="button" data-command="nais app vuln list bestilling" aria-pressed="false">App</button>
+    <button type="button" data-command="nais job vuln list bestilling-worker" aria-pressed="false">Jobb</button>
+    <button type="button" data-command='nais app vuln suppress bestilling CVE-20XX-0002 --state NOT_AFFECTED --reason "Berørt funksjon brukes ikke"' aria-pressed="false">Vurder</button>
+    <button type="button" data-command='nais app vuln suppress bestilling CVE-20XX-0001 --state NOT_AFFECTED --reason "Berørt funksjon brukes ikke"' aria-pressed="false">Velg pakke</button>
+    <button type="button" data-command="nais app vuln unsuppress bestilling CVE-20XX-0002" aria-pressed="false">Fjern vurdering</button>
+    <button type="button" data-command="nais vuln search CVE-20XX-0001" aria-pressed="false">CVE</button>
+    <button type="button" data-command="nais app vuln list bestilling --output json" aria-pressed="false">JSON</button>
+  </div>
+  <div class="terminal" lang="en" aria-label="CLI mock, not a real shell">
+    <form id="cli-form" class="terminal-form">
+      <span aria-hidden="true">$</span>
+      <label for="cli-input" class="sr-only">Command to run in the mock</label>
+      <input id="cli-input" type="text" value="nais vuln list" autocomplete="off" autocapitalize="off" spellcheck="false">
+      <button type="submit" lang="nb">Kjør</button>
+    </form>
+    <div class="terminal-screen" tabindex="0" role="region" aria-label="Command result, scroll for longer output">
+      <pre id="cli-stdout" aria-label="stdout"></pre>
+      <pre id="cli-stderr" class="stderr" aria-label="stderr" hidden></pre>
+      <form id="cli-choice-form" class="cli-choice" hidden>
+        <label for="cli-choice-input" id="cli-choice-label">Choose package</label>
+        <input id="cli-choice-input" type="text" inputmode="numeric" autocomplete="off" aria-describedby="cli-choice-error">
+        <button type="submit">Select</button>
+        <button type="button" id="cli-choice-cancel">Cancel</button>
+        <p id="cli-choice-error" class="cli-choice-error" role="alert"></p>
+      </form>
+    </div>
+    <div id="cli-status" class="terminal-status" role="status"></div>
+  </div>
+  <div class="cli-settings"><label><input id="cli-interactive" type="checkbox" checked> Interaktiv terminal</label><span>Slå av for å prøve oppførselen uten TTY. Endringer lagres bare i denne siden.</span></div>
+  <p class="note"><strong>Prøv «Vurder» og «Velg pakke».</strong> CVE-20XX-0002 finnes bare i lodash og trenger ikke et pakkevalg. CVE-20XX-0001 finnes i både netty-codec-http2 og netty-handler i bestilling. Da må du velge én pakke før noe lagres. Console viser endringen med en gang.</p>
+  <p class="caption">Bare severity, ID, installert pakke og kjent fiks i standardlisten. CVE-søk viser CVSS, EPSS og KEV én gang, over de berørte workloadene. JSON beholder alle fakta. Mocken bruker dataene fra Console over, uten nettverk eller shell.</p>
+  <details>
+    <summary>Filtre, JSON og brudd med dagens kommandoer</summary>
+    <p><code>--severity high</code>, <code>--fixable</code> og <code>--kev</code> avgrenser funnene. <code>--suppressed include|only</code> viser vurderte funn.</p>
+    <p><code>suppress</code> krever vurderingstype og begrunnelse. Pakken finnes automatisk ved ett treff. Ved flere treff spør CLI-en; <code>--package &lt;pakkenøkkel&gt;</code> velger eksplisitt og hopper over spørsmålet. Uten TTY, eller med JSON-output, gir tvetydige treff en feil med alternativene. Ingen «velg alle» eller spredning til andre workloads.</p>
+    <p><code>unsuppress</code> slår opp lagrede vurderinger, ikke bare aktive funn. Samme regel for pakkevalg gjelder. En vurdering kan derfor fjernes etter at pakken er oppdatert eller funnet er borte.</p>
+    <p><code>list --output json</code> gir scope, summary, coverage og findings; skrivekommandoene gir resultatet av endringen. Ingen spørsmål eller advarsler blandes inn i JSON. Manglende SBOM og feil ved rescan varsles på stderr; backendfeil gir nonzero exit.</p>
+    <p><strong>Dette er en ny kommandoflate.</strong> Dagens <code>summary</code>, <code>list summary</code> og <code>list all</code> tas ut. Workload-kommandoene ligger under <code>app vuln</code> og <code>job vuln</code>, ikke omvendt. Team-/miljø-/output-flagg gjenbrukes; funnfiltre og skrivekommandoer er nye forslag.</p>
+    <p>Skriv <code>nais vuln --help</code> i mocken for syntaks og flagg. Mocken henter to funn per simulert side og tar med alle sider. API-kallene vises nedenfor; pagineringen trenger ingen egen CLI-kommando.</p>
+  </details>
+  <details><summary>API-kall for siste CLI-kommando</summary><pre class="code" id="cli-api"></pre></details>
+</section>
+
+<section id="api">
+  <p class="eyebrow">Foreslåtte GraphQL-felter</p>
+  <h2>Funn, antall og dekning er tre ulike lesinger</h2>
+  <p class="intro"><code>findings</code> returnerer radene. <code>summary</code> teller alle radene som matcher samme filter, ikke bare den viste siden. <code>coverage</code> teller workloads med og uten analyseresultater og tar derfor ikke et funnfilter.</p>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Foreslåtte API-operasjoner">
+    <table>
+      <thead><tr><th scope="col">Felt</th><th scope="col">Resultat</th><th scope="col">v0s</th></tr></thead>
+      <tbody>
+        <tr><td><code>vulnerabilityFindings(scope, filter, first, after)</code></td><td>Funn med workload, image, pakke, severity, fiks, kilder, EPSS/KEV og vurdering.</td><td><code>ListFindings</code></td></tr>
+        <tr><td><code>vulnerabilitySummary(scope, filter)</code></td><td>Antall totalt, per severity, med kjent fiks og med KEV-oppføring.</td><td><code>CountFindings</code></td></tr>
+        <tr><td><code>vulnerabilityCoverage(scope)</code></td><td>Workloads totalt, analysert, ventende, uten SBOM, med feil eller uavklart image.</td><td><code>ListWorkloads</code> + API-inventory</td></tr>
+        <tr><td><code>vulnerability(identifier)</code></td><td>Advisory-detaljer for ID eller alias.</td><td><code>GetVulnerability</code></td></tr>
+        <tr><td><code>vulnerabilitySuppressions(scope, filter, first, after)</code></td><td>Gjeldende vurderinger, også når funnet ikke lenger finnes.</td><td><code>ListSuppressions</code></td></tr>
+        <tr><td><code>setVulnerabilitySuppressions(input)</code></td><td>Opprett eller erstatt vurderinger i én atomisk batch innen ett team.</td><td><code>SetSuppressions</code></td></tr>
+        <tr><td><code>deleteVulnerabilitySuppressions(input)</code></td><td>Fjern vurderinger for de oppgitte nøklene. Manglende vurdering er ikke en feil.</td><td><code>DeleteSuppressions</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">På <code>Workload</code> legges <code>vulnerabilityFindings</code>, <code>vulnerabilitySummary</code> og <code>vulnerabilityCoverage</code>. De bruker samme implementasjon som root-feltene. Team-siden summerer over teamets workloads; den får ingen egen risikomodell.</p>
+  <details id="schema">
+    <summary>SDL-utdrag: operasjoner, filtre og resultattyper</summary>
+    <p>Forslag, ikke dagens schema. Connection- og payload-typer er forkortet. Eksisterende Workload, Slug, Time og Cursor gjenbrukes.</p>
+    <pre class="code"><code>extend type Query {
+  vulnerabilityFindings(scope: VulnerabilityScopeInput, filter: VulnerabilityFindingFilter,
+    first: Int, after: Cursor): VulnerabilityFindingConnection!
+  vulnerabilitySummary(scope: VulnerabilityScopeInput,
+    filter: VulnerabilityFindingFilter): VulnerabilitySummary!
+  vulnerabilityCoverage(scope: VulnerabilityScopeInput): VulnerabilityCoverageCounts!
+  vulnerability(identifier: String!): Vulnerability
+  vulnerabilitySuppressions(scope: VulnerabilityScopeInput, filter: VulnerabilitySuppressionFilter,
+    first: Int, after: Cursor): VulnerabilitySuppressionConnection!
+}
+
+extend interface Workload {
+  vulnerabilityFindings(filter: VulnerabilityFindingFilter,
+    first: Int, after: Cursor): VulnerabilityFindingConnection!
+  vulnerabilitySummary(filter: VulnerabilityFindingFilter): VulnerabilitySummary!
+  vulnerabilityCoverage: VulnerabilityCoverage!
+}
+
+input VulnerabilityScopeInput {
+  teams: [Slug!]
+  environment: String
+  workload: String
+}
+
+input VulnerabilityFindingFilter {
+  vulnerabilityIdentifier: String
+  package: String
+  severities: [VulnerabilitySeverity!]
+  onlyWithFix: Boolean = false
+  onlyKnownExploited: Boolean = false
+  suppressed: SuppressedFilter = EXCLUDE
+}
+
+enum SuppressedFilter { EXCLUDE INCLUDE ONLY }
+enum VulnerabilitySeverity { UNKNOWN LOW MEDIUM HIGH CRITICAL }
+
+type VulnerabilitySummary {
+  totalFindings: Int!
+  countsBySeverity: VulnerabilitySeverityCounts!
+  fixableFindings: Int!
+  knownExploitedFindings: Int!
+}
+
+type VulnerabilityCoverageCounts {
+  totalWorkloads: Int!
+  scanned: Int!
+  pending: Int!
+  noSbom: Int!
+  failed: Int!
+  unresolvedImage: Int!
+}
+
+type VulnerabilityCoverage {
+  status: VulnerabilityCoverageStatus!
+  imageName: String
+  imageDigest: String
+  scannedAt: Time
+  scannedDbVersion: Time
+  error: String
+}
+
+enum VulnerabilityCoverageStatus {
+  PENDING SCANNED NO_SBOM FAILED UNRESOLVED_IMAGE
+}
+
+enum VulnerabilitySuppressionState {
+  NOT_AFFECTED FALSE_POSITIVE ACCEPTED_RISK
+}
+
+input VulnerabilitySuppressionKeyInput {
+  environment: String!
+  workload: String!
+  imageName: String!
+  packageKey: String!
+  vulnerabilityIdentifier: String!
+}
+
+input NewVulnerabilitySuppressionInput {
+  key: VulnerabilitySuppressionKeyInput!
+  state: VulnerabilitySuppressionState!
+  reason: String!
+}
+
+input SetVulnerabilitySuppressionsInput {
+  team: Slug!
+  items: [NewVulnerabilitySuppressionInput!]!
+}
+
+input DeleteVulnerabilitySuppressionsInput {
+  team: Slug!
+  keys: [VulnerabilitySuppressionKeyInput!]!
+}
+
+extend type Mutation {
+  setVulnerabilitySuppressions(input: SetVulnerabilitySuppressionsInput!):
+    SetVulnerabilitySuppressionsPayload!
+  deleteVulnerabilitySuppressions(input: DeleteVulnerabilitySuppressionsInput!):
+    DeleteVulnerabilitySuppressionsPayload!
+}</code></pre>
+  </details>
+  <details>
+    <summary>Regler for telling, filtrering og vurderinger</summary>
+    <ul>
+      <li>Ett funn er sårbarhet × full purl × workload. Samme image brukt av to workloads gir to forekomster. Vi viser ikke antall unike CVE-er som om det var antall funn.</li>
+      <li>Scope er team, miljø og eventuelt workload-navn. Et workload-navn krever ett konkret team og miljø. En tom teamliste avvises; utelatt teamfilter betyr tenant-bred lesing.</li>
+      <li>Funnfiltre gjelder både liste og opptelling. Dekningen følger bare scope. EXCLUDE er default. INCLUDE brukes for å finne andre berørte workloads, også de som er vurdert.</li>
+      <li>Nye funn- og vurderingslister har first/after og hasNextPage/endCursor. Ingen sideindeks, obligatorisk totalCount eller vilkårlig orderBy. Filtrering skjer før paginering.</li>
+      <li>En vurdering gjelder team + miljø + workload + image-repository + versjonsløs pakkenøkkel + sårbarhets-ID. Den overlever versjonsoppdateringer, men arves ikke av andre workloads eller miljøer.</li>
+      <li>API autoriserer alle mål i batchen og setter aktøren fra innlogget bruker. v0s lagrer bare gjeldende state, begrunnelse, aktør og oppdateringstidspunkt. Ingen ny aktivitetslogg.</li>
+      <li>En mislykket rescan kan beholde forrige analyse med SCANNED og en feil. Nytt image får ikke funn fra forrige image som fallback. Ny workload som ennå ikke er observert i v0s vises som PENDING.</li>
+      <li>Backendfeil gir feil, ikke null funn. Ingen klientstyrt freshness-protokoll foreslås. EPSS-score og percentil bruker 0–1 i API-et og formateres som prosent i klienten.</li>
+    </ul>
+  </details>
+</section>
+
+<section id="difference">
+  <h2>Dette erstatter dagens API</h2>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Gammel og ny sårbarhetsflate">
+    <table class="compare">
+      <thead><tr><th scope="col">I dag</th><th scope="col">Forslag</th></tr></thead>
+      <tbody>
+        <tr><td><code>ContainerImage.vulnerabilities</code> og image-summary</td><td>Funn og opptelling på Workload. Vurderingen tilhører workloaden, ikke alle som deler image.</td></tr>
+        <tr><td>Ulike summary-typer på image, team og tenant</td><td>Én opptellingsmodell. Dekning er en egen lesing.</td></tr>
+        <tr><td><code>Team/Query.vulnerabilitySummaries</code></td><td>Eksisterende workload-lister med opptelling og dekning per workload.</td></tr>
+        <tr><td><code>hasSBOM</code>, SBOM-prosent og pipeline-tidspunkt</td><td>Status, analysert image/digest, analysetidspunkt og feil.</td></tr>
+        <tr><td><code>cve</code>, <code>CVE.workloads</code> og egen CVE-katalog</td><td>ID-oppslag + felles funnliste. Katalog, spesialsortering og distinkte impact-tall fjernes.</td></tr>
+        <tr><td><code>updateImageVulnerability</code>, IN_TRIAGE og RESOLVED</td><td>Set/delete av workload-vurderinger. Bare NOT_AFFECTED, FALSE_POSITIVE og ACCEPTED_RISK.</td></tr>
+        <tr><td>Historikk, MTTR, trend og sårbarhetsaktivitetslogg</td><td>Fjernes på alle nivåer. Bare dagens funn og gjeldende vurdering beholdes.</td></tr>
+        <tr><td>Risikoscore, prioriteringsklasser, leaderboard og sårbarhetsissues</td><td>Fjernes. Ingen vurdering av ekstern ingress + KEV. Manglende SBOM vises direkte som manglende dekning.</td></tr>
+        <tr><td><code>severitySince</code>, <code>latestVersion</code>, <code>staleImageTag</code>, <code>processingStartedAt</code>, fasetter og legacy-duplikater</td><td>Fjernes. Kjent fikset versjon og faktisk analysetid beholdes.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption">Generelle plattform-issues og annen aktivitetslogg berøres ikke. Nytt komponent-/inventarsøk og label-filtrering inngår ikke i første leveranse.</p>
+</section>
+
+<section id="work">
+  <h2>Arbeidet i API, CLI og Console</h2>
+  <div class="table-wrap" tabindex="0" role="region" aria-label="Arbeid per repo">
+    <table class="work-table">
+      <thead><tr><th scope="col">Repo</th><th scope="col">Endringer</th><th scope="col">Må testes</th></tr></thead>
+      <tbody>
+        <tr><td><strong>nais/api</strong></td><td>Bytt v13s-klienten med v0s. Legg til feltene over og del filter-/scope-håndtering mellom liste og opptelling. Autoriser batch før skriving. Fjern sårbarhetscheckeren og rydd gamle issue-rader.</td><td>Lik liste/opptelling, hele utvalg på tvers av sider, manglende analyse, feil og atomiske vurderinger. ListImages skal virke når v0s er nede.</td></tr>
+        <tr><td><strong>nais/cli</strong></td><td>Bruk <code>vuln list</code> og <code>app|job vuln list &lt;navn&gt;</code>. Legg suppress/unsuppress under samme workload-kommando. Bruk felles set/delete-API og spør om pakke bare ved tvetydige treff. Bytt queryer og JSON-modeller; hent alle sider. Regenerer genqlient, hjelp og MCP-eksempler.</td><td>Alias, workload-scope, pakkevalg, avbryt uten skriving, feil uten TTY, fjerning uten aktivt funn, alle sider og JSON uten terminaltekst.</td></tr>
+        <tr><td><strong>nais/console-frontend</strong></td><td>Flytt queryene fra image til workload. Bruk teamaggregat og dekningsfelt. Erstatt sekvensielle image-ID-skrivinger med én batch. Slett historikkgrafer, MTTR, score, prioritetssider og tilhørende komponenter.</td><td>Workload uten SBOM, null kjente funn med fullført analyse, feil ved rescan, scope/filter og vurderinger på eksplisitt valgte workloads.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>Foreslått rekkefølge</h3>
+  <ol>
+    <li><strong>Implementer API-feltene først.</strong> Start med dekning, funn og opptelling for én workload. Bruk noen få aggregerte backendkall; ikke hent alle funn eller gjør ett sett kall per workload for å bygge teamoversikten.</li>
+    <li><strong>Oppdater Console og CLI mot det nye schemaet.</strong> Nye og gamle felter kan eksistere samtidig under utrullingen, men uten et varig kompatibilitetslag.</li>
+    <li><strong>Stans gamle writes før migrering.</strong> Avklar hvilke workloads gamle image-vurderinger skal gjelde for. Ikke gjør IN_TRIAGE, RESOLVED eller NOT_SET om til ACCEPTED_RISK. Kontroller backup/restore før v0s blir eneste lager for vurderinger.</li>
+    <li><strong>Bytt konsumentene og fjern resten.</strong> Slett gamle felter, klientkode, issues og v13s/DT-avhengigheter. Varsle CLI-/JSON-brudd og endringer i dokumenterte metrikker. En eventuell rollback må bevare vurderinger som er skrevet i v0s.</li>
+  </ol>
+  <p class="note">Første leveranse bør være én reell workload vist i begge klienter. Deretter teamaggregatet og batchvurderingene. Mockene over er eksempler til bruk i tester, ikke en implementert backend.</p>
+</section>
+
+<section id="sources">
+  <h2>Kilder</h2>
+  <p class="small">Kildeanalyse 16. november 2026. Ingen produksjonsmålinger. Mockene har et lite, fast datasett og simulerer ikke nettverk, samtidige endringer eller autentisering.</p>
+  <details>
+    <summary>Revisjoner og filer</summary>
+    <ul>
+      <li><strong>API</strong> · <code>c5fdd944ef6ac1b3a8b8e4a7d5ba3789b9556760</code><br><a href="https://github.com/nais/api/blob/c5fdd944ef6ac1b3a8b8e4a7d5ba3789b9556760/internal/graph/schema/vulnerability.graphqls">GraphQL-schema</a> · <a href="https://github.com/nais/api/blob/c5fdd944ef6ac1b3a8b8e4a7d5ba3789b9556760/internal/vulnerability/queries.go">v13s-kall</a> · <a href="https://github.com/nais/api/blob/c5fdd944ef6ac1b3a8b8e4a7d5ba3789b9556760/internal/issue/checker/workload_v13s.go">Issuechecker</a></li>
+      <li><strong>CLI</strong> · <code>b5adb7cf45b2c453bd274c0a32b48b0b0c19cada</code><br><a href="https://github.com/nais/cli/blob/b5adb7cf45b2c453bd274c0a32b48b0b0c19cada/internal/vulnerability/vulnerability.go">Queryer og sidegrenser</a> · <a href="https://github.com/nais/cli/tree/b5adb7cf45b2c453bd274c0a32b48b0b0c19cada/internal/vulnerability/command">Kommandoer</a> · <a href="https://github.com/nais/cli/blob/b5adb7cf45b2c453bd274c0a32b48b0b0c19cada/internal/flags/flag.go">Globale flagg</a></li>
+      <li><strong>Console</strong> · <code>cb764ec129cc507d03cadc23a84271768ace57e6</code><br><a href="https://github.com/nais/console-frontend/blob/cb764ec129cc507d03cadc23a84271768ace57e6/src/routes/team/%5Bteam%5D/vulnerabilities/query.gql">Team-query</a> · <a href="https://github.com/nais/console-frontend/blob/cb764ec129cc507d03cadc23a84271768ace57e6/src/lib/domain/vulnerability/BulkSuppressCVE.svelte">Dagens batchdialog</a></li>
+      <li><strong>v0s</strong> · lokal arbeidskopi på <code>58d7246</code> med ucommittede endringer.<br><a href="../proto/v0s/v1/v0s.proto">gRPC-kontrakt</a> · <a href="../CONTEXT.md">Domenespråk</a> · <a href="pitch.html#console">Opprinnelige Console-mockuper</a></li>
+    </ul>
+  </details>
+</section>
+</main>
+</div>
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const labels = { NOT_AFFECTED: 'Not affected', FALSE_POSITIVE: 'False positive', ACCEPTED_RISK: 'Accepted risk' };
+  const packages = {
+    netty: { id: 'CVE-20XX-0001', name: 'netty-codec-http2', key: 'pkg:maven/io.netty/netty-codec-http2', version: '4.1.100.Final', fix: '4.1.118.Final', severity: 'HIGH', cvss: 7.5, epss: .018, percentile: .92, kev: true, source: 'ghsa' },
+    handler: { id: 'CVE-20XX-0001', name: 'netty-handler', key: 'pkg:maven/io.netty/netty-handler', version: '4.1.100.Final', fix: '4.1.118.Final', severity: 'HIGH', cvss: 7.5, epss: .018, percentile: .92, kev: true, source: 'ghsa' },
+    lodash: { id: 'CVE-20XX-0002', name: 'lodash', key: 'pkg:npm/lodash', version: '4.17.20', fix: null, severity: 'MEDIUM', cvss: 5.3, epss: .124, percentile: .97, kev: false, source: 'ghsa' },
+    minimist: { id: 'CVE-20XX-0003', name: 'minimist', key: 'pkg:npm/minimist', version: '1.2.5', fix: '1.2.6', severity: 'LOW', cvss: 3.1, epss: .003, percentile: .71, kev: false, source: 'ghsa' },
+  };
+  const imageName = 'ghcr.io/eksempelteam/bestilling';
+  const workloads = [
+    { key: 'dev/bestilling', environment: 'dev', name: 'bestilling', kind: 'Application', status: 'SCANNED', digest: 'sha256:' + 'b'.repeat(64), packages: ['netty'] },
+    { key: 'prod/bestilling', environment: 'prod', name: 'bestilling', kind: 'Application', status: 'SCANNED', digest: 'sha256:' + 'a'.repeat(64), packages: ['netty', 'handler', 'lodash', 'minimist'] },
+    { key: 'prod/bestilling-worker', environment: 'prod', name: 'bestilling-worker', kind: 'Job', status: 'SCANNED', digest: 'sha256:' + 'a'.repeat(64), packages: ['netty', 'handler', 'lodash', 'minimist'] },
+    { key: 'prod/rapport-jobb', environment: 'prod', name: 'rapport-jobb', kind: 'Job', status: 'NO_SBOM', digest: 'sha256:' + 'c'.repeat(64), packages: [] },
+  ];
+  let assessments;
+  let view = 'team';
+  let tab = 'workloads';
+  let lastCommand = 'nais vuln list';
+  let history = [];
+  let historyIndex = 0;
+  let dialogFinding = null;
+  let pendingChoice = null;
+  let lastWasWrite = false;
+  const scanTime = '2026-11-16T08:30:00Z';
+  const keyOf = (w, p) => JSON.stringify([w.key, imageName, p.key, p.id]);
+  function node(tag, text, className) {
+    const el = document.createElement(tag);
+    if (text !== undefined) el.textContent = text;
+    if (className) el.className = className;
+    return el;
+  }
+  function action(text, fn, className = 'action') {
+    const button = node('button', text, className);
+    button.type = 'button';
+    button.addEventListener('click', fn);
+    return button;
+  }
+  function scoped(scope = {}) {
+    return workloads.filter(w => (!scope.environment || w.environment === scope.environment) && (!scope.workload || w.name === scope.workload));
+  }
+  function allFindings() {
+    return workloads.flatMap(w => w.packages.map(name => {
+      const p = packages[name];
+      return { w, p, suppression: assessments.get(keyOf(w, p)) || null };
+    })).sort((a, b) => a.w.key.localeCompare(b.w.key) || a.p.id.localeCompare(b.p.id) || a.p.key.localeCompare(b.p.key));
+  }
+  function findings(scope = {}, filter = {}) {
+    const keys = new Set(scoped(scope).map(w => w.key));
+    return allFindings().filter(f => keys.has(f.w.key)
+      && (!filter.identifier || f.p.id.toUpperCase() === filter.identifier.toUpperCase())
+      && (!filter.severity || f.p.severity === filter.severity)
+      && (!filter.severities?.length || filter.severities.includes(f.p.severity))
+      && (!filter.fix || f.p.fix)
+      && (!filter.kev || f.p.kev)
+      && (filter.suppressed === 'INCLUDE' || (filter.suppressed === 'ONLY' ? !!f.suppression : !f.suppression)));
+  }
+  function summary(rows) {
+    const counts = { unknown: 0, low: 0, medium: 0, high: 0, critical: 0 };
+    rows.forEach(f => counts[f.p.severity.toLowerCase()]++);
+    return { totalFindings: rows.length, countsBySeverity: counts, fixableFindings: rows.filter(f => f.p.fix).length, knownExploitedFindings: rows.filter(f => f.p.kev).length };
+  }
+  function coverage(scope) {
+    const ws = scoped(scope);
+    return { totalWorkloads: ws.length, scanned: ws.filter(w => w.status === 'SCANNED').length, pending: 0, noSbom: ws.filter(w => w.status === 'NO_SBOM').length, failed: 0, unresolvedImage: 0 };
+  }
+  function scanError(w) {
+    return $('mock-mode').value === 'rescan' && w.key === 'prod/bestilling' ? 'Last rescan failed due to an internal error. Showing the completed scan from 2026-11-16 08:30 UTC.' : null;
+  }
+  function consoleSelection() {
+    const w = workloads.find(w => w.key === $('console-workload').value);
+    return {
+      scope: view === 'team' ? { environment: $('console-environment').value } : { environment: w.environment, workload: w.name },
+      filter: { severities: [...$('console-severities').querySelectorAll('input:checked')].map(input => input.value), suppressed: $('console-suppressed').value, fix: $('console-fix').checked, kev: $('console-kev').checked },
+      w,
+    };
+  }
+  function table(headers) {
+    const wrap = node('div', undefined, 'mock-table-wrap');
+    wrap.tabIndex = 0;
+    wrap.setAttribute('role', 'region');
+    wrap.setAttribute('aria-label', headers.join(', '));
+    const t = node('table');
+    const head = node('thead');
+    const row = node('tr');
+    headers.forEach(label => {
+      const th = node('th', label);
+      th.scope = 'col';
+      row.append(th);
+    });
+    head.append(row);
+    t.append(head);
+    wrap.append(t);
+    return { wrap, t };
+  }
+  function cell(row, text, className) {
+    const td = node('td', text, className);
+    row.append(td);
+    return td;
+  }
+  function renderWorkloads(scope, filter) {
+    const { wrap, t } = table(['Workload', 'Critical', 'High', 'Medium', 'Low', 'Findings', 'Coverage']);
+    const body = node('tbody');
+    scoped(scope).forEach(w => {
+      const tr = node('tr');
+      const title = cell(tr);
+      title.append(action(w.name, () => {
+        $('console-workload').value = w.key;
+        view = 'workload';
+        tab = 'findings';
+        renderConsole();
+      }, 'link'), node('small', w.environment + ' · ' + w.kind.toLowerCase()));
+      const s = summary(findings({ environment: w.environment, workload: w.name }, filter));
+      ['critical', 'high', 'medium', 'low'].forEach(severity => cell(tr, w.status === 'SCANNED' ? String(s.countsBySeverity[severity]) : '—'));
+      cell(tr, w.status === 'SCANNED' ? String(s.totalFindings) : '—');
+      const status = cell(tr, w.status === 'SCANNED' ? 'Analysed' : 'Missing SBOM', w.status === 'SCANNED' ? 'muted' : 'warn');
+      if (scanError(w)) status.append(node('small', 'Last rescan failed'));
+      body.append(tr);
+    });
+    t.append(body);
+    return wrap;
+  }
+  function renderFindings(rows, scope) {
+    if (!rows.length) {
+      const unknown = scoped(scope).some(w => w.status !== 'SCANNED');
+      return node('p', unknown ? 'No matching findings are available. Some workloads have no analysis results; see coverage above.' : 'No findings match these filters.', 'mock-empty');
+    }
+    const { wrap, t } = table(['', 'Severity', 'Package / vulnerability', 'Workload', 'EPSS', 'Fix', 'Assessment']);
+    rows.forEach((f, index) => {
+      const body = node('tbody');
+      const tr = node('tr');
+      const detailsRow = node('tr');
+      const detailsID = 'finding-detail-' + index;
+      detailsRow.id = detailsID;
+      detailsRow.hidden = true;
+      const toggle = action('›', () => {
+        detailsRow.hidden = !detailsRow.hidden;
+        toggle.setAttribute('aria-expanded', String(!detailsRow.hidden));
+        toggle.textContent = detailsRow.hidden ? '›' : '⌄';
+      }, 'expand');
+      toggle.setAttribute('aria-label', 'Details for ' + f.p.name + ' in ' + f.w.name + ' ' + f.w.environment);
+      toggle.setAttribute('aria-expanded', 'false');
+      toggle.setAttribute('aria-controls', detailsID);
+      cell(tr).append(toggle);
+      cell(tr).append(node('span', f.p.severity[0] + f.p.severity.slice(1).toLowerCase(), 'chip ' + f.p.severity.toLowerCase()));
+      const pkg = cell(tr, undefined, 'pkg');
+      pkg.append(node('strong', f.p.name), node('small', f.p.version + ' · ' + f.p.id));
+      const wl = cell(tr, f.w.name);
+      wl.append(node('small', f.w.environment));
+      const epss = cell(tr, (f.p.epss * 100).toFixed(1) + '%');
+      if (f.p.kev) epss.append(node('small', 'CISA KEV', 'warn'));
+      cell(tr, f.p.fix || 'No known fix', f.p.fix ? 'good' : 'muted');
+      cell(tr, f.suppression ? labels[f.suppression.state] : 'Not assessed', 'muted');
+      const detail = cell(detailsRow, undefined, 'detail-cell');
+      detail.colSpan = 7;
+      detail.append(node('p', 'Source: ' + f.p.source + ' · CVSS: ' + f.p.cvss + ' · Installed: ' + f.p.version + ' · EPSS date: 2026-11-16'));
+      detail.append(node('p', 'Package key: ' + f.p.key));
+      if (f.suppression) detail.append(node('p', labels[f.suppression.state] + ': ' + f.suppression.reason));
+      detail.append(action(f.suppression ? 'Edit assessment' : 'Assess finding', () => openAssessment(f)));
+      body.append(tr, detailsRow);
+      t.append(body);
+    });
+    return wrap;
+  }
+  function renderAssessments(scope) {
+    const keys = new Set(scoped(scope).map(w => w.key));
+    const entries = [...assessments.entries()].filter(([, a]) => keys.has(a.workloadKey));
+    if (!entries.length) return node('p', 'No saved assessments in this scope.', 'mock-empty');
+    const { wrap, t } = table(['Workload', 'Vulnerability / package', 'Assessment', 'Reason', '']);
+    const body = node('tbody');
+    entries.forEach(([key, a]) => {
+      const tr = node('tr');
+      cell(tr, a.workloadKey);
+      const identity = cell(tr, a.identifier);
+      identity.append(node('small', a.packageKey));
+      if (!allFindings().some(f => keyOf(f.w, f.p) === key)) identity.append(node('small', 'No current finding'));
+      cell(tr, labels[a.state]);
+      cell(tr, a.reason);
+      cell(tr).append(action('Remove', () => {
+        assessments.delete(key);
+        refresh('Assessment removed in the mock.');
+      }));
+      body.append(tr);
+    });
+    t.append(body);
+    return wrap;
+  }
+  function renderConsole() {
+    const { scope, filter, w } = consoleSelection();
+    $('view-team').setAttribute('aria-pressed', String(view === 'team'));
+    $('view-workload').setAttribute('aria-pressed', String(view === 'workload'));
+    $('workload-picker').hidden = view !== 'workload';
+    $('environment-picker').hidden = view !== 'team';
+    $('tab-workloads').hidden = view !== 'team';
+    if (view === 'workload' && tab === 'workloads') tab = 'findings';
+    ['workloads', 'findings', 'assessments'].forEach(name => $('tab-' + name).setAttribute('aria-pressed', String(tab === name)));
+    $('console-title').textContent = view === 'team' ? 'Vulnerabilities' : w.name;
+    $('console-subtitle').textContent = view === 'team' ? 'Team overview' : w.environment + ' · ' + w.kind;
+    $('console-image').replaceChildren();
+    $('console-metrics').replaceChildren();
+    $('console-coverage').replaceChildren();
+    $('console-content').replaceChildren();
+    $('console-bottom').textContent = '';
+    if ($('mock-mode').value === 'unavailable') {
+      document.querySelectorAll('[data-severity-count]').forEach(el => { el.textContent = '—'; });
+      $('console-coverage').textContent = 'Coverage unavailable';
+      $('console-content').append(node('p', 'Could not load vulnerability data due to an internal error. Try again later.', 'mock-error'));
+      return;
+    }
+    const cov = coverage(scope);
+    const rows = findings(scope, filter);
+    const s = summary(rows);
+    const filterCounts = summary(findings(scope, { ...filter, severities: [] })).countsBySeverity;
+    document.querySelectorAll('[data-severity-count]').forEach(el => {
+      el.textContent = view === 'workload' && w.status !== 'SCANNED' ? '—' : String(filterCounts[el.dataset.severityCount]);
+    });
+    $('console-coverage').append(node('strong', cov.scanned + ' of ' + cov.totalWorkloads + ' workloads analysed'));
+    if (cov.noSbom) $('console-coverage').append(node('span', ' · ' + cov.noSbom + ' missing SBOM', 'warn'));
+    if (view === 'team' && cov.noSbom) $('console-coverage').append(node('div', 'rapport-jobb · prod has no attested SBOM. Its findings are unknown.'));
+    if (view === 'workload') {
+      const image = node('details');
+      image.append(node('summary', w.status === 'SCANNED' ? 'Analysed · image details' : 'Missing SBOM · image details'));
+      image.append(node('p', 'Image: ' + imageName), node('p', 'Digest: ' + w.digest));
+      if (w.status === 'SCANNED') image.append(node('p', 'Scanned: 2026-11-16 08:30 UTC · Trivy DB: 2026-11-16 07:00 UTC'));
+      if (scanError(w)) image.append(node('p', scanError(w), 'warn'));
+      $('console-image').append(image);
+    } else if (scoped(scope).some(w => scanError(w))) {
+      $('console-coverage').append(node('div', 'Last rescan failed for bestilling · prod. Previous results are retained.', 'warn'));
+    }
+    const metrics = [['Findings', s.totalFindings], ['High', s.countsBySeverity.high], ['Medium', s.countsBySeverity.medium], ['Low', s.countsBySeverity.low], ['Known fix', s.fixableFindings], ['KEV', s.knownExploitedFindings]];
+    metrics.forEach(([label, count]) => {
+      const metric = node('span');
+      metric.dataset.metric = label;
+      metric.append(node('b', view === 'workload' && w.status !== 'SCANNED' ? '—' : String(count)), document.createTextNode(label));
+      $('console-metrics').append(metric);
+    });
+    $('console-content').append(tab === 'workloads' ? renderWorkloads(scope, filter) : tab === 'findings' ? renderFindings(rows, scope) : renderAssessments(scope));
+    $('console-bottom').textContent = tab === 'assessments'
+      ? 'Saved assessments in this scope, including those without a current finding. Finding filters do not apply to this list.'
+      : 'Suppressed findings: ' + filter.suppressed.toLowerCase() + ' · counts cover the full selection · coverage is independent of finding filters';
+  }
+  function record(w, p, state, reason) {
+    return { workloadKey: w.key, identifier: p.id, packageKey: p.key, imageName, state, reason, updatedBy: 'demo-user', updatedAt: scanTime };
+  }
+  function openAssessment(f) {
+    dialogFinding = f;
+    const form = $('assessment-form');
+    form.elements.state.value = f.suppression?.state || '';
+    form.elements.reason.value = f.suppression?.reason || '';
+    form.elements.reason.setCustomValidity('');
+    $('assessment-package').textContent = f.p.name + ' · ' + f.p.id;
+    $('assessment-error').textContent = '';
+    const candidates = allFindings().filter(other => other.p.id === f.p.id && other.p.key === f.p.key);
+    $('assessment-targets').replaceChildren(...candidates.map(other => {
+      const label = node('label', undefined, 'target');
+      const input = node('input');
+      input.type = 'checkbox';
+      input.name = 'target';
+      input.value = other.w.key;
+      input.checked = other.w.key === f.w.key;
+      const text = node('span', other.w.name + ' · ' + other.w.environment);
+      text.append(node('small', other.suppression ? labels[other.suppression.state] : 'Not assessed'));
+      label.append(input, text);
+      return label;
+    }));
+    $('assessment-dialog').showModal();
+  }
+  function selectedTargets() {
+    return [...$('assessment-targets').querySelectorAll('input:checked')].map(input => workloads.find(w => w.key === input.value));
+  }
+  $('assessment-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const targets = selectedTargets();
+    const reason = event.currentTarget.elements.reason.value.trim();
+    if (!targets.length || !reason) {
+      $('assessment-error').textContent = !targets.length ? 'Select at least one workload.' : 'Enter a reason.';
+      return;
+    }
+    const state = event.currentTarget.elements.state.value;
+    targets.forEach(w => assessments.set(keyOf(w, dialogFinding.p), record(w, dialogFinding.p, state, reason)));
+    $('assessment-dialog').close();
+    refresh('Assessment saved for ' + targets.length + ' selected workload(s) in the mock.');
+    $('tab-' + tab).focus();
+  });
+  $('assessment-delete').addEventListener('click', () => {
+    const targets = selectedTargets();
+    if (!targets.length) { $('assessment-error').textContent = 'Select at least one workload.'; return; }
+    targets.forEach(w => assessments.delete(keyOf(w, dialogFinding.p)));
+    $('assessment-dialog').close();
+    refresh('Selected assessments removed in the mock.');
+    $('tab-' + tab).focus();
+  });
+  $('assessment-cancel').addEventListener('click', () => $('assessment-dialog').close());
+
+  function formatTable(headers, rows) {
+    const values = rows.map(row => row.map(value => String(value ?? '—')));
+    const widths = headers.map((header, i) => Math.max(header.length, ...values.map(row => row[i].length)));
+    const line = row => row.map((value, i) => value.padEnd(widths[i])).join('  ').trimEnd();
+    return [line(headers), ...values.map(line)].join('\n');
+  }
+  function exported(f) {
+    return {
+      workload: { team: 'eksempelteam', environment: f.w.environment, name: f.w.name },
+      image: { name: imageName, digest: f.w.digest },
+      vulnerabilityIdentifier: f.p.id, purl: f.p.key + '@' + f.p.version, packageKey: f.p.key,
+      installedVersion: f.p.version, fixedVersion: f.p.fix,
+      severity: f.p.severity, severitySource: f.p.source, dataSource: f.p.source,
+      cvssScore: f.p.cvss, epss: { score: f.p.epss, percentile: f.p.percentile, date: '2026-11-16' },
+      kev: f.p.kev ? { dateAdded: '2026-11-01', knownRansomwareCampaign: false } : null,
+      suppression: f.suppression,
+    };
+  }
+  function tokenize(line) {
+    const result = [];
+    let token = '', quote = '', started = false;
+    for (const char of line.trim()) {
+      if (quote) {
+        if (char === quote) quote = '';
+        else token += char;
+      } else if (char === '"' || char === "'") { quote = char; started = true; }
+      else if (/\s/.test(char)) { if (started) { result.push(token); token = ''; started = false; } }
+      else { token += char; started = true; }
+    }
+    if (quote) throw new Error('Unclosed quote.');
+    if (started) result.push(token);
+    return result;
+  }
+  const help = `Usage:
+  nais vuln list
+  nais app vuln list <name>
+  nais job vuln list <name>
+  nais app vuln suppress <name> <cve-id> --state STATE --reason TEXT
+  nais app vuln unsuppress <name> <cve-id>
+  nais vuln search <cve-id>
+
+Use the same list/suppress/unsuppress commands under job vuln.
+Alias: vulnerabilities (at root and under app/job)
+Defaults: team=eksempelteam, environment=prod
+
+Flags:
+  --team, -t eksempelteam
+  --environment, -e prod|dev
+  --output, -o table|json
+  --severity HIGH|MEDIUM|LOW|CRITICAL|UNKNOWN
+  --suppressed exclude|include|only
+  --fixable
+  --kev
+  --all-teams, -A                 search only
+  --help, -h
+
+Assessment flags:
+  --state NOT_AFFECTED|FALSE_POSITIVE|ACCEPTED_RISK
+  --reason TEXT                  required for suppress
+  --package PACKAGE_KEY          optional if one package matches
+
+Search includes suppressed findings by default.
+List excludes suppressed findings by default.
+Multiple packages: choose interactively, or pass --package.
+Without a TTY, or with JSON output, pass --package if ambiguous.
+Unsuppress looks up saved assessments, including absent findings.
+
+Proposed commands and output. Local mock, not a shell.`;
+  function cliError(message, exitCode = 2) {
+    const error = new Error(message);
+    error.exitCode = exitCode;
+    return error;
+  }
+  function execute(line) {
+    const tokens = tokenize(line);
+    if (!tokens.length) throw new Error('Enter a command, or help.');
+    if (tokens.length === 1 && tokens[0] === 'help') return { stdout: help, stderr: '', pages: 0, api: [] };
+    const args = [], flags = {};
+    const valueFlags = new Set(['--team', '--environment', '--output', '--severity', '--suppressed', '--state', '--reason', '--package']);
+    const boolFlags = new Set(['--fixable', '--kev', '--all-teams', '--help']);
+    const aliases = { '-t': '--team', '-e': '--environment', '-o': '--output', '-A': '--all-teams', '-h': '--help' };
+    for (let i = 0; i < tokens.length; i++) {
+      if (!tokens[i].startsWith('-')) { args.push(tokens[i]); continue; }
+      const [raw, ...rest] = tokens[i].split('=');
+      const flag = aliases[raw] || raw;
+      if (Object.hasOwn(flags, flag)) throw new Error('Duplicate flag: ' + flag);
+      if (boolFlags.has(flag)) {
+        if (rest.length) throw new Error(flag + ' does not take a value.');
+        flags[flag] = true;
+      } else if (valueFlags.has(flag)) {
+        const value = rest.length ? rest.join('=') : tokens[++i];
+        if (!value || value.startsWith('-')) throw new Error('Missing value for ' + flag);
+        flags[flag] = value;
+      } else throw new Error('Unknown flag: ' + raw + '. Use help.');
+    }
+    const isWorkload = ['app', 'job'].includes(args[1]);
+    const groupIndex = isWorkload ? 2 : 1;
+    if (args[0] !== 'nais' || !['vulnerabilities', 'vuln'].includes(args[groupIndex])) throw new Error('Use nais vuln list or nais app vuln list <name>. See nais vuln --help.');
+    const command = args.slice(groupIndex + 1);
+    if (flags['--help'] || !command.length) return { stdout: help, stderr: '', pages: 0, api: [] };
+    const isWrite = isWorkload && ['suppress', 'unsuppress'].includes(command[0]) && command.length === 3;
+    const isSearch = !isWorkload && command[0] === 'search' && command.length === 2;
+    const isList = command[0] === 'list' && command.length === (isWorkload ? 2 : 1);
+    if (!isSearch && !isWrite && !isList) throw new Error('Use nais vuln list or nais app vuln list <name>. See nais vuln --help.');
+    if (flags['--all-teams'] && !isSearch) throw new Error('--all-teams is supported only with search.');
+    if (flags['--team'] && flags['--team'] !== 'eksempelteam') throw new Error('This mock contains only the team eksempelteam.');
+    const environment = flags['--environment'] || 'prod';
+    if (!['prod', 'dev'].includes(environment)) throw new Error('This mock has the environments prod and dev.');
+    const workload = isWorkload ? workloads.find(w => w.environment === environment && w.name === command[1] && w.kind === (args[1] === 'app' ? 'Application' : 'Job')) : null;
+    if (isWorkload && !workload) throw cliError(args[1] + '/' + command[1] + ' not found in ' + environment + '. Try bestilling (app), bestilling-worker or rapport-jobb (job).', 1);
+    const output = flags['--output'] || 'table';
+    if (!['table', 'json'].includes(output)) throw new Error('--output must be table or json.');
+    const suppressed = (flags['--suppressed'] || (isSearch ? 'include' : 'exclude')).toUpperCase();
+    if (!['EXCLUDE', 'INCLUDE', 'ONLY'].includes(suppressed)) throw new Error('--suppressed must be exclude, include or only.');
+    const severity = (flags['--severity'] || '').toUpperCase();
+    if (severity && !['UNKNOWN', 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].includes(severity)) throw new Error('Invalid severity.');
+    if ($('mock-mode').value === 'unavailable') {
+      throw cliError('Could not load vulnerability data: internal error.', 1);
+    }
+    if (isWrite) {
+      if (['--severity', '--suppressed', '--fixable', '--kev'].some(flag => Object.hasOwn(flags, flag))) throw new Error('Finding filters do not apply to suppress or unsuppress.');
+      return prepareWrite(command[0], workload, command[2].toUpperCase(), flags, output);
+    }
+    if (['--state', '--reason', '--package'].some(flag => Object.hasOwn(flags, flag))) throw new Error('--state, --reason and --package apply only to suppress or unsuppress.');
+    const scope = { environment, workload: workload?.name || '' };
+    const filter = { severity, suppressed, fix: !!flags['--fixable'], kev: !!flags['--kev'], identifier: isSearch ? command[1] : '' };
+    const apiScope = flags['--all-teams'] ? {} : { teams: ['eksempelteam'] };
+    apiScope.environment = scope.environment;
+    if (scope.workload) apiScope.workload = scope.workload;
+    const apiFilter = { suppressed };
+    if (severity) apiFilter.severities = [severity];
+    if (filter.fix) apiFilter.onlyWithFix = true;
+    if (filter.kev) apiFilter.onlyKnownExploited = true;
+    if (filter.identifier) apiFilter.vulnerabilityIdentifier = filter.identifier;
+    const advisory = isSearch ? Object.values(packages).find(p => p.id.toUpperCase() === command[1].toUpperCase()) : null;
+    if (isSearch && !advisory) throw cliError('Vulnerability not found in this mock: ' + command[1], 1);
+    const rows = findings(scope, filter), complete = [];
+    let pages = 0;
+    const api = [];
+    if (advisory) api.push({ field: 'vulnerability', identifier: command[1] });
+    api.push({ field: 'vulnerabilitySummary', scope: apiScope, filter: apiFilter }, { field: 'vulnerabilityCoverage', scope: apiScope });
+    do {
+      const offset = pages * 2;
+      complete.push(...rows.slice(offset, offset + 2));
+      api.push({ field: 'vulnerabilityFindings', scope: apiScope, filter: apiFilter, first: 2, after: pages ? 'mock-cursor-' + offset : null });
+      pages++;
+    } while (complete.length < rows.length);
+    const s = summary(complete), cov = coverage(scope);
+    const warnings = scoped(scope).filter(w => w.status !== 'SCANNED').map(w => 'warning: ' + workloadLabel(w) + ' has no SBOM; findings unknown.');
+    scoped(scope).filter(w => scanError(w)).forEach(w => warnings.push('warning: ' + workloadLabel(w) + ': ' + scanError(w)));
+    const result = { scope: apiScope, summary: s, coverage: cov, findings: complete.map(exported) };
+    if (advisory) result.vulnerability = { identifier: advisory.id, cvssScore: advisory.cvss, epss: advisory.epss, kev: advisory.kev };
+    let stdout;
+    if (output === 'json') stdout = JSON.stringify(result, null, 2);
+    else {
+      const lines = [(flags['--all-teams'] ? 'All teams' : 'eksempelteam') + ' / ' + environment + (workload ? ' / ' + workloadLabel(workload) : '')];
+      if (advisory) lines.push(advisory.id + ' · ' + advisory.name, 'CVSS ' + advisory.cvss + ' · EPSS ' + (advisory.epss * 100).toFixed(1) + '%' + (advisory.kev ? ' · CISA KEV' : ''));
+      if (workload && workload.status !== 'SCANNED') lines.push('', 'No analysis available (' + workload.status + ').');
+      else {
+        const counts = Object.entries(s.countsBySeverity).filter(([, count]) => count).reverse().map(([severity, count]) => count + ' ' + severity);
+        lines.push(s.totalFindings + ' finding' + (s.totalFindings === 1 ? '' : 's') + (counts.length ? ' · ' + counts.join(' · ') : ''));
+        if (!workload) lines.push(cov.scanned + '/' + cov.totalWorkloads + ' workloads analysed');
+        if (suppressed !== 'EXCLUDE') lines.push('Suppressed findings: ' + suppressed.toLowerCase());
+        lines.push('', complete.length ? findingsOutput(complete, !workload) : 'No findings match these filters.');
+      }
+      stdout = lines.join('\n');
+    }
+    return { stdout, stderr: warnings.join('\n'), pages, api, json: output === 'json' };
+  }
+  function prepareWrite(operation, w, identifier, flags, output) {
+    const state = (flags['--state'] || '').toUpperCase();
+    const reason = (flags['--reason'] || '').trim();
+    if (operation === 'suppress' && (!Object.hasOwn(labels, state) || !reason)) throw new Error('Suppress requires --state NOT_AFFECTED|FALSE_POSITIVE|ACCEPTED_RISK and a non-empty --reason.');
+    if (operation === 'unsuppress' && (flags['--state'] || flags['--reason'])) throw new Error('Unsuppress does not take --state or --reason.');
+    const scope = { teams: ['eksempelteam'], environment: w.environment, workload: w.name };
+    const api = [{
+      field: operation === 'suppress' ? 'vulnerabilityFindings' : 'vulnerabilitySuppressions',
+      scope,
+      filter: { vulnerabilityIdentifier: identifier, ...(operation === 'suppress' ? { suppressed: 'INCLUDE' } : {}) },
+      pagination: 'Read all matching pages before choosing a package',
+    }];
+    let candidates = operation === 'suppress'
+      ? allFindings().filter(f => f.w.key === w.key && f.p.id === identifier).map(f => ({
+        key: keyOf(w, f.p), packageKey: f.p.key, label: f.p.name + '@' + f.p.version, imageName, p: f.p,
+      }))
+      : [...assessments.entries()].filter(([, a]) => a.workloadKey === w.key && a.identifier === identifier).map(([key, a]) => ({
+        key, packageKey: a.packageKey, label: a.packageKey, imageName: a.imageName,
+      }));
+    if (flags['--package']) candidates = candidates.filter(c => c.packageKey === flags['--package']);
+    const write = { operation, w, identifier, state, reason, output, api };
+    if (!candidates.length) {
+      if (operation === 'unsuppress' && !flags['--package']) return writeResult(write, null, false);
+      throw cliError('No matching ' + (operation === 'suppress' ? 'finding' : 'assessment') + ' for ' + identifier + (flags['--package'] ? ' and package ' + flags['--package'] : '') + ' in ' + workloadLabel(w) + '.', 1);
+    }
+    if (candidates.length === 1) return completeWrite(write, candidates[0]);
+    const alternatives = candidates.map((c, i) => '  ' + (i + 1) + '  ' + c.label + '\n     ' + c.packageKey + (operation === 'unsuppress' ? '\n     Image: ' + c.imageName : '')).join('\n');
+    if (!$('cli-interactive').checked || output === 'json') {
+      throw new Error(identifier + ' matches multiple packages. No changes were made.\n' + alternatives + '\nPass --package <package-key> to choose one explicitly.');
+    }
+    return {
+      stdout: 'eksempelteam / ' + w.environment + ' / ' + workloadLabel(w) + '\n\n' + identifier + ' matches ' + candidates.length + ' packages:\n\n' + alternatives + '\n\nSelect one package. No changes have been saved.',
+      stderr: '', pages: 0, api, write: true, choice: { write, candidates },
+    };
+  }
+  function completeWrite(write, candidate) {
+    if ($('mock-mode').value === 'unavailable') throw cliError('Could not save assessment: internal error.', 1);
+    const existed = assessments.has(candidate.key);
+    if (write.operation === 'suppress') {
+      assessments.set(candidate.key, record(write.w, candidate.p, write.state, write.reason));
+    } else assessments.delete(candidate.key);
+    return writeResult(write, candidate, write.operation === 'suppress' || existed);
+  }
+  function writeResult(write, candidate, changed) {
+    const key = candidate ? {
+      environment: write.w.environment, workload: write.w.name, imageName: candidate.imageName,
+      packageKey: candidate.packageKey, vulnerabilityIdentifier: write.identifier,
+    } : null;
+    const api = [...write.api];
+    if (key) api.push(write.operation === 'suppress' ? {
+      field: 'setVulnerabilitySuppressions',
+      input: { team: 'eksempelteam', items: [{ key, state: write.state, reason: write.reason }] },
+    } : { field: 'deleteVulnerabilitySuppressions', input: { team: 'eksempelteam', keys: [key] } });
+    const data = { operation: write.operation, changed, key, ...(write.operation === 'suppress' ? { state: write.state, reason: write.reason } : {}) };
+    const message = !changed ? 'No saved assessment to remove.' : write.operation === 'suppress' ? 'Assessment saved: ' + labels[write.state] + '.' : 'Assessment removed.';
+    const detail = candidate ? '\n' + write.identifier + ' · ' + candidate.packageKey : '';
+    return {
+      stdout: write.output === 'json' ? JSON.stringify(data, null, 2) : 'eksempelteam / ' + write.w.environment + ' / ' + workloadLabel(write.w) + '\n\n' + message + detail,
+      stderr: '', pages: 0, api, json: write.output === 'json', write: true,
+    };
+  }
+  function workloadLabel(w) {
+    return (w.kind === 'Application' ? 'app/' : 'job/') + w.name;
+  }
+  function findingsOutput(rows, grouped) {
+    const groups = new Map();
+    rows.forEach(f => {
+      if (!groups.has(f.w.key)) groups.set(f.w.key, []);
+      groups.get(f.w.key).push(f);
+    });
+    return [...groups.values()].map(group => {
+      const data = group.map(f => [f.p.severity, f.p.id, f.p.name + '@' + f.p.version, f.p.fix || '—']);
+      const formatted = formatTable(['SEVERITY', 'VULNERABILITY', 'PACKAGE', 'FIX'], data).split('\n');
+      const lines = [formatted[0]];
+      group.forEach((f, index) => {
+        lines.push(formatted[index + 1]);
+        if (f.suppression) lines.push('  ' + labels[f.suppression.state]);
+      });
+      return (grouped ? workloadLabel(group[0].w) + '\n' : '') + lines.join('\n');
+    }).join('\n\n');
+  }
+  function runCommand(line, remember = true) {
+    clearChoice();
+    lastCommand = line;
+    if (remember) { history.push(line); historyIndex = history.length; }
+    $('cli-input').value = line;
+    document.querySelectorAll('[data-command]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.command === line.trim())));
+    let result, exitCode = 0;
+    try { result = execute(line); }
+    catch (error) { exitCode = error.exitCode || 2; result = { stdout: '', stderr: 'Error: ' + error.message, pages: 0, api: [] }; }
+    lastWasWrite = !!result.write;
+    showResult(result, exitCode);
+    if (result.choice) {
+      pendingChoice = result.choice;
+      $('cli-choice-label').textContent = '? Package [1-' + pendingChoice.candidates.length + '] (q to cancel):';
+      $('cli-choice-form').hidden = false;
+      $('cli-choice-input').focus();
+    } else if (result.write) renderConsole();
+  }
+  function showResult(result, exitCode = 0) {
+    $('cli-stdout').replaceChildren(...(result.json ? [document.createTextNode(result.stdout)] : result.stdout.split(/\b(CRITICAL|HIGH|MEDIUM|LOW|UNKNOWN)\b/).map(part => {
+      return /^(CRITICAL|HIGH|MEDIUM|LOW|UNKNOWN)$/.test(part) ? node('span', part, 'cli-' + (part === 'CRITICAL' ? 'high' : part.toLowerCase())) : document.createTextNode(part);
+    })));
+    $('cli-stderr').textContent = result.stderr;
+    $('cli-stderr').hidden = !result.stderr;
+    $('cli-status').textContent = result.choice ? 'waiting for package selection · no changes saved' : 'exit ' + exitCode;
+    $('cli-status').dataset.exitCode = result.choice ? '' : String(exitCode);
+    $('cli-status').dataset.pages = String(result.pages);
+    $('cli-api').textContent = JSON.stringify(result.api, null, 2);
+    document.querySelector('.terminal-screen').scrollTop = 0;
+  }
+  function clearChoice() {
+    pendingChoice = null;
+    $('cli-choice-form').hidden = true;
+    $('cli-choice-input').value = '';
+    $('cli-choice-error').textContent = '';
+  }
+  function cancelChoice() {
+    const api = pendingChoice?.write.api || [];
+    clearChoice();
+    showResult({ stdout: 'Cancelled. No changes were made.', stderr: '', pages: 0, api, write: true });
+    $('cli-input').focus();
+  }
+  function refresh(notice = '') {
+    renderConsole();
+    if (pendingChoice) {
+      clearChoice();
+      runCommand('nais vuln list', false);
+    } else if (!lastWasWrite) runCommand(lastCommand, false);
+    $('mock-notice').textContent = notice;
+  }
+  function reset() {
+    assessments = new Map();
+    const app = workloads.find(w => w.key === 'prod/bestilling');
+    const dev = workloads.find(w => w.key === 'dev/bestilling');
+    assessments.set(keyOf(app, packages.minimist), record(app, packages.minimist, 'NOT_AFFECTED', 'The affected function is not used by this application.'));
+    assessments.set(keyOf(dev, packages.netty), record(dev, packages.netty, 'NOT_AFFECTED', 'This deployment does not use the affected protocol.'));
+    const old = { id: 'CVE-20XX-0099', key: 'pkg:npm/legacy-lib' };
+    assessments.set(keyOf(app, old), record(app, old, 'ACCEPTED_RISK', 'Kept from an earlier package version; no current finding.'));
+    view = 'team'; tab = 'workloads'; lastCommand = 'nais vuln list'; history = []; historyIndex = 0; lastWasWrite = false;
+    clearChoice();
+    $('console-workload').value = 'prod/bestilling';
+    clearConsoleFilters();
+    $('mock-mode').value = 'normal'; $('cli-input').value = lastCommand; $('cli-interactive').checked = true;
+    refresh('Example data reset. No changes were sent to Nais.');
+  }
+  function clearConsoleFilters() {
+    $('console-environment').value = '';
+    $('console-suppressed').value = 'EXCLUDE';
+    $('console-fix').checked = false;
+    $('console-kev').checked = false;
+    $('console-severities').querySelectorAll('input').forEach(input => { input.checked = false; });
+  }
+  $('view-team').addEventListener('click', () => { view = 'team'; tab = 'workloads'; renderConsole(); });
+  $('view-workload').addEventListener('click', () => { view = 'workload'; tab = 'findings'; renderConsole(); });
+  ['workloads', 'findings', 'assessments'].forEach(name => $('tab-' + name).addEventListener('click', () => { tab = name; renderConsole(); }));
+  ['console-environment', 'console-workload', 'console-severities', 'console-suppressed', 'console-fix', 'console-kev'].forEach(id => $(id).addEventListener('change', renderConsole));
+  $('console-clear-filters').addEventListener('click', () => { clearConsoleFilters(); renderConsole(); });
+  const wideConsole = matchMedia('(min-width: 1100px)');
+  $('console-filters').open = wideConsole.matches;
+  wideConsole.addEventListener('change', event => { $('console-filters').open = event.matches; });
+  $('mock-mode').addEventListener('change', () => {
+    if (lastWasWrite) { clearChoice(); lastWasWrite = false; lastCommand = 'nais vuln list'; }
+    refresh();
+  });
+  $('reset-mock').addEventListener('click', reset);
+  $('cli-form').addEventListener('submit', event => { event.preventDefault(); runCommand($('cli-input').value); });
+  $('cli-choice-form').addEventListener('submit', event => {
+    event.preventDefault();
+    if (!pendingChoice) return;
+    const answer = $('cli-choice-input').value.trim();
+    if (answer.toLowerCase() === 'q') { cancelChoice(); return; }
+    const index = Number(answer) - 1;
+    if (!/^\d+$/.test(answer) || !Number.isInteger(index) || index < 0 || index >= pendingChoice.candidates.length) {
+      $('cli-choice-error').textContent = 'Enter a package number from 1 to ' + pendingChoice.candidates.length + ', or q to cancel.';
+      return;
+    }
+    const { write, candidates } = pendingChoice;
+    clearChoice();
+    try { showResult(completeWrite(write, candidates[index])); }
+    catch (error) { showResult({ stdout: '', stderr: 'Error: ' + error.message, pages: 0, api: write.api }, error.exitCode || 2); }
+    renderConsole();
+    $('cli-input').focus();
+  });
+  $('cli-choice-cancel').addEventListener('click', cancelChoice);
+  $('cli-choice-input').addEventListener('keydown', event => { if (event.key === 'Escape') { event.preventDefault(); cancelChoice(); } });
+  $('cli-interactive').addEventListener('change', () => { if (pendingChoice) runCommand(lastCommand, false); });
+  document.querySelectorAll('[data-command]').forEach(button => button.addEventListener('click', () => {
+    $('cli-input').value = button.dataset.command;
+    runCommand(button.dataset.command);
+  }));
+  $('cli-input').addEventListener('keydown', event => {
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key) || !history.length) return;
+    event.preventDefault();
+    historyIndex = Math.max(0, Math.min(history.length, historyIndex + (event.key === 'ArrowUp' ? -1 : 1)));
+    event.currentTarget.value = history[historyIndex] || '';
+  });
+  reset();
+})();
+</script>
+</body>
+</html>

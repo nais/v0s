@@ -628,7 +628,7 @@ type Finding struct {
 	CvssScore float64 `protobuf:"fixed64,13,opt,name=cvss_score,json=cvssScore,proto3" json:"cvss_score,omitempty"`
 	Epss      *Epss   `protobuf:"bytes,14,opt,name=epss,proto3" json:"epss,omitempty"`
 	Kev       *Kev    `protobuf:"bytes,15,opt,name=kev,proto3" json:"kev,omitempty"`
-	// The workload's team's suppression of the finding, unset if not suppressed.
+	// This workload's suppression of the finding, unset if not suppressed.
 	Suppression   *Suppression `protobuf:"bytes,16,opt,name=suppression,proto3" json:"suppression,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1772,7 +1772,7 @@ func (x *WorkloadRef) GetName() string {
 	return ""
 }
 
-// Identifies a team's suppression.
+// Identifies a suppression within the request's team. Environment and workload are required.
 type SuppressionKey struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ImageName string                 `protobuf:"bytes,1,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
@@ -1780,6 +1780,8 @@ type SuppressionKey struct {
 	Package string `protobuf:"bytes,2,opt,name=package,proto3" json:"package,omitempty"`
 	// Vulnerability ID or alias. Must resolve to exactly one vulnerability.
 	VulnerabilityId string `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
+	Environment     string `protobuf:"bytes,4,opt,name=environment,proto3" json:"environment,omitempty"`
+	Workload        string `protobuf:"bytes,5,opt,name=workload,proto3" json:"workload,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -1835,9 +1837,22 @@ func (x *SuppressionKey) GetVulnerabilityId() string {
 	return ""
 }
 
-// A team's assessment of a vulnerability in a package in an image name. It applies to the
-// team's own workloads only, whatever the image version: another team using the same image
-// is not affected.
+func (x *SuppressionKey) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *SuppressionKey) GetWorkload() string {
+	if x != nil {
+		return x.Workload
+	}
+	return ""
+}
+
+// An assessment for one environment/team/workload and image name, independent of image and
+// package versions. Other workloads never inherit it, even when they share the image.
 type Suppression struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Team            string                 `protobuf:"bytes,1,opt,name=team,proto3" json:"team,omitempty"`
@@ -1849,6 +1864,8 @@ type Suppression struct {
 	Detail        string                 `protobuf:"bytes,6,opt,name=detail,proto3" json:"detail,omitempty"`
 	UpdatedBy     string                 `protobuf:"bytes,7,opt,name=updated_by,json=updatedBy,proto3" json:"updated_by,omitempty"`
 	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	Environment   string                 `protobuf:"bytes,10,opt,name=environment,proto3" json:"environment,omitempty"`
+	Workload      string                 `protobuf:"bytes,11,opt,name=workload,proto3" json:"workload,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1937,6 +1954,20 @@ func (x *Suppression) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *Suppression) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *Suppression) GetWorkload() string {
+	if x != nil {
+		return x.Workload
+	}
+	return ""
 }
 
 type NewSuppression struct {
@@ -2211,6 +2242,8 @@ type ListSuppressionsRequest struct {
 	VulnerabilityId string `protobuf:"bytes,3,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
 	PageSize        int32  `protobuf:"varint,4,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken       string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
+	Environment     string `protobuf:"bytes,6,opt,name=environment,proto3" json:"environment,omitempty"`
+	Workload        string `protobuf:"bytes,7,opt,name=workload,proto3" json:"workload,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -2280,9 +2313,23 @@ func (x *ListSuppressionsRequest) GetPageToken() string {
 	return ""
 }
 
+func (x *ListSuppressionsRequest) GetEnvironment() string {
+	if x != nil {
+		return x.Environment
+	}
+	return ""
+}
+
+func (x *ListSuppressionsRequest) GetWorkload() string {
+	if x != nil {
+		return x.Workload
+	}
+	return ""
+}
+
 type ListSuppressionsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Ordered by team, image name, package key and vulnerability ID.
+	// Ordered by team, environment, workload, image name, package key and vulnerability ID.
 	Suppressions  []*Suppression `protobuf:"bytes,1,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
 	NextPageToken string         `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2538,12 +2585,14 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\vWorkloadRef\x12 \n" +
 	"\venvironment\x18\x01 \x01(\tR\venvironment\x12\x12\n" +
 	"\x04team\x18\x02 \x01(\tR\x04team\x12\x12\n" +
-	"\x04name\x18\x03 \x01(\tR\x04name\"t\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\"\xb2\x01\n" +
 	"\x0eSuppressionKey\x12\x1d\n" +
 	"\n" +
 	"image_name\x18\x01 \x01(\tR\timageName\x12\x18\n" +
 	"\apackage\x18\x02 \x01(\tR\apackage\x12)\n" +
-	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\"\xb4\x02\n" +
+	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12 \n" +
+	"\venvironment\x18\x04 \x01(\tR\venvironment\x12\x1a\n" +
+	"\bworkload\x18\x05 \x01(\tR\bworkload\"\xf2\x02\n" +
 	"\vSuppression\x12\x12\n" +
 	"\x04team\x18\x01 \x01(\tR\x04team\x12\x1d\n" +
 	"\n" +
@@ -2556,7 +2605,10 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\n" +
 	"updated_by\x18\a \x01(\tR\tupdatedBy\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAtJ\x04\b\t\x10\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12 \n" +
+	"\venvironment\x18\n" +
+	" \x01(\tR\venvironment\x12\x1a\n" +
+	"\bworkload\x18\v \x01(\tR\bworkloadJ\x04\b\t\x10\n" +
 	"\"\x88\x01\n" +
 	"\x0eNewSuppression\x12(\n" +
 	"\x03key\x18\x01 \x01(\v2\x16.v0s.v1.SuppressionKeyR\x03key\x12.\n" +
@@ -2572,7 +2624,7 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x04team\x18\x01 \x01(\tR\x04team\x12*\n" +
 	"\x04keys\x18\x02 \x03(\v2\x16.v0s.v1.SuppressionKeyR\x04keys\"K\n" +
 	"\x1aDeleteSuppressionsResponse\x12-\n" +
-	"\adeleted\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\adeleted\"\xb5\x01\n" +
+	"\adeleted\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\adeleted\"\xf3\x01\n" +
 	"\x17ListSuppressionsRequest\x12\x14\n" +
 	"\x05teams\x18\x01 \x03(\tR\x05teams\x12\x1d\n" +
 	"\n" +
@@ -2580,7 +2632,9 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x10vulnerability_id\x18\x03 \x01(\tR\x0fvulnerabilityId\x12\x1b\n" +
 	"\tpage_size\x18\x04 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x05 \x01(\tR\tpageToken\"{\n" +
+	"page_token\x18\x05 \x01(\tR\tpageToken\x12 \n" +
+	"\venvironment\x18\x06 \x01(\tR\venvironment\x12\x1a\n" +
+	"\bworkload\x18\a \x01(\tR\bworkload\"{\n" +
 	"\x18ListSuppressionsResponse\x127\n" +
 	"\fsuppressions\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\fsuppressions\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\x8b\x01\n" +

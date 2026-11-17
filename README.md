@@ -10,7 +10,8 @@ inventory. It answers three questions about a tenant's applications and jobs:
 It reads deployed images from Nais API, verifies their attested CycloneDX SBOMs,
 and matches them against Trivy's vulnerability database. Stored SBOMs are rescanned
 when the database changes; images are never pulled. Results, coverage gaps and
-team-scoped suppressions are served over gRPC.
+workload-scoped suppressions are served over gRPC. Clients can discover other
+affected workloads and explicitly assess selected workloads in a batch.
 
 Nais API is a required runtime dependency and the sole source of workload
 inventory. v0s does not watch Kubernetes directly or offer a standalone mode.
@@ -43,6 +44,11 @@ Green builds on `main` publish signed images and Helm charts to GAR; Fasit
 assignments and rollout remain manual.
 
 ## Documentation
+
+[Visual team pitch](docs/pitch.html) ·
+[Developer contract proposal](docs/utviklerkontrakt.md) ·
+[Collected work and evidence (2026-11-10)](docs/status-2026-11-10.md) ·
+[Documentation and session-source index](docs/README.md)
 
 [Domain language](CONTEXT.md) · [Architecture](docs/architecture.md) ·
 [Operations](docs/operations.md) · [Verification](docs/verification.md) ·

@@ -109,7 +109,18 @@ func every(ctx context.Context, interval time.Duration, log *slog.Logger, fn fun
 // missing from the snapshot keep their stored workloads, as do all environments if the snapshot
 // fails.
 func (r *Reconciler) sync(ctx context.Context) error {
-	return r.DB.WithLock(ctx, "sync", func(ctx context.Context) error {
+	return r.DB.WithLock(ctx, "sync", func(ctx context.Context) (err error) {
+		defer func() {
+			if ctx.Err() != nil {
+				return
+			}
+			result := "error"
+			if err == nil {
+				result = "ok"
+				r.Metrics.inventorySuccess.SetToCurrentTime()
+			}
+			r.Metrics.inventorySyncs.WithLabelValues(result).Inc()
+		}()
 		envs, err := r.Inventory.Snapshot(ctx)
 		if err != nil {
 			return fmt.Errorf("reading workloads: %w", err)

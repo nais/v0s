@@ -123,7 +123,7 @@ func packageMatch(purlColumn, keyColumn, pkg string, args *sqlArgs) (string, err
 	return keyColumn + " = " + args.add(key), nil
 }
 
-// SuppressedFilter selects findings by whether their workload's team has suppressed them.
+// SuppressedFilter selects findings by whether their workload has a matching assessment.
 type SuppressedFilter int
 
 // Suppressed filters. The zero value excludes suppressed findings.
@@ -202,12 +202,13 @@ func (f FindingFilter) conditions(args *sqlArgs) ([]string, error) {
 }
 
 // findingsFrom joins each finding f in image i to every workload w using the image, and to the
-// workload team's suppression s of it, if any. The suppression key is the primary key of
+// workload's suppression s of it, if any. The suppression key is the primary key of
 // suppressions, so each finding and workload is one row.
 const findingsFrom = `findings f
 	JOIN images i ON i.id = f.image_id
 	JOIN workloads w ON w.image_id = f.image_id
-	LEFT JOIN suppressions s ON s.team = w.team AND s.image_name = i.name
+	LEFT JOIN suppressions s ON s.team = w.team AND s.environment = w.environment
+		AND s.workload = w.name AND s.image_name = i.name
 		AND s.package_key = f.package_key AND s.vulnerability_id = f.vulnerability_id`
 
 // and joins conditions with AND. No conditions is true.
@@ -227,7 +228,7 @@ type WorkloadFinding struct {
 	CVSSScore float64 // highest CVSS v3 score across sources, 0 if none
 	EPSS      *v0s.EPSS
 	KEV       *v0s.KEV
-	// Suppression is the workload team's active suppression of the finding, nil if none.
+	// Suppression is this workload's active suppression of the finding, nil if none.
 	Suppression *Suppression
 }
 
@@ -309,6 +310,8 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		if state != nil {
 			fi.Suppression = &Suppression{
 				SuppressionKey: SuppressionKey{
+					Environment:     fi.Workload.Environment,
+					Workload:        fi.Workload.Name,
 					ImageName:       fi.Image.Name,
 					Package:         fi.Finding.PackageKey,
 					VulnerabilityID: fi.Finding.VulnerabilityID,

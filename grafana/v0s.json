@@ -1,0 +1,432 @@
+{
+  "apiVersion": "dashboard.grafana.app/v1",
+  "kind": "Dashboard",
+  "metadata": {
+    "name": "v0s"
+  },
+  "spec": {
+    "title": "v0s",
+    "uid": "v0s",
+    "description": "Inventory freshness, image processing, vulnerability database, enrichment and gRPC. Select a tenant datasource and cluster. Image counts come from one replica's view of the shared database, never a sum across replicas. No data is not a healthy zero.",
+    "editable": false,
+    "graphTooltip": 1,
+    "refresh": "1m",
+    "schemaVersion": 39,
+    "tags": ["nais", "v0s", "vulnerabilities"],
+    "time": {"from": "now-6h", "to": "now"},
+    "timezone": "browser",
+    "links": [
+      {
+        "icon": "doc", "targetBlank": true, "title": "Source", "type": "link",
+        "url": "https://github.com/nais/v0s/tree/main/grafana"
+      },
+      {
+        "icon": "doc", "targetBlank": true, "title": "Operations", "type": "link",
+        "url": "https://github.com/nais/v0s/blob/main/docs/operations.md#grafana-dashboard"
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "datasource", "label": "Tenant", "type": "datasource",
+          "query": "prometheus", "regex": "/.*-metrics$/",
+          "current": {"text": "nav-metrics", "value": "P91A6F0B3584B90E7"},
+          "refresh": 1, "multi": false, "includeAll": false, "options": [],
+          "description": "Management metrics for one tenant. NAV is the default, as in the nais/cli dashboard."
+        },
+        {
+          "name": "cluster", "label": "Cluster", "type": "query",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "query": {
+            "query": "label_values(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\"}, k8s_cluster_name)",
+            "refId": "cluster"
+          },
+          "refresh": 2, "sort": 1, "multi": false, "includeAll": false, "options": []
+        },
+        {
+          "name": "job", "label": "Scrape job", "type": "query",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "query": {
+            "query": "label_values(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\"}, job)",
+            "refId": "job"
+          },
+          "refresh": 2, "sort": 1, "multi": false, "includeAll": false, "options": [],
+          "description": "Discovered from v0s metrics; does not assume a PodMonitor job name."
+        },
+        {
+          "name": "inventory_pod", "label": "Image snapshot replica", "type": "query",
+          "datasource": {"type": "prometheus", "uid": "${datasource}"},
+          "query": {
+            "query": "query_result(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"})",
+            "refId": "inventory_pod"
+          },
+          "regex": "/pod=\"([^\"]+)\"/",
+          "refresh": 2, "sort": 1, "multi": false, "includeAll": false, "options": [],
+          "description": "Only the three image-state panels use this replica. All other panels cover every replica in the selected job."
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1, "type": "row", "title": "Serving and freshness",
+        "collapsed": false, "panels": [], "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0}
+      },
+      {
+        "id": 2, "type": "stat", "title": "Metrics targets up",
+        "description": "Fraction of discovered scrape targets that respond. This is not deployment readiness or pipeline health. No targets is No data, not 100%.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 4, "w": 4, "x": 0, "y": 1},
+        "fieldConfig": {"defaults": {
+          "unit": "percentunit", "min": 0, "max": 1,
+          "noValue": "No targets",
+          "color": {"mode": "thresholds"},
+          "mappings": [{"type": "special", "options": {"match": "null", "result": {"text": "No targets", "color": "red"}}}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}
+        }, "overrides": []},
+        "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+        "targets": [{
+          "refId": "A", "instant": true, "range": false,
+          "expr": "avg(up{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"})"
+        }]
+      },
+      {
+        "id": 3, "type": "stat", "title": "Last inventory sync",
+        "description": "Age of the latest successful complete sync attempt on any live replica. Lock skips and failures do not refresh it. Success does not prove upstream inventory completeness. Yellow at 5m, red at 15m; these are investigation thresholds, not SLOs. Heartbeats reset on restart.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 4, "w": 4, "x": 4, "y": 1},
+        "fieldConfig": {"defaults": {
+          "unit": "dtdurations", "noValue": "No success observed",
+          "color": {"mode": "thresholds"},
+          "mappings": [{"type": "special", "options": {"match": "null", "result": {"text": "No success observed", "color": "red"}}}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 300}, {"color": "red", "value": 900}]}
+        }, "overrides": []},
+        "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+        "targets": [{
+          "refId": "A", "instant": true, "range": false,
+          "expr": "time() - max(v0s_inventory_sync_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"} > 0)"
+        }]
+      },
+      {
+        "id": 4, "type": "stat", "title": "Oldest loaded vulnerability DB",
+        "description": "Age of UpdatedAt in the oldest loaded Trivy DB, not time since the last update check. Replicas with no DB are counted separately. Yellow after 48h, red after 72h.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 4, "w": 4, "x": 8, "y": 1},
+        "fieldConfig": {"defaults": {
+          "unit": "dtdurations", "noValue": "No loaded DB",
+          "color": {"mode": "thresholds"},
+          "mappings": [{"type": "special", "options": {"match": "null", "result": {"text": "No loaded DB", "color": "red"}}}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 172800}, {"color": "red", "value": 259200}]}
+        }, "overrides": []},
+        "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+        "targets": [{
+          "refId": "A", "instant": true, "range": false,
+          "expr": "time() - min(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"} > 0)"
+        }]
+      },
+      {
+        "id": 5, "type": "stat", "title": "Replicas without vulnerability DB",
+        "description": "Loaded DB timestamp is 0 until a replica has a vulnerability DB. Missing metrics are not counted as a healthy zero; inspect target availability as well.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 4, "w": 4, "x": 12, "y": 1},
+        "fieldConfig": {"defaults": {
+          "unit": "short", "decimals": 0, "noValue": "No data",
+          "color": {"mode": "thresholds"},
+          "mappings": [{"type": "special", "options": {"match": "null", "result": {"text": "No data", "color": "red"}}}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}
+        }, "overrides": []},
+        "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+        "targets": [{
+          "refId": "A", "instant": true, "range": false,
+          "expr": "sum(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"} == bool 0)"
+        }]
+      },
+      {
+        "id": 6, "type": "stat", "title": "Last EPSS sync",
+        "description": "Age of the latest observed successful EPSS table replacement across live replicas. Daily loop; yellow after 30h, red after 48h. Local timestamps are lost on restart; No success observed does not mean the persisted table is empty.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 4, "w": 4, "x": 16, "y": 1},
+        "fieldConfig": {"defaults": {
+          "unit": "dtdurations", "noValue": "No success observed",
+          "color": {"mode": "thresholds"},
+          "mappings": [{"type": "special", "options": {"match": "null", "result": {"text": "No success observed", "color": "red"}}}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 108000}, {"color": "red", "value": 172800}]}
+        }, "overrides": []},
+        "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+        "targets": [{
+          "refId": "A", "instant": true, "range": false,
+          "expr": "time() - max(v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", feed=\"epss\"} > 0)"
+        }]
+      },
+      {
+        "id": 7, "type": "stat", "title": "Last KEV sync",
+        "description": "Age of the latest observed successful KEV table replacement across live replicas. Separate from EPSS: a failed KEV fetch must not look healthy after a successful EPSS fetch. Yellow after 30h, red after 48h. Timestamps reset on restart.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 4, "w": 4, "x": 20, "y": 1},
+        "fieldConfig": {"defaults": {
+          "unit": "dtdurations", "noValue": "No success observed",
+          "color": {"mode": "thresholds"},
+          "mappings": [{"type": "special", "options": {"match": "null", "result": {"text": "No success observed", "color": "red"}}}],
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 108000}, {"color": "red", "value": 172800}]}
+        }, "overrides": []},
+        "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
+        "targets": [{
+          "refId": "A", "instant": true, "range": false,
+          "expr": "time() - max(v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", feed=\"kev\"} > 0)"
+        }]
+      },
+      {
+        "id": 8, "type": "row", "title": "In-use images - snapshot from $inventory_pod",
+        "collapsed": false, "panels": [], "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}
+      },
+      {
+        "id": 9, "type": "bargauge", "title": "Image states",
+        "description": "Unique in-use images, not workloads or findings. The selected replica reads the shared database; summing replicas would duplicate images. Scan state is relative to this replica's loaded vulnerability DB. Unresolved workload references are not represented. No data can indicate an image-collector database error even while up=1.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 6},
+        "fieldConfig": {"defaults": {
+          "unit": "short", "decimals": 0, "min": 0, "noValue": "No data",
+          "color": {"mode": "palette-classic"}
+        }, "overrides": []},
+        "options": {"orientation": "horizontal", "displayMode": "basic", "showUnfilled": true, "reduceOptions": {"calcs": ["lastNotNull"]}},
+        "targets": [
+          {"refId": "A", "instant": true, "range": false, "legendFormat": "SBOM pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"pending\"}"},
+          {"refId": "B", "instant": true, "range": false, "legendFormat": "SBOM missing", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"missing\"}"},
+          {"refId": "C", "instant": true, "range": false, "legendFormat": "SBOM fetch failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"failed\"}"},
+          {"refId": "D", "instant": true, "range": false, "legendFormat": "Scan pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"pending\"}"},
+          {"refId": "E", "instant": true, "range": false, "legendFormat": "Scan current", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"current\"}"},
+          {"refId": "F", "instant": true, "range": false, "legendFormat": "Scan failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"failed\"}"}
+        ]
+      },
+      {
+        "id": 10, "type": "timeseries", "title": "Image backlog",
+        "description": "Images waiting for an SBOM fetch or a scan, using only $inventory_pod. Pending scan includes images awaiting a newer loaded DB. A growing backlog with no processing rate needs investigation.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 6},
+        "fieldConfig": {"defaults": {"unit": "short", "min": 0, "custom": {"drawStyle": "line", "fillOpacity": 10, "spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}},
+        "targets": [
+          {"refId": "A", "range": true, "legendFormat": "SBOM pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"pending\"}"},
+          {"refId": "B", "range": true, "legendFormat": "Scan pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"pending\"}"}
+        ]
+      },
+      {
+        "id": 11, "type": "timeseries", "title": "Missing SBOMs and failed images",
+        "description": "Image states, not error rates. Missing SBOMs retry after 6h; fetch failures after 30m. A recorded scan failure waits for a newer DB. Previous findings can remain after a failed rescan; this is not a count of every image with a last error.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 6},
+        "fieldConfig": {"defaults": {"unit": "short", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}},
+        "targets": [
+          {"refId": "A", "range": true, "legendFormat": "SBOM missing", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"missing\"}"},
+          {"refId": "B", "range": true, "legendFormat": "SBOM fetch failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"failed\"}"},
+          {"refId": "C", "range": true, "legendFormat": "Scan failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"failed\"}"}
+        ]
+      },
+      {
+        "id": 12, "type": "row", "title": "SBOM processing - all replicas",
+        "collapsed": false, "panels": [], "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14}
+      },
+      {
+        "id": 13, "type": "timeseries", "title": "SBOM fetch outcomes",
+        "description": "Attempts per minute across replicas, before storing the outcome. found is not proof that the database write succeeded. Result series appear after their first outcome; no samples is not zero errors.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 8, "x": 0, "y": 15},
+        "fieldConfig": {"defaults": {"unit": "opm", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{result}}",
+          "interval": "1m",
+          "expr": "60 * sum by (result) (rate(v0s_fetches_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval]))"
+        }]
+      },
+      {
+        "id": 14, "type": "timeseries", "title": "SBOM scan outcomes",
+        "description": "Scanner calls per minute across replicas. Counted before persisting results; not a count of committed image updates. Idle pipelines need not produce scans. Result series appear after their first outcome.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 8, "x": 8, "y": 15},
+        "fieldConfig": {"defaults": {"unit": "opm", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{result}}",
+          "interval": "1m",
+          "expr": "60 * sum by (result) (rate(v0s_scans_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval]))"
+        }]
+      },
+      {
+        "id": 15, "type": "timeseries", "title": "SBOM scan duration",
+        "description": "Time matching one SBOM, excluding queue and database writes. Histogram buckets are aggregated across replicas before calculating quantiles. No scans produces gaps. Highest finite bucket is 60s; quantiles cannot resolve values above it.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 8, "x": 16, "y": 15},
+        "fieldConfig": {"defaults": {"unit": "s", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}},
+        "targets": [
+          {"refId": "A", "range": true, "interval": "1m", "legendFormat": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(v0s_scan_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval])))"},
+          {"refId": "B", "range": true, "interval": "1m", "legendFormat": "p99", "expr": "histogram_quantile(0.99, sum by (le) (rate(v0s_scan_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval])))"}
+        ]
+      },
+      {
+        "id": 16, "type": "row", "title": "Inventory, vulnerability DB and enrichment",
+        "collapsed": false, "panels": [], "gridPos": {"h": 1, "w": 24, "x": 0, "y": 23}
+      },
+      {
+        "id": 17, "type": "timeseries", "title": "Inventory sync outcomes",
+        "description": "Completed attempts per minute while holding the cluster-wide lock. A skipped lock and shutdown cancellation are not successes. Lock acquisition errors are logged, not counted; use the last-success age to detect a stalled loop.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 6, "x": 0, "y": 24},
+        "fieldConfig": {"defaults": {"unit": "opm", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{result}}",
+          "interval": "1m",
+          "expr": "60 * sum by (result) (rate(v0s_inventory_syncs_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval]))"
+        }]
+      },
+      {
+        "id": 18, "type": "timeseries", "title": "Vulnerability DB age by replica",
+        "description": "Age of the DB version each replica has actually loaded. Update checks run hourly. Replicas can differ; a current version on one replica must not hide an old version on another. Unloaded replicas are excluded here and counted at the top.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 24},
+        "fieldConfig": {"defaults": {"unit": "dtdurations", "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{pod}}",
+          "expr": "time() - (v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"} > 0)"
+        }]
+      },
+      {
+        "id": 19, "type": "timeseries", "title": "Vulnerability DB update checks",
+        "description": "Checks per minute: updated, unchanged or error. Updates are replica-local; an unchanged result is a successful check, not an outdated DB. Result series appear after their first check.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 6, "x": 12, "y": 24},
+        "fieldConfig": {"defaults": {"unit": "opm", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{result}}",
+          "interval": "1m",
+          "expr": "60 * sum by (result) (rate(v0s_trivy_db_updates_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval]))"
+        }]
+      },
+      {
+        "id": 20, "type": "timeseries", "title": "Enrichment sync age",
+        "description": "Latest successful EPSS/KEV replacement on any live replica, separately per feed. Daily loop; failures retry after 5m. This is an observed sync age, not the age of the upstream feed or a persisted database timestamp.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 24},
+        "fieldConfig": {"defaults": {"unit": "dtdurations", "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{feed}}",
+          "expr": "time() - max by (feed) (v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"} > 0)"
+        }]
+      },
+      {
+        "id": 21, "type": "row", "title": "gRPC - all replicas",
+        "collapsed": false, "panels": [], "gridPos": {"h": 1, "w": 24, "x": 0, "y": 32}
+      },
+      {
+        "id": 22, "type": "timeseries", "title": "gRPC requests by method",
+        "description": "Completed RPCs per second across replicas, including non-OK responses.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 33},
+        "fieldConfig": {"defaults": {"unit": "reqps", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{method}}",
+          "interval": "1m",
+          "expr": "sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval]))"
+        }]
+      },
+      {
+        "id": 23, "type": "timeseries", "title": "gRPC service error ratio",
+        "description": "Unknown, Internal, Unavailable and DataLoss divided by all completed calls, per method. InvalidArgument, NotFound, Canceled and DeadlineExceeded remain visible in response codes but are not classified as service errors here. Successful traffic with no error series is 0%; idle methods and missing telemetry are gaps.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 33},
+        "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{method}}",
+          "interval": "1m",
+          "expr": "(sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\", code=~\"Unknown|Internal|Unavailable|DataLoss\"}[$__rate_interval])) or on (method) (0 * sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval])))) / sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval]))"
+        }]
+      },
+      {
+        "id": 24, "type": "timeseries", "title": "gRPC p95 duration by method",
+        "description": "Completed RPC latency, all status codes. Aggregate histogram bucket rates before calculating p95; never average per-replica quantiles. Default histogram's highest finite bucket is 10s; slower tails cannot be resolved beyond it.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 12, "x": 0, "y": 41},
+        "fieldConfig": {"defaults": {"unit": "s", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{method}}",
+          "interval": "1m",
+          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(v0s_grpc_request_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval])))"
+        }]
+      },
+      {
+        "id": 25, "type": "timeseries", "title": "gRPC response codes",
+        "description": "All gRPC response codes, including client validation, cancellations and deadlines. These should not disappear inside a generic service-error percentage.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 12, "x": 12, "y": 41},
+        "fieldConfig": {"defaults": {"unit": "reqps", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["mean", "max"]}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{code}}",
+          "interval": "1m",
+          "expr": "sum by (code) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval]))"
+        }]
+      },
+      {
+        "id": 26, "type": "row", "title": "Process - per replica",
+        "collapsed": false, "panels": [], "gridPos": {"h": 1, "w": 24, "x": 0, "y": 49}
+      },
+      {
+        "id": 27, "type": "timeseries", "title": "CPU",
+        "description": "Process CPU consumption in cores. Not a percentage of the CPU request or limit.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "interval": "1m", "gridPos": {"h": 8, "w": 6, "x": 0, "y": 50},
+        "fieldConfig": {"defaults": {"unit": "cores", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{pod}}",
+          "interval": "1m",
+          "expr": "rate(process_cpu_seconds_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}[$__rate_interval])"
+        }]
+      },
+      {
+        "id": 28, "type": "timeseries", "title": "Resident memory",
+        "description": "Process RSS per replica. Not container working set or OOM headroom; check Kubernetes metrics when approaching the configured memory limit.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 50},
+        "fieldConfig": {"defaults": {"unit": "bytes", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{pod}}",
+          "expr": "process_resident_memory_bytes{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}"
+        }]
+      },
+      {
+        "id": 29, "type": "timeseries", "title": "Goroutines",
+        "description": "Go runtime goroutines per replica.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 50},
+        "fieldConfig": {"defaults": {"unit": "short", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{pod}}",
+          "expr": "go_goroutines{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}"
+        }]
+      },
+      {
+        "id": 30, "type": "timeseries", "title": "Process uptime",
+        "description": "Time since each process started. Restarts reset in-memory counters and inventory/enrichment timestamps; pod replacement also changes the series.",
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 50},
+        "fieldConfig": {"defaults": {"unit": "dtdurations", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
+        "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
+        "targets": [{
+          "refId": "A", "range": true, "legendFormat": "{{pod}}",
+          "expr": "time() - process_start_time_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=~\"${job:regex}\"}"
+        }]
+      }
+    ]
+  }
+}

@@ -15,6 +15,8 @@ const countTimeout = 5 * time.Second
 
 // Metrics are the loop metrics the Reconciler updates.
 type Metrics struct {
+	inventorySyncs    *prometheus.CounterVec
+	inventorySuccess  prometheus.Gauge
 	scanDuration      prometheus.Histogram
 	scans             *prometheus.CounterVec
 	fetches           *prometheus.CounterVec
@@ -38,7 +40,15 @@ func NewMetrics(reg prometheus.Registerer, db *database.DB, scanner Scanner) *Me
 		return float64(v.Unix())
 	})
 	reg.MustRegister(&imagesCollector{db: db, scanner: scanner})
-	return &Metrics{
+	m := &Metrics{
+		inventorySyncs: f.NewCounterVec(prometheus.CounterOpts{
+			Name: "v0s_inventory_syncs_total",
+			Help: "Inventory sync attempts while holding the cluster lock, by result: ok or error. Shutdown cancellations are excluded.",
+		}, []string{"result"}),
+		inventorySuccess: f.NewGauge(prometheus.GaugeOpts{
+			Name: "v0s_inventory_sync_last_success_timestamp_seconds",
+			Help: "When this replica last completed an inventory sync, 0 until the first success.",
+		}),
 		scanDuration: f.NewHistogram(prometheus.HistogramOpts{
 			Name:    "v0s_scan_duration_seconds",
 			Help:    "Time spent matching one SBOM against the vulnerability DB.",
@@ -61,6 +71,10 @@ func NewMetrics(reg prometheus.Registerer, db *database.DB, scanner Scanner) *Me
 			Help: "When this replica last replaced a feed's table, by feed: epss or kev.",
 		}, []string{"feed"}),
 	}
+	for _, result := range []string{"ok", "error"} {
+		m.inventorySyncs.WithLabelValues(result)
+	}
+	return m
 }
 
 // imageStates are the label pairs of v0s_images. All are reported, with zero if no image is in

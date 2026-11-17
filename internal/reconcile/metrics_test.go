@@ -10,7 +10,77 @@ import (
 	"github.com/nais/v0s/internal/database/databasetest"
 	"github.com/nais/v0s/internal/v0s"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 )
+
+func TestInventorySyncMetrics(t *testing.T) {
+	ctx := context.Background()
+	db := databasetest.New(t)
+	reg := prometheus.NewRegistry()
+	r := &Reconciler{
+		DB: db, Inventory: fakeInventory{}, Log: discard,
+		Metrics: NewMetrics(reg, db, fakeScanner{}),
+	}
+	value := func(metric prometheus.Metric) float64 {
+		t.Helper()
+		var m dto.Metric
+		if err := metric.Write(&m); err != nil {
+			t.Fatal(err)
+		}
+		if m.Gauge != nil {
+			return m.GetGauge().GetValue()
+		}
+		return m.GetCounter().GetValue()
+	}
+	check := func(ok, failed, success float64) {
+		t.Helper()
+		if got := value(r.Metrics.inventorySyncs.WithLabelValues("ok")); got != ok {
+			t.Errorf("successful syncs = %v, want %v", got, ok)
+		}
+		if got := value(r.Metrics.inventorySyncs.WithLabelValues("error")); got != failed {
+			t.Errorf("failed syncs = %v, want %v", got, failed)
+		}
+		if got := value(r.Metrics.inventorySuccess); got != success {
+			t.Errorf("last success = %v, want %v", got, success)
+		}
+	}
+
+	// A replica that cannot take the lock has done no work.
+	if err := db.WithLock(ctx, "sync", r.sync); err != nil {
+		t.Fatal(err)
+	}
+	check(0, 0, 0)
+
+	before := float64(time.Now().Unix())
+	if err := r.sync(ctx); err != nil {
+		t.Fatal(err)
+	}
+	success := value(r.Metrics.inventorySuccess)
+	if success < before || success > float64(time.Now().Unix()+1) {
+		t.Fatalf("last success = %v, want current time", success)
+	}
+	check(1, 0, success)
+
+	r.Inventory = fakeInventory(nil)
+	if err := r.sync(ctx); err == nil {
+		t.Fatal("expected inventory failure")
+	}
+	check(1, 1, success)
+
+	shutdown, cancel := context.WithCancel(ctx)
+	r.Inventory = cancelInventory{cancel: cancel}
+	if err := r.sync(shutdown); err == nil {
+		t.Fatal("expected shutdown cancellation")
+	}
+	check(1, 1, success)
+}
+
+type cancelInventory struct{ cancel context.CancelFunc }
+
+func (inv cancelInventory) Snapshot(ctx context.Context) (map[string][]v0s.WorkloadImage, error) {
+	inv.cancel()
+	return nil, ctx.Err()
+}
 
 func TestImagesMetric(t *testing.T) {
 	ctx := context.Background()

@@ -2,6 +2,7 @@ package grpcapi_test
 
 import (
 	"context"
+	"encoding/base64"
 	"log/slog"
 	"testing"
 
@@ -27,7 +28,14 @@ func newServer(t *testing.T) *grpcapi.Server {
 	defer conn.Close(ctx)
 	_, err = conn.Exec(ctx, `
 		INSERT INTO vulnerabilities (id, title, db_version) VALUES ('CVE-1', 'bug', now());
-		INSERT INTO vulnerability_aliases (alias, vulnerability_id) VALUES ('GHSA-1', 'CVE-1');`)
+		INSERT INTO vulnerability_aliases (alias, vulnerability_id) VALUES ('GHSA-1', 'CVE-1');
+		INSERT INTO images (name, digest) VALUES ('repo/app', 'sha256:a');
+		INSERT INTO workloads (environment, team, name, image_reference, image_id)
+		SELECT e, 'team', n, 'repo/app:1', id FROM images
+		CROSS JOIN (VALUES ('prod'), ('dev')) environments(e)
+		CROSS JOIN (VALUES ('app'), ('worker')) names(n);
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		SELECT id, 'CVE-1', 'pkg:npm/lodash@4.17.20', 'pkg:npm/lodash', '4.17.20', 'affected', 'HIGH' FROM images;`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +45,7 @@ func newServer(t *testing.T) *grpcapi.Server {
 func TestSuppressions(t *testing.T) {
 	s := newServer(t)
 	ctx := context.Background()
-	key := &v0sv1.SuppressionKey{ImageName: "repo/app", Package: "pkg:npm/lodash@4.17.20", VulnerabilityId: "GHSA-1"}
+	key := &v0sv1.SuppressionKey{Environment: "prod", Workload: "app", ImageName: "repo/app", Package: "pkg:npm/lodash@4.17.20", VulnerabilityId: "GHSA-1"}
 
 	set, err := s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{
 		Team:  "team",
@@ -52,7 +60,8 @@ func TestSuppressions(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := set.GetSuppressions()[0]
-	if got.GetTeam() != "team" || got.GetImageName() != "repo/app" || got.GetPackageKey() != "pkg:npm/lodash" || got.GetVulnerabilityId() != "CVE-1" ||
+	if got.GetTeam() != "team" || got.GetEnvironment() != "prod" || got.GetWorkload() != "app" ||
+		got.GetImageName() != "repo/app" || got.GetPackageKey() != "pkg:npm/lodash" || got.GetVulnerabilityId() != "CVE-1" ||
 		got.GetState() != v0sv1.SuppressionState_SUPPRESSION_STATE_NOT_AFFECTED || got.GetDetail() != "never called" ||
 		got.GetUpdatedBy() != "me" || got.GetUpdatedAt() == nil {
 		t.Errorf("set suppression = %v", got)
@@ -61,6 +70,71 @@ func TestSuppressions(t *testing.T) {
 	deleted, err := s.DeleteSuppressions(ctx, &v0sv1.DeleteSuppressionsRequest{Team: "team", Keys: []*v0sv1.SuppressionKey{key}})
 	if err != nil || len(deleted.GetDeleted()) != 1 {
 		t.Errorf("DeleteSuppressions = %v, %v; want the suppression deleted", deleted.GetDeleted(), err)
+	}
+}
+
+func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
+	s := newServer(t)
+	ctx := context.Background()
+	req := &v0sv1.ListFindingsRequest{
+		Filter: &v0sv1.FindingFilter{
+			Teams: []string{"team"}, VulnerabilityId: "GHSA-1",
+			Suppressed: v0sv1.SuppressedFilter_SUPPRESSED_FILTER_INCLUDE,
+		},
+		PageSize: 1,
+	}
+	var selected []*v0sv1.NewSuppression
+	for {
+		found, err := s.ListFindings(ctx, req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range found.GetFindings() {
+			if f.GetWorkload().GetEnvironment() != "prod" {
+				continue
+			}
+			selected = append(selected, &v0sv1.NewSuppression{
+				Key: &v0sv1.SuppressionKey{
+					Environment: f.GetWorkload().GetEnvironment(), Workload: f.GetWorkload().GetName(),
+					ImageName: f.GetImage().GetName(), Package: f.GetPackageKey(), VulnerabilityId: f.GetVulnerabilityId(),
+				},
+				State: v0sv1.SuppressionState_SUPPRESSION_STATE_ACCEPTED_RISK, Detail: "selected prod workloads",
+			})
+		}
+		if found.GetNextPageToken() == "" {
+			break
+		}
+		req.PageToken = found.GetNextPageToken()
+	}
+	if len(selected) != 2 {
+		t.Fatalf("selected = %d, want both prod workloads", len(selected))
+	}
+	if _, err := s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{Team: "team", Actor: "me", Suppressions: selected}); err != nil {
+		t.Fatal(err)
+	}
+	active, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Teams: []string{"team"}, VulnerabilityId: "CVE-1"}})
+	if err != nil || len(active.GetFindings()) != 2 {
+		t.Fatalf("active findings = %v, %v; want both dev workloads", active, err)
+	}
+	for _, f := range active.GetFindings() {
+		if f.GetWorkload().GetEnvironment() != "dev" {
+			t.Errorf("unselected scope affected: %v", f)
+		}
+	}
+	listed, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{Teams: []string{"team"}, Environment: "prod", Workload: "worker"})
+	if err != nil || len(listed.GetSuppressions()) != 1 || listed.GetSuppressions()[0].GetWorkload() != "worker" {
+		t.Errorf("list worker = %v, %v", listed, err)
+	}
+	legacyKey := &v0sv1.SuppressionKey{ImageName: "repo/app", Package: "pkg:npm/lodash", VulnerabilityId: "CVE-1"}
+	_, err = s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{Team: "team", Actor: "me", Suppressions: []*v0sv1.NewSuppression{{
+		Key: legacyKey, State: v0sv1.SuppressionState_SUPPRESSION_STATE_ACCEPTED_RISK, Detail: "missing workload",
+	}}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("legacy write = %v, want InvalidArgument", err)
+	}
+	_, err = s.DeleteSuppressions(ctx, &v0sv1.DeleteSuppressionsRequest{Team: "team", Keys: []*v0sv1.SuppressionKey{legacyKey}})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Errorf("legacy delete = %v, want InvalidArgument", err)
 	}
 }
 
@@ -83,6 +157,11 @@ func TestErrorCodes(t *testing.T) {
 		}},
 		{name: "invalid in the database", want: codes.InvalidArgument, call: func() error {
 			_, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{PageToken: "%%%"})
+			return err
+		}},
+		{name: "old suppression cursor", want: codes.InvalidArgument, call: func() error {
+			token := base64.RawURLEncoding.EncodeToString([]byte(`{"t":"team","i":"repo/app","p":"pkg:npm/lodash","v":"CVE-1"}`))
+			_, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{PageToken: token})
 			return err
 		}},
 		{name: "not found", want: codes.NotFound, call: func() error {

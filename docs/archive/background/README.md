@@ -1,8 +1,10 @@
 # v13s og veien videre
 
 Bakgrunnsmateriale fra sesjonen som førte til v0s (oktober 2026), flyttet hit fra
-`~/ws/sessions/v13s-veien-videre/`. Gjeldende status står i `docs/handover.md`.
-Stiene under var relative til sesjonsmappa; review-mappene ligger nå i `docs/reviews/`.
+`~/ws/sessions/v13s-veien-videre/`. Nyere samlet status og kilder finnes i
+[dokumentasjonsoversikten](../../README.md).
+Stiene under var relative til sesjonsmappa; review-mappene ligger nå i
+[`../reviews/`](../reviews/).
 
 Status da: forklaring og forslag til teamdiskusjon. Ingen kodeendringer.
 

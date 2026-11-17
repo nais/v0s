@@ -118,12 +118,64 @@ inventory sync, scanning or enrichment is working.
 - `v0s_fetches_total{result}`, `v0s_scans_total{result}` and `v0s_scan_duration_seconds`.
 - `v0s_enrichment_last_success_timestamp_seconds{feed}`: success on this replica,
   not a cluster-wide heartbeat.
+- `v0s_inventory_syncs_total{result}` and
+  `v0s_inventory_sync_last_success_timestamp_seconds`: completed sync attempts
+  while holding the cluster lock, excluding shutdown cancellations. Skipping a
+  held lock does not count as a success. The timestamp is 0 before first success.
 - `v0s_grpc_request_duration_seconds{method,code}` and Go/process metrics.
 
 Use loop logs as well as metrics to investigate stalled inventory, growing scan
 backlogs, old DBs, failed fetches and enrichment failures. The API exposes
 unresolved references, image status and errors; these are coverage information,
 not a client-side freshness protocol.
+
+## Grafana dashboard
+
+[`grafana/v0s.json`](../grafana/v0s.json) follows the
+[`nais/cli` example](https://github.com/nais/cli/tree/main/grafana): a
+`dashboard.grafana.app/v1` resource, read-only in Grafana, with Git as the source.
+In [management Grafana](https://monitoring.nais.io/d/v0s), select the tenant's
+`*-metrics` datasource, cluster and discovered scrape job. NAV is the default.
+Cluster filtering uses the management stack's `k8s_cluster_name` label.
+
+The [handbook's Git Sync setup](https://handbook.nais.io/technical/observability/#grafana-dashboards)
+requires this repository to be accessible to the `grafana-git-sync` GitHub App.
+It syncs `grafana/` from the default branch. The file must be merged there before
+it appears; no Helm ConfigMap or manual dashboard upload is needed. The two
+inventory metrics also require a rollout of the updated binary.
+
+Read the dashboard in this order:
+
+1. **Serving and freshness:** scrape availability, last inventory sync, oldest
+   loaded vulnerability DB, unloaded replicas, and independent EPSS/KEV sync ages.
+2. **Images:** current state, backlog and missing/failed images. These three panels
+   use only the selected snapshot replica, since all replicas count the same
+   database and may have different loaded DB versions. Counts are images, not
+   workloads; unresolved image references are not included.
+3. **Processing and dependencies:** fetch/scan outcomes, scan latency, sync
+   outcomes, per-replica DB age and update checks, and enrichment age.
+4. **gRPC and process:** requests, service errors, response codes, p95 latency,
+   CPU, RSS, goroutines and uptime.
+
+Yellow/red freshness thresholds are investigation aids, not alert rules or SLOs:
+inventory 5m/15m, loaded DB age 48h/72h, enrichment 30h/48h. Inventory and feed
+success timestamps are replica-local, so the dashboard takes the latest observed
+success across live replicas. Restarting all replicas loses those observations,
+not the stored inventory or feeds. An inventory success means the returned
+snapshot was applied; it does not prove the upstream snapshot was complete.
+
+No data is not rendered as a healthy zero. In particular, `/metrics` can respond
+while the image collector fails its database query. Check logs if image panels
+are empty while target availability is healthy. Most existing outcome counters
+only create a result series after its first event; rates need at least two
+scrapes. All rate panels use a 1m minimum interval for the chart's 1m scrape
+cadence. Scan/fetch outcomes are counted before their database writes.
+
+The service-error ratio counts `Unknown`, `Internal`, `Unavailable` and `DataLoss`.
+Other non-OK codes, including cancellations and deadlines, remain visible in the
+response-code panel. An idle method has no error percentage, not 0%. Process RSS
+is not container memory headroom; use Kubernetes/CNPG metrics for resource limits,
+OOMs, database replication and recovery.
 
 ## Retries and recovery
 
@@ -155,17 +207,37 @@ the historical manual pilot, not the current app installation. It uses
 because it also defines the database. The [manual deployment verification](archive/dev-nais-deploy-2026-11-06.md)
 is a historical snapshot.
 
-On 2026-11-06, Fasit took over the dev-nais app using version
-`2026-11-06-155111-44f64ee` and the dedicated `v0s` runtime identity. The existing
-CNPG Cluster and PVC retained their identities and remained outside the app
-release. Database-subchart provisioning has not been deployed or runtime-tested.
-NAV's initial app assignment was blocked by missing `v0s-db-app`; provisioning
-is intended to address that gap, not evidence that NAV is already operational.
+On 2026-11-06, Fasit took over the dev-nais app with the dedicated `v0s`
+runtime identity, initially retaining the independent pilot database.
+Session verification on 2026-11-09 subsequently observed chart-managed CNPG
+provisioning and working read APIs in both dev-nais and NAV at
+`2026-11-09-115640-d881a93`. Dev-nais also exercised a temporary suppression
+write/read/delete. The database provisioning and later network-policy rollout
+are therefore no longer untested; backup/restore and failure recovery remain
+unverified. See the [dated consolidated evidence](status-2026-11-10.md).
 
-The pre-release `0001_schema.sql` is edited in place. If it changes again, an
-existing pilot database needs a reset to receive those changes. Confirm its
-suppressions are disposable before resetting; never apply that recovery model
-to production.
+The 2026-11-10 NAV comparison still observed `d881a93`, without the later
+pagination and fetch/credential fixes. Local tests of those fixes are not
+live validation. These are dated observations, not a fresh deployment check.
+
+Schema changes now use forward migrations; do not reset a database to upgrade it.
+`0002_workload_suppressions.sql` preserves old team/image assessments in
+`legacy_suppressions` and copies them to each currently resolved workload with
+the same team and image name. It preserves state, reason, actor and timestamp.
+Unmatched or unresolved workloads receive no inferred assessment; their originals
+remain in the legacy table for manual review. Migration runs once, transactionally.
+Copied assessments are independent and should be reviewed in each workload's
+context; the original decision did not distinguish those contexts.
+
+Back up before upgrading and compare the old records, copied workload assessments
+and unmatched originals afterwards. Inventory completeness at migration time
+determines which assessments can be copied. Later syncs do not propagate legacy
+assessments. Do not mix old and new binaries: stop old replicas before starting
+the upgraded service, because old queries and writes lack workload scope.
+Update clients to supply environment and workload for set/delete calls;
+requests missing them are rejected, and old suppression page tokens must be
+discarded. Rolling back requires a coordinated schema/data recovery; old binaries
+must not be pointed at the new schema.
 
 The comparison tool still targets the old API; see
 [`tools/compare`](../tools/compare/README.md). Live multi-replica failures, recovery

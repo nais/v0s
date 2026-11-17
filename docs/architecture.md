@@ -97,10 +97,21 @@ from the advisory source; EPSS and KEV come from FIRST and CISA without our own
 thresholds or scoring. Components are searchable even when they have no findings.
 No finding history, trends or first-seen timestamps are kept.
 
-Suppressions are keyed by team, image name, versionless package key and canonical
-vulnerability ID. They survive package versions and image builds, and affect only
-the team's own workloads. Setting replaces the current assessment; deleting
+Suppressions are keyed by team, environment, workload name, image name,
+versionless package key and canonical vulnerability ID. They survive package
+versions and image builds within that workload and repository. No other workload
+or environment inherits them. Setting replaces the current assessment; deleting
 removes it. There is no expiry or assessment history in v0s.
+
+Clients discover other affected workloads using `ListFindings` with a
+vulnerability ID or alias, optionally a package filter, and `suppressed=INCLUDE`.
+`CountFindings` with `GROUP_BY_WORKLOAD` provides distinct workload buckets when
+only identities/counts are needed. Neither query needs an image filter.
+Clients explicitly select targets and call `SetSuppressions` with one key per
+workload/image/package/vulnerability. Each batch is atomic within one authorized
+team; cross-team operations require separate authorization and requests.
+`ListSuppressions` can filter by environment and workload. These are service
+capabilities, not an implemented Console workflow.
 
 Inventory and scan results can be rebuilt; suppressions cannot. They are durable
 human assessments owned here and require backup and recovery.

@@ -43,6 +43,8 @@ func (s *Server) DeleteSuppressions(ctx context.Context, req *v0sv1.DeleteSuppre
 func (s *Server) ListSuppressions(ctx context.Context, req *v0sv1.ListSuppressionsRequest) (*v0sv1.ListSuppressionsResponse, error) {
 	filter := database.SuppressionFilter{
 		Teams:           req.GetTeams(),
+		Environment:     req.GetEnvironment(),
+		Workload:        req.GetWorkload(),
 		ImageName:       req.GetImageName(),
 		VulnerabilityID: req.GetVulnerabilityId(),
 	}
@@ -54,7 +56,10 @@ func (s *Server) ListSuppressions(ctx context.Context, req *v0sv1.ListSuppressio
 }
 
 func suppressionKey(k *v0sv1.SuppressionKey) database.SuppressionKey {
-	return database.SuppressionKey{ImageName: k.GetImageName(), Package: k.GetPackage(), VulnerabilityID: k.GetVulnerabilityId()}
+	return database.SuppressionKey{
+		Environment: k.GetEnvironment(), Workload: k.GetWorkload(),
+		ImageName: k.GetImageName(), Package: k.GetPackage(), VulnerabilityID: k.GetVulnerabilityId(),
+	}
 }
 
 func suppressionsToProto(ss []database.Suppression) []*v0sv1.Suppression {
@@ -68,6 +73,8 @@ func suppressionsToProto(ss []database.Suppression) []*v0sv1.Suppression {
 func suppressionToProto(s database.Suppression) *v0sv1.Suppression {
 	return &v0sv1.Suppression{
 		Team:            s.Team,
+		Environment:     s.Environment,
+		Workload:        s.Workload,
 		ImageName:       s.ImageName,
 		PackageKey:      s.Package,
 		VulnerabilityId: s.VulnerabilityID,
