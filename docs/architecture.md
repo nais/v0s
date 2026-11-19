@@ -106,8 +106,8 @@ filters using AND, including the existing exact-purl/package-key filter.
 An empty type does not filter; unknown types match nothing. Malformed types
 return `InvalidArgument`, like malformed values of the `package` filter.
 
-`ListFindings` returns `package_type_counts` in alphabetical order, derived from
-the matching package keys. All active filters apply, including `package_type`
+`ListFindings` returns `package_type_counts` in byte order, derived from the
+matching package keys. All active filters apply, including `package_type`
 and suppression. Counts cover the full filtered result, not just the current
 page, and count a finding once per workload using its image. The page and counts
 come from the same database snapshot.

@@ -65,6 +65,10 @@ advisory IDs) resolve to this ID.
 `pkg:npm/%40scope/name`. Suppressions match on the package key, so they survive
 version bumps.
 
+**Package type**
+: The purl type of a package key, for example `npm`, `maven` or `golang`.
+Findings can be filtered and counted by it.
+
 **Suppression**
 : A team's current assessment that a vulnerability does not matter for a package
 in one workload, keyed by `(team, environment, workload name, image name,

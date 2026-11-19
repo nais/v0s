@@ -411,7 +411,7 @@ func (g GroupBy) key() string {
 	case GroupByVulnerability:
 		return "f.vulnerability_id"
 	case GroupByPackageType:
-		return `split_part(split_part(f.package_key, '/', 1), ':', 2)`
+		return `split_part(split_part(f.package_key, '/', 1), ':', 2) COLLATE "C"`
 	}
 	return ""
 }

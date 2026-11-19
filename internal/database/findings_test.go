@@ -154,19 +154,27 @@ func TestListFindingsFilters(t *testing.T) {
 	})
 }
 
+type packageTypeListCase struct {
+	name    string
+	filter  database.FindingFilter
+	want    []string
+	wantErr error
+}
+
+type packageTypeCountCase struct {
+	name    string
+	filter  database.FindingFilter
+	want    []database.FindingCount
+	wantErr error
+}
+
 func TestListFindingsPackageTypes(t *testing.T) {
 	db := newPackageTypeFixture(t)
 	ctx := context.Background()
 	npm := []string{appLodash, appExpress, appScoped, workerLodash, workerExpress, workerScoped, otherLodash}
 	all := append(slices.Clone(npm), appMaven, workerMaven, otherGo, otherTools, otherKpm)
 	slices.Sort(all)
-	type testCase struct {
-		name    string
-		filter  database.FindingFilter
-		want    []string
-		wantErr error
-	}
-	tests := []testCase{
+	tests := []packageTypeListCase{
 		{name: "empty", want: all},
 		{name: "npm", filter: database.FindingFilter{PackageType: "npm"}, want: npm},
 		{name: "uppercase", filter: database.FindingFilter{PackageType: "NPM"}, want: npm},
@@ -180,7 +188,7 @@ func TestListFindingsPackageTypes(t *testing.T) {
 		{name: "severity", filter: database.FindingFilter{PackageType: "npm", Severities: []v0s.Severity{v0s.SeverityLow}}, want: []string{appExpress, workerExpress}},
 	}
 	for _, typ := range []string{"npm/", "npm/%40scope", "npm%2F", "pkg:npm", "%", "_pm", " npm", "npm ", "n*m", "\u212Apm"} {
-		tests = append(tests, testCase{name: "invalid " + typ, filter: database.FindingFilter{PackageType: typ}, wantErr: database.ErrInvalid})
+		tests = append(tests, packageTypeListCase{name: "invalid " + typ, filter: database.FindingFilter{PackageType: typ}, wantErr: database.ErrInvalid})
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -201,12 +209,7 @@ func TestListFindingsPackageTypes(t *testing.T) {
 func TestCountFindingsPackageTypes(t *testing.T) {
 	db := newPackageTypeFixture(t)
 	ctx := context.Background()
-	tests := []struct {
-		name    string
-		filter  database.FindingFilter
-		want    []database.FindingCount
-		wantErr error
-	}{
+	tests := []packageTypeCountCase{
 		{name: "empty", want: []database.FindingCount{{Key: "HIGH", Count: 10}, {Key: "LOW", Count: 2}}},
 		{name: "npm", filter: database.FindingFilter{PackageType: "npm"}, want: []database.FindingCount{{Key: "HIGH", Count: 5}, {Key: "LOW", Count: 2}}},
 		{name: "uppercase", filter: database.FindingFilter{PackageType: "MAVEN"}, want: []database.FindingCount{{Key: "HIGH", Count: 2}}},
@@ -235,12 +238,21 @@ func TestListFindingsPackageTypeCounts(t *testing.T) {
 		VALUES ('team-a', 'c1', 'app', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'assessed', 'user');
 	`)
 	ctx := context.Background()
-	tests := []struct {
-		name   string
-		filter database.FindingFilter
-		want   []database.FindingCount
-	}{
-		{name: "dynamic types counted per workload", want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "maven", Count: 2}, {Key: "npm", Count: 6}, {Key: "npm-tools", Count: 1}}},
+	tests := []packageTypeCountCase{
+		{name: "every type, once per workload", want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "maven", Count: 2}, {Key: "npm", Count: 6}, {Key: "npm-tools", Count: 1}}},
+		{name: "selected type", filter: database.FindingFilter{PackageType: "npm"}, want: []database.FindingCount{{Key: "npm", Count: 6}}},
+		{name: "uppercase", filter: database.FindingFilter{PackageType: "MAVEN"}, want: []database.FindingCount{{Key: "maven", Count: 2}}},
+		{name: "unknown type", filter: database.FindingFilter{PackageType: "unknown"}},
+		{name: "team", filter: database.FindingFilter{Teams: []string{"team-b"}}, want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "npm", Count: 1}, {Key: "npm-tools", Count: 1}}},
+		{name: "workload", filter: database.FindingFilter{Teams: []string{"team-a"}, Environment: "c1", Workload: "worker"}, want: []database.FindingCount{{Key: "maven", Count: 1}, {Key: "npm", Count: 3}}},
+		{name: "other environment", filter: database.FindingFilter{Environment: "c2"}},
+		{name: "image", filter: database.FindingFilter{ImageName: "repo/app", ImageDigest: "sha256:a"}, want: []database.FindingCount{{Key: "maven", Count: 2}, {Key: "npm", Count: 5}}},
+		{name: "severity", filter: database.FindingFilter{Severities: []v0s.Severity{v0s.SeverityLow}}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "exact package", filter: database.FindingFilter{Package: "pkg:npm/lodash@4.17.20"}, want: []database.FindingCount{{Key: "npm", Count: 1}}},
+		{name: "conflicting package", filter: database.FindingFilter{PackageType: "maven", Package: "pkg:npm/lodash"}},
+		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityID: "GHSA-1"}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "has fix", filter: database.FindingFilter{HasFix: true}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "kev", filter: database.FindingFilter{OnlyKnownExploited: true}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
 		{
 			name: "combined filters",
 			filter: database.FindingFilter{
@@ -251,7 +263,6 @@ func TestListFindingsPackageTypeCounts(t *testing.T) {
 		},
 		{name: "include suppressed", filter: database.FindingFilter{Suppressed: database.SuppressedInclude}, want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "maven", Count: 2}, {Key: "npm", Count: 7}, {Key: "npm-tools", Count: 1}}},
 		{name: "only suppressed", filter: database.FindingFilter{Suppressed: database.SuppressedOnly}, want: []database.FindingCount{{Key: "npm", Count: 1}}},
-		{name: "no matches", filter: database.FindingFilter{PackageType: "unknown"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -262,7 +273,36 @@ func TestListFindingsPackageTypeCounts(t *testing.T) {
 			if !slices.Equal(list.PackageTypeCounts, tt.want) {
 				t.Errorf("package type counts = %v, want %v", list.PackageTypeCounts, tt.want)
 			}
+			for _, count := range list.PackageTypeCounts {
+				filter := tt.filter
+				filter.PackageType = count.Key
+				typed, err := db.ListFindings(ctx, filter, database.Page{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if int64(len(typed.Findings)) != count.Count || typed.NextPageToken != "" {
+					t.Errorf("type %s: %d findings, next=%q; want %d and no next page", count.Key, len(typed.Findings), typed.NextPageToken, count.Count)
+				}
+			}
 		})
+	}
+}
+
+func TestListFindingsPackageTypeCountsByteOrder(t *testing.T) {
+	db := newPackageTypeFixture(t)
+	exec(t, db, `
+		CREATE COLLATION punctuation_ignored (provider = icu, locale = 'und-u-ka-shifted');
+		ALTER TABLE findings ALTER COLUMN package_key TYPE text COLLATE punctuation_ignored;
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		VALUES (2, 'CVE-3', 'pkg:npmjs/helper@1', 'pkg:npmjs/helper', '1', 'affected', 'HIGH');
+	`)
+	list, err := db.ListFindings(context.Background(), database.FindingFilter{Teams: []string{"team-b"}}, database.Page{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "npm", Count: 1}, {Key: "npm-tools", Count: 1}, {Key: "npmjs", Count: 1}}
+	if !slices.Equal(list.PackageTypeCounts, want) {
+		t.Errorf("package type counts = %v, want %v", list.PackageTypeCounts, want)
 	}
 }
 

@@ -144,18 +144,20 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	}
 }
 
+type packageTypeFilterCase struct {
+	name string
+	typ  string
+	purl string
+	want int
+}
+
 func TestFindingPackageTypeFilter(t *testing.T) {
 	s := newServer(t, `
 		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
 		SELECT id, 'CVE-1', 'pkg:maven/org.example/lib@1', 'pkg:maven/org.example/lib', '1', 'affected', 'LOW' FROM images;
 	`)
 	ctx := context.Background()
-	tests := []struct {
-		name string
-		typ  string
-		purl string
-		want int
-	}{
+	tests := []packageTypeFilterCase{
 		{name: "empty", want: 8},
 		{name: "npm", typ: "npm", purl: "pkg:npm/lodash@4.17.20", want: 4},
 		{name: "uppercase", typ: "MAVEN", purl: "pkg:maven/org.example/lib@1", want: 4},
@@ -207,7 +209,7 @@ func TestFindingPackageTypeFilter(t *testing.T) {
 		}
 		for i, count := range counts {
 			if count.GetValue() != want[i].GetValue() || count.GetCount() != want[i].GetCount() {
-				t.Errorf("package type count %d = %v, want %v", i, count, want[i])
+				t.Errorf("ListFindings package type count = %v, want %v", count, want[i])
 			}
 		}
 	})
