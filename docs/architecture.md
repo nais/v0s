@@ -106,6 +106,12 @@ filters using AND, including the existing exact-purl/package-key filter.
 An empty type does not filter; unknown types match nothing. Malformed types
 return `InvalidArgument`, like malformed values of the `package` filter.
 
+`ListFindings` returns `package_type_counts` in alphabetical order, derived from
+the matching package keys. All active filters apply, including `package_type`
+and suppression. Counts cover the full filtered result, not just the current
+page, and count a finding once per workload using its image. The page and counts
+come from the same database snapshot.
+
 The public read contract accepts one team or the whole tenant. A workload name
 requires a team and environment. CVSS details are a versioned list per source on
 the advisory, with optional scores/vectors instead of a versionless maximum on

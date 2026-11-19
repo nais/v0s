@@ -2,6 +2,7 @@ package database_test
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"reflect"
@@ -120,7 +121,7 @@ func TestListFindingsFilters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings, next, err := db.ListFindings(ctx, tt.filter, database.Page{})
+			findings, _, next, err := db.ListFindings(ctx, tt.filter, database.Page{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -134,7 +135,7 @@ func TestListFindingsFilters(t *testing.T) {
 	}
 
 	t.Run("facts", func(t *testing.T) {
-		findings, _, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityID: "CVE-1", Workload: "app"}, database.Page{})
+		findings, _, _, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityID: "CVE-1", Workload: "app"}, database.Page{})
 		if err != nil || len(findings) != 1 {
 			t.Fatalf("ListFindings = %d findings, %v; want 1", len(findings), err)
 		}
@@ -146,7 +147,7 @@ func TestListFindingsFilters(t *testing.T) {
 	})
 
 	t.Run("not a purl", func(t *testing.T) {
-		_, _, err := db.ListFindings(ctx, database.FindingFilter{Package: "lodash"}, database.Page{})
+		_, _, _, err := db.ListFindings(ctx, database.FindingFilter{Package: "lodash"}, database.Page{})
 		if !errors.Is(err, database.ErrInvalid) {
 			t.Errorf("err = %v, want ErrInvalid", err)
 		}
@@ -183,7 +184,7 @@ func TestListFindingsPackageTypes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings, next, err := db.ListFindings(ctx, tt.filter, database.Page{})
+			findings, _, next, err := db.ListFindings(ctx, tt.filter, database.Page{})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
@@ -227,6 +228,59 @@ func TestCountFindingsPackageTypes(t *testing.T) {
 	}
 }
 
+func TestListFindingsPackageTypeCounts(t *testing.T) {
+	db := newPackageTypeFixture(t)
+	exec(t, db, `
+		INSERT INTO suppressions (team, environment, workload, image_name, package_key, vulnerability_id, state, detail, updated_by)
+		VALUES ('team-a', 'c1', 'app', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'assessed', 'user');
+	`)
+	ctx := context.Background()
+	tests := []struct {
+		name   string
+		filter database.FindingFilter
+		want   []database.FindingCount
+	}{
+		{name: "all types", want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "maven", Count: 2}, {Key: "npm", Count: 6}, {Key: "npm-tools", Count: 1}}},
+		{name: "selected type", filter: database.FindingFilter{PackageType: "npm"}, want: []database.FindingCount{{Key: "npm", Count: 6}}},
+		{name: "uppercase", filter: database.FindingFilter{PackageType: "MAVEN"}, want: []database.FindingCount{{Key: "maven", Count: 2}}},
+		{name: "unknown type", filter: database.FindingFilter{PackageType: "unknown"}},
+		{name: "team", filter: database.FindingFilter{Teams: []string{"team-b"}}, want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "npm", Count: 1}, {Key: "npm-tools", Count: 1}}},
+		{name: "workload", filter: database.FindingFilter{Teams: []string{"team-a"}, Environment: "c1", Workload: "worker"}, want: []database.FindingCount{{Key: "maven", Count: 1}, {Key: "npm", Count: 3}}},
+		{name: "other environment", filter: database.FindingFilter{Environment: "c2"}},
+		{name: "image", filter: database.FindingFilter{ImageName: "repo/app", ImageDigest: "sha256:a"}, want: []database.FindingCount{{Key: "maven", Count: 2}, {Key: "npm", Count: 5}}},
+		{name: "severity", filter: database.FindingFilter{Severities: []v0s.Severity{v0s.SeverityLow}}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "exact package", filter: database.FindingFilter{Package: "pkg:npm/lodash@4.17.20"}, want: []database.FindingCount{{Key: "npm", Count: 1}}},
+		{name: "conflicting package", filter: database.FindingFilter{PackageType: "maven", Package: "pkg:npm/lodash"}},
+		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityID: "GHSA-1"}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "has fix", filter: database.FindingFilter{HasFix: true}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "kev", filter: database.FindingFilter{OnlyKnownExploited: true}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "include suppressed", filter: database.FindingFilter{Suppressed: database.SuppressedInclude}, want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "maven", Count: 2}, {Key: "npm", Count: 7}, {Key: "npm-tools", Count: 1}}},
+		{name: "only suppressed", filter: database.FindingFilter{Suppressed: database.SuppressedOnly}, want: []database.FindingCount{{Key: "npm", Count: 1}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, got, _, err := db.ListFindings(ctx, tt.filter, database.Page{Size: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("package type counts = %v, want %v", got, tt.want)
+			}
+			for _, count := range got {
+				filter := tt.filter
+				filter.PackageType = count.Key
+				findings, _, next, err := db.ListFindings(ctx, filter, database.Page{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if int64(len(findings)) != count.Count || next != "" {
+					t.Errorf("type %s: %d findings, next=%q; want %d and no next page", count.Key, len(findings), next, count.Count)
+				}
+			}
+		})
+	}
+}
+
 func TestListFindingsPackageTypePagination(t *testing.T) {
 	db := newPackageTypeFixture(t)
 	ctx := context.Background()
@@ -236,9 +290,12 @@ func TestListFindingsPackageTypePagination(t *testing.T) {
 		page = database.Page{Size: 2}
 	)
 	for range len(want) + 1 {
-		findings, next, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
+		findings, counts, next, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
 		if err != nil {
 			t.Fatal(err)
+		}
+		if !slices.Equal(counts, []database.FindingCount{{Key: "npm", Count: 7}}) {
+			t.Errorf("package type counts = %v, want npm:7 on every page", counts)
 		}
 		got = append(got, findings...)
 		if next == "" {
@@ -252,13 +309,22 @@ func TestListFindingsPackageTypePagination(t *testing.T) {
 	if !slices.Equal(findingKeys(got), want) {
 		t.Errorf("paged findings = %q, want %q", findingKeys(got), want)
 	}
+
+	page.Token = base64.RawURLEncoding.EncodeToString([]byte(`{"e":"c1","t":"team-b","w":"other","v":"CVE-1","p":"pkg:npm/lodash@4.17.19"}`))
+	findings, counts, next, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findings) != 0 || next != "" || !slices.Equal(counts, []database.FindingCount{{Key: "npm", Count: 7}}) {
+		t.Errorf("after last finding: %d findings, next=%q, counts=%v; want none, no token and npm:7", len(findings), next, counts)
+	}
 }
 
 func TestListFindingsPagination(t *testing.T) {
 	db, _ := newFixture(t)
 	ctx := context.Background()
 
-	all, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
+	all, _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,7 +333,7 @@ func TestListFindingsPagination(t *testing.T) {
 		page = database.Page{Size: 1}
 	)
 	for range 10 {
-		findings, next, err := db.ListFindings(ctx, database.FindingFilter{}, page)
+		findings, _, next, err := db.ListFindings(ctx, database.FindingFilter{}, page)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -281,7 +347,7 @@ func TestListFindingsPagination(t *testing.T) {
 		t.Errorf("paged findings = %q, want %q", findingKeys(got), findingKeys(all))
 	}
 
-	if _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{Token: "garbage!"}); !errors.Is(err, database.ErrInvalid) {
+	if _, _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{Token: "garbage!"}); !errors.Is(err, database.ErrInvalid) {
 		t.Errorf("malformed token: err = %v, want ErrInvalid", err)
 	}
 }
@@ -324,7 +390,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 			if filter.Environment == "" {
 				filter.Environment = "c2"
 			}
-			want, next, err := db.ListFindings(ctx, filter, database.Page{Size: 1000})
+			want, _, next, err := db.ListFindings(ctx, filter, database.Page{Size: 1000})
 			if err != nil || next != "" {
 				t.Fatalf("reference page: next=%q, err=%v", next, err)
 			}
@@ -332,7 +398,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 				var got []database.WorkloadFinding
 				page := database.Page{Size: size}
 				for range len(want) + 1 {
-					findings, next, err := db.ListFindings(ctx, filter, page)
+					findings, _, next, err := db.ListFindings(ctx, filter, page)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -372,7 +438,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 	var got []string
 	page := database.Page{Size: 127}
 	for range 20 {
-		findings, next, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedInclude}, page)
+		findings, _, next, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedInclude}, page)
 		if err != nil {
 			t.Fatal(err)
 		}

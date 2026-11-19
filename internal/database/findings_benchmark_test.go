@@ -52,7 +52,7 @@ func BenchmarkListFindings(b *testing.B) {
 				page.Token = base64.RawURLEncoding.EncodeToString([]byte(cursor))
 			}
 			for b.Loop() {
-				findings, next, err := db.ListFindings(ctx, database.FindingFilter{}, page)
+				findings, _, next, err := db.ListFindings(ctx, database.FindingFilter{}, page)
 				if err != nil {
 					b.Fatal(err)
 				}

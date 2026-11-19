@@ -45,7 +45,7 @@ func TestSuppressionMatching(t *testing.T) {
 			db, exec := newFixture(t)
 			exec(tt.seed)
 
-			only, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams, Suppressed: database.SuppressedOnly}, database.Page{})
+			only, _, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams, Suppressed: database.SuppressedOnly}, database.Page{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -58,11 +58,11 @@ func TestSuppressionMatching(t *testing.T) {
 				}
 			}
 
-			excluded, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams}, database.Page{})
+			excluded, _, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams}, database.Page{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			all, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams, Suppressed: database.SuppressedInclude}, database.Page{})
+			all, _, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams, Suppressed: database.SuppressedInclude}, database.Page{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -305,7 +305,7 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 
 	// Discovery includes already assessed findings, without restricting the image.
 	filter := database.FindingFilter{Teams: []string{"team-a"}, VulnerabilityID: "GHSA-1", Package: "pkg:npm/lodash", Suppressed: database.SuppressedInclude}
-	findings, _, err := db.ListFindings(ctx, filter, database.Page{})
+	findings, _, _, err := db.ListFindings(ctx, filter, database.Page{})
 	if err != nil || len(findings) != 2 {
 		t.Fatalf("discover workloads = %v, %v; want app and worker", findings, err)
 	}
@@ -320,7 +320,7 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 	if _, err := db.DeleteSuppressions(ctx, "team-a", []database.SuppressionKey{lodashKey}); err != nil {
 		t.Fatal(err)
 	}
-	only, _, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	only, _, _, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
 	if err != nil || !slices.Equal(findingKeys(only), []string{workerLodash}) {
 		t.Fatalf("after deleting app assessment = %v, %v; want worker only", findingKeys(only), err)
 	}
@@ -330,12 +330,12 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 	}
 	// A new digest and package version in the same repository retain this workload's assessment.
 	exec(`UPDATE workloads SET image_id = 2 WHERE team = 'team-a' AND name = 'worker'`)
-	only, _, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	only, _, _, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
 	if err != nil || len(only) != 1 || only[0].Workload.Name != "worker" || only[0].Image.Digest != "sha256:b" {
 		t.Fatalf("after rebuild = %v, %v; want worker's new image assessed", only, err)
 	}
 	exec(`UPDATE workloads SET image_id = 3 WHERE team = 'team-a' AND name = 'worker'`)
-	only, _, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	only, _, _, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
 	if err != nil || len(only) != 0 {
 		t.Fatalf("after repository change = %v, %v; want no inherited assessment", only, err)
 	}

@@ -110,11 +110,14 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 	if err != nil {
 		return nil, err
 	}
-	findings, next, err := s.db.ListFindings(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
+	findings, counts, next, err := s.db.ListFindings(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
 	resp := &v0sv1.ListFindingsResponse{Findings: make([]*v0sv1.Finding, 0, len(findings)), NextPageToken: next}
+	for _, c := range counts {
+		resp.PackageTypeCounts = append(resp.PackageTypeCounts, &v0sv1.PackageTypeCount{Value: c.Key, Count: c.Count})
+	}
 	for _, f := range findings {
 		pf := &v0sv1.Finding{
 			Workload:         &v0sv1.WorkloadRef{Environment: f.Workload.Environment, Team: f.Workload.Team, Name: f.Workload.Name},

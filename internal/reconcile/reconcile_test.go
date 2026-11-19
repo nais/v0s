@@ -188,7 +188,7 @@ func TestPipeline(t *testing.T) {
 		t.Errorf("statuses = %v, want %v", status, want)
 	}
 
-	findings, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
+	findings, _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
 	if err != nil {
 		t.Fatal(err)
 	}

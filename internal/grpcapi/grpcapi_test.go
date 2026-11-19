@@ -151,14 +151,15 @@ func TestFindingPackageTypeFilter(t *testing.T) {
 	`)
 	ctx := context.Background()
 	tests := []struct {
-		name string
-		typ  string
-		purl string
-		want int
+		name       string
+		typ        string
+		purl       string
+		want       int
+		wantCounts []*v0sv1.PackageTypeCount
 	}{
-		{name: "empty", want: 8},
-		{name: "npm", typ: "npm", purl: "pkg:npm/lodash@4.17.20", want: 4},
-		{name: "uppercase", typ: "MAVEN", purl: "pkg:maven/org.example/lib@1", want: 4},
+		{name: "empty", want: 8, wantCounts: []*v0sv1.PackageTypeCount{{Value: "maven", Count: 4}, {Value: "npm", Count: 4}}},
+		{name: "npm", typ: "npm", purl: "pkg:npm/lodash@4.17.20", want: 4, wantCounts: []*v0sv1.PackageTypeCount{{Value: "npm", Count: 4}}},
+		{name: "uppercase", typ: "MAVEN", purl: "pkg:maven/org.example/lib@1", want: 4, wantCounts: []*v0sv1.PackageTypeCount{{Value: "maven", Count: 4}}},
 		{name: "unknown", typ: "golang"},
 	}
 	for _, tt := range tests {
@@ -170,6 +171,15 @@ func TestFindingPackageTypeFilter(t *testing.T) {
 			}
 			if len(found.GetFindings()) != tt.want {
 				t.Errorf("findings = %d, want %d", len(found.GetFindings()), tt.want)
+			}
+			counts := found.GetPackageTypeCounts()
+			if len(counts) != len(tt.wantCounts) {
+				t.Fatalf("package type counts = %v, want %v", counts, tt.wantCounts)
+			}
+			for i, count := range counts {
+				if count.GetValue() != tt.wantCounts[i].GetValue() || count.GetCount() != tt.wantCounts[i].GetCount() {
+					t.Errorf("package type count %d = %v, want %v", i, count, tt.wantCounts[i])
+				}
 			}
 			for _, finding := range found.GetFindings() {
 				if tt.purl != "" && finding.GetPurl() != tt.purl {
@@ -188,6 +198,19 @@ func TestFindingPackageTypeFilter(t *testing.T) {
 			}
 			if total != int64(tt.want) {
 				t.Errorf("count = %d, want %d", total, tt.want)
+			}
+			paged, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: filter, PageSize: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := paged.GetPackageTypeCounts(); len(got) != len(counts) {
+				t.Fatalf("first page package type counts = %v, want %v", got, counts)
+			} else {
+				for i, count := range got {
+					if count.GetValue() != counts[i].GetValue() || count.GetCount() != counts[i].GetCount() {
+						t.Errorf("first page package type count %d = %v, want %v", i, count, counts[i])
+					}
+				}
 			}
 		})
 	}

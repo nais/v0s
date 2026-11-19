@@ -247,19 +247,25 @@ type findingCursor struct {
 }
 
 // ListFindings lists the findings of workloads that match filter, ordered by
-// workload, vulnerability and purl. It returns the next page token, empty on the last page.
-func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page) ([]WorkloadFinding, string, error) {
+// workload, vulnerability and purl, with package type counts before pagination.
+// The next page token is empty on the last page.
+func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page) ([]WorkloadFinding, []FindingCount, string, error) {
 	var cursor findingCursor
 	if err := decodePageToken(page.Token, &cursor); err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	var args sqlArgs
 	where, err := filter.conditions(&args)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, "", err
+	}
+	var countArgs sqlArgs
+	countWhere, err := filter.conditions(&countArgs)
+	if err != nil {
+		return nil, nil, "", err
 	}
 	if err := db.requireKEVCatalog(ctx); err != nil {
-		return nil, "", err
+		return nil, nil, "", err
 	}
 	if page.Token != "" {
 		env, team, workload := args.add(cursor.Environment), args.add(cursor.Team), args.add(cursor.Workload)
@@ -273,7 +279,13 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	}
 	limit := page.limit()
 
-	rows, err := db.pool.Query(ctx, `
+	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	rows, err := tx.Query(ctx, `
 		SELECT w.environment, w.team, w.name, `+imageColumns+`,
 			f.vulnerability_id, f.purl, f.package_key, f.installed_version, f.fixed_version, f.status,
 			f.severity, f.severity_source, f.data_source,
@@ -286,7 +298,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		ORDER BY w.environment, w.team, w.name, f.vulnerability_id, f.purl
 		LIMIT `+args.add(limit+1), args...)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing findings: %w", err)
+		return nil, nil, "", fmt.Errorf("listing findings: %w", err)
 	}
 	findings, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (WorkloadFinding, error) {
 		var (
@@ -329,7 +341,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		return fi, nil
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("listing findings: %w", err)
+		return nil, nil, "", fmt.Errorf("listing findings: %w", err)
 	}
 
 	var next string
@@ -344,10 +356,14 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 			PURL:            last.Finding.PURL,
 		})
 		if err != nil {
-			return nil, "", err
+			return nil, nil, "", err
 		}
 	}
-	return findings, next, nil
+	counts, err := countFindings(ctx, tx, "split_part(split_part(f.package_key, '/', 1), ':', 2)", countWhere, countArgs)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	return findings, counts, next, nil
 }
 
 // epssScan reads e.score and e.date from a LEFT JOIN.
@@ -412,8 +428,11 @@ func (db *DB) CountFindings(ctx context.Context, filter FindingFilter, groupBy G
 			return nil, err
 		}
 	}
+	return countFindings(ctx, db.pool, key, where, args)
+}
 
-	rows, err := db.pool.Query(ctx, `
+func countFindings(ctx context.Context, q pgxQuerier, key string, where []string, args sqlArgs) ([]FindingCount, error) {
+	rows, err := q.Query(ctx, `
 		SELECT `+key+`, count(*)
 		FROM `+findingsFrom+`
 		WHERE `+and(where)+`

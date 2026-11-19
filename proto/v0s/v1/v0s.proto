@@ -185,6 +185,13 @@ message ListFindingsResponse {
   // Ordered by workload, vulnerability ID and purl.
   repeated Finding findings = 1;
   string next_page_token = 2;
+  // Counts for all matching workload findings before pagination, ordered by type.
+  repeated PackageTypeCount package_type_counts = 3;
+}
+
+message PackageTypeCount {
+  string value = 1;
+  int64 count = 2;
 }
 
 message CountFindingsRequest {
