@@ -188,10 +188,11 @@ func TestPipeline(t *testing.T) {
 		t.Errorf("statuses = %v, want %v", status, want)
 	}
 
-	findings, _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
+	list, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
 	if err != nil {
 		t.Fatal(err)
 	}
+	findings := list.Findings
 	if len(findings) != 1 || findings[0].Image.Name != "registry/scanned" || findings[0].Finding.VulnerabilityID != "CVE-2021-23337" {
 		t.Errorf("findings = %+v, want CVE-2021-23337 in registry/scanned", findings)
 	}

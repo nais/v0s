@@ -121,25 +121,25 @@ func TestListFindingsFilters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings, _, next, err := db.ListFindings(ctx, tt.filter, database.Page{})
+			list, err := db.ListFindings(ctx, tt.filter, database.Page{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := findingKeys(findings); !slices.Equal(got, tt.want) {
+			if got := findingKeys(list.Findings); !slices.Equal(got, tt.want) {
 				t.Errorf("findings = %q, want %q", got, tt.want)
 			}
-			if next != "" {
-				t.Errorf("next page token = %q, want none", next)
+			if list.NextPageToken != "" {
+				t.Errorf("next page token = %q, want none", list.NextPageToken)
 			}
 		})
 	}
 
 	t.Run("facts", func(t *testing.T) {
-		findings, _, _, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityID: "CVE-1", Workload: "app"}, database.Page{})
-		if err != nil || len(findings) != 1 {
-			t.Fatalf("ListFindings = %d findings, %v; want 1", len(findings), err)
+		list, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityID: "CVE-1", Workload: "app"}, database.Page{})
+		if err != nil || len(list.Findings) != 1 {
+			t.Fatalf("ListFindings = %d findings, %v; want 1", len(list.Findings), err)
 		}
-		f := findings[0]
+		f := list.Findings[0]
 		want := database.WorkloadRef{Environment: "c1", Team: "team-a", Name: "app"}
 		if f.Workload != want || f.Image.Digest != "sha256:a" || f.KnownExploited || f.Suppression != nil {
 			t.Errorf("finding = %+v, want in c1/team-a/app with sha256:a, not in CISA KEV, not suppressed", f)
@@ -147,7 +147,7 @@ func TestListFindingsFilters(t *testing.T) {
 	})
 
 	t.Run("not a purl", func(t *testing.T) {
-		_, _, _, err := db.ListFindings(ctx, database.FindingFilter{Package: "lodash"}, database.Page{})
+		_, err := db.ListFindings(ctx, database.FindingFilter{Package: "lodash"}, database.Page{})
 		if !errors.Is(err, database.ErrInvalid) {
 			t.Errorf("err = %v, want ErrInvalid", err)
 		}
@@ -184,15 +184,15 @@ func TestListFindingsPackageTypes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			findings, _, next, err := db.ListFindings(ctx, tt.filter, database.Page{})
+			list, err := db.ListFindings(ctx, tt.filter, database.Page{})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
-			if got := findingKeys(findings); !slices.Equal(got, tt.want) {
+			if got := findingKeys(list.Findings); !slices.Equal(got, tt.want) {
 				t.Errorf("findings = %q, want %q", got, tt.want)
 			}
-			if next != "" {
-				t.Errorf("next page token = %q, want none", next)
+			if list.NextPageToken != "" {
+				t.Errorf("next page token = %q, want none", list.NextPageToken)
 			}
 		})
 	}
@@ -255,12 +255,12 @@ func TestListFindingsPackageTypeCounts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, got, _, err := db.ListFindings(ctx, tt.filter, database.Page{Size: 1})
+			list, err := db.ListFindings(ctx, tt.filter, database.Page{Size: 1})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !slices.Equal(got, tt.want) {
-				t.Errorf("package type counts = %v, want %v", got, tt.want)
+			if !slices.Equal(list.PackageTypeCounts, tt.want) {
+				t.Errorf("package type counts = %v, want %v", list.PackageTypeCounts, tt.want)
 			}
 		})
 	}
@@ -275,33 +275,33 @@ func TestListFindingsPackageTypePagination(t *testing.T) {
 		page = database.Page{Size: 2}
 	)
 	for range len(want) + 1 {
-		findings, counts, next, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
+		list, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Equal(counts, []database.FindingCount{{Key: "npm", Count: 7}}) {
-			t.Errorf("package type counts = %v, want npm:7 on every page", counts)
+		if !slices.Equal(list.PackageTypeCounts, []database.FindingCount{{Key: "npm", Count: 7}}) {
+			t.Errorf("package type counts = %v, want npm:7 on every page", list.PackageTypeCounts)
 		}
-		got = append(got, findings...)
-		if next == "" {
+		got = append(got, list.Findings...)
+		if list.NextPageToken == "" {
 			break
 		}
-		if next == page.Token {
+		if list.NextPageToken == page.Token {
 			t.Fatal("page token did not advance")
 		}
-		page.Token = next
+		page.Token = list.NextPageToken
 	}
 	if !slices.Equal(findingKeys(got), want) {
 		t.Errorf("paged findings = %q, want %q", findingKeys(got), want)
 	}
 
 	page.Token = base64.RawURLEncoding.EncodeToString([]byte(`{"e":"c1","t":"team-b","w":"other","v":"CVE-1","p":"pkg:npm/lodash@4.17.19"}`))
-	findings, counts, next, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
+	list, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(findings) != 0 || next != "" || !slices.Equal(counts, []database.FindingCount{{Key: "npm", Count: 7}}) {
-		t.Errorf("after last finding: %d findings, next=%q, counts=%v; want none, no token and npm:7", len(findings), next, counts)
+	if len(list.Findings) != 0 || list.NextPageToken != "" || !slices.Equal(list.PackageTypeCounts, []database.FindingCount{{Key: "npm", Count: 7}}) {
+		t.Errorf("after last finding: %d findings, next=%q, counts=%v; want none, no token and npm:7", len(list.Findings), list.NextPageToken, list.PackageTypeCounts)
 	}
 }
 
@@ -309,7 +309,7 @@ func TestListFindingsPagination(t *testing.T) {
 	db, _ := newFixture(t)
 	ctx := context.Background()
 
-	all, _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
+	all, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,21 +318,21 @@ func TestListFindingsPagination(t *testing.T) {
 		page = database.Page{Size: 1}
 	)
 	for range 10 {
-		findings, _, next, err := db.ListFindings(ctx, database.FindingFilter{}, page)
+		list, err := db.ListFindings(ctx, database.FindingFilter{}, page)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got = append(got, findings...)
-		if next == "" {
+		got = append(got, list.Findings...)
+		if list.NextPageToken == "" {
 			break
 		}
-		page.Token = next
+		page.Token = list.NextPageToken
 	}
-	if !slices.Equal(findingKeys(got), findingKeys(all)) {
-		t.Errorf("paged findings = %q, want %q", findingKeys(got), findingKeys(all))
+	if !slices.Equal(findingKeys(got), findingKeys(all.Findings)) {
+		t.Errorf("paged findings = %q, want %q", findingKeys(got), findingKeys(all.Findings))
 	}
 
-	if _, _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{Token: "garbage!"}); !errors.Is(err, database.ErrInvalid) {
+	if _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{Token: "garbage!"}); !errors.Is(err, database.ErrInvalid) {
 		t.Errorf("malformed token: err = %v, want ErrInvalid", err)
 	}
 }
@@ -375,26 +375,27 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 			if filter.Environment == "" {
 				filter.Environment = "c2"
 			}
-			want, _, next, err := db.ListFindings(ctx, filter, database.Page{Size: 1000})
-			if err != nil || next != "" {
-				t.Fatalf("reference page: next=%q, err=%v", next, err)
+			reference, err := db.ListFindings(ctx, filter, database.Page{Size: 1000})
+			if err != nil || reference.NextPageToken != "" {
+				t.Fatalf("reference page: next=%q, err=%v", reference.NextPageToken, err)
 			}
+			want := reference.Findings
 			for _, size := range []int{1, 2, 7, 100} {
 				var got []database.WorkloadFinding
 				page := database.Page{Size: size}
 				for range len(want) + 1 {
-					findings, _, next, err := db.ListFindings(ctx, filter, page)
+					list, err := db.ListFindings(ctx, filter, page)
 					if err != nil {
 						t.Fatal(err)
 					}
-					got = append(got, findings...)
-					if next == "" {
+					got = append(got, list.Findings...)
+					if list.NextPageToken == "" {
 						break
 					}
-					if next == page.Token {
+					if list.NextPageToken == page.Token {
 						t.Fatal("page token did not advance")
 					}
-					page.Token = next
+					page.Token = list.NextPageToken
 				}
 				if !reflect.DeepEqual(got, want) {
 					t.Errorf("page size %d: paged findings differ from reference (%d rows, want %d)", size, len(got), len(want))
@@ -423,17 +424,17 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 	var got []string
 	page := database.Page{Size: 127}
 	for range 20 {
-		findings, _, next, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedInclude}, page)
+		list, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedInclude}, page)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, f := range findings {
+		for _, f := range list.Findings {
 			got = append(got, f.Workload.Environment+"/"+f.Workload.Team+"/"+f.Workload.Name+" "+f.Finding.VulnerabilityID+" "+f.Finding.PURL)
 		}
-		if next == "" {
+		if list.NextPageToken == "" {
 			break
 		}
-		page.Token = next
+		page.Token = list.NextPageToken
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("full traversal differs from expected order: got %d rows, want %d", len(got), len(want))

@@ -45,31 +45,31 @@ func TestSuppressionMatching(t *testing.T) {
 			db, exec := newFixture(t)
 			exec(tt.seed)
 
-			only, _, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams, Suppressed: database.SuppressedOnly}, database.Page{})
+			only, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams, Suppressed: database.SuppressedOnly}, database.Page{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := findingKeys(only); !slices.Equal(got, tt.suppressed) {
+			if got := findingKeys(only.Findings); !slices.Equal(got, tt.suppressed) {
 				t.Errorf("suppressed findings = %q, want %q", got, tt.suppressed)
 			}
-			for _, f := range only {
+			for _, f := range only.Findings {
 				if s := f.Suppression; s == nil || s.Team != f.Workload.Team || s.Environment != f.Workload.Environment || s.Workload != f.Workload.Name || s.Package != f.Finding.PackageKey || s.VulnerabilityID != f.Finding.VulnerabilityID {
 					t.Errorf("finding %s/%s %s: suppression %+v, want its team's", f.Workload.Team, f.Workload.Name, f.Finding.PURL, s)
 				}
 			}
 
-			excluded, _, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams}, database.Page{})
+			excluded, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams}, database.Page{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			all, _, _, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams, Suppressed: database.SuppressedInclude}, database.Page{})
+			all, err := db.ListFindings(ctx, database.FindingFilter{Teams: tt.teams, Suppressed: database.SuppressedInclude}, database.Page{})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(excluded)+len(only) != len(all) {
-				t.Errorf("unsuppressed findings = %q, want the other findings of %q", findingKeys(excluded), findingKeys(all))
+			if len(excluded.Findings)+len(only.Findings) != len(all.Findings) {
+				t.Errorf("unsuppressed findings = %q, want the other findings of %q", findingKeys(excluded.Findings), findingKeys(all.Findings))
 			}
-			for _, f := range excluded {
+			for _, f := range excluded.Findings {
 				if f.Suppression != nil {
 					t.Errorf("unsuppressed finding %s has suppression %+v", f.Finding.PURL, f.Suppression)
 				}
@@ -305,7 +305,8 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 
 	// Discovery includes already assessed findings, without restricting the image.
 	filter := database.FindingFilter{Teams: []string{"team-a"}, VulnerabilityID: "GHSA-1", Package: "pkg:npm/lodash", Suppressed: database.SuppressedInclude}
-	findings, _, _, err := db.ListFindings(ctx, filter, database.Page{})
+	list, err := db.ListFindings(ctx, filter, database.Page{})
+	findings := list.Findings
 	if err != nil || len(findings) != 2 {
 		t.Fatalf("discover workloads = %v, %v; want app and worker", findings, err)
 	}
@@ -320,9 +321,9 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 	if _, err := db.DeleteSuppressions(ctx, "team-a", []database.SuppressionKey{lodashKey}); err != nil {
 		t.Fatal(err)
 	}
-	only, _, _, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
-	if err != nil || !slices.Equal(findingKeys(only), []string{workerLodash}) {
-		t.Fatalf("after deleting app assessment = %v, %v; want worker only", findingKeys(only), err)
+	only, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	if err != nil || !slices.Equal(findingKeys(only.Findings), []string{workerLodash}) {
+		t.Fatalf("after deleting app assessment = %v, %v; want worker only", findingKeys(only.Findings), err)
 	}
 	listed, _, err := db.ListSuppressions(ctx, database.SuppressionFilter{Teams: []string{"team-a"}, Environment: "c1", Workload: "worker"}, database.Page{Size: 1})
 	if err != nil || len(listed) != 1 || listed[0].Workload != "worker" {
@@ -330,14 +331,14 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 	}
 	// A new digest and package version in the same repository retain this workload's assessment.
 	exec(`UPDATE workloads SET image_id = 2 WHERE team = 'team-a' AND name = 'worker'`)
-	only, _, _, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
-	if err != nil || len(only) != 1 || only[0].Workload.Name != "worker" || only[0].Image.Digest != "sha256:b" {
-		t.Fatalf("after rebuild = %v, %v; want worker's new image assessed", only, err)
+	only, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	if err != nil || len(only.Findings) != 1 || only.Findings[0].Workload.Name != "worker" || only.Findings[0].Image.Digest != "sha256:b" {
+		t.Fatalf("after rebuild = %v, %v; want worker's new image assessed", only.Findings, err)
 	}
 	exec(`UPDATE workloads SET image_id = 3 WHERE team = 'team-a' AND name = 'worker'`)
-	only, _, _, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
-	if err != nil || len(only) != 0 {
-		t.Fatalf("after repository change = %v, %v; want no inherited assessment", only, err)
+	only, err = db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedOnly}, database.Page{})
+	if err != nil || len(only.Findings) != 0 {
+		t.Fatalf("after repository change = %v, %v; want no inherited assessment", only.Findings, err)
 	}
 }
 
