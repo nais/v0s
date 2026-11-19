@@ -56,6 +56,20 @@ func newFixture(t *testing.T) (*database.DB, func(sql string)) {
 	return db, func(sql string) { t.Helper(); exec(t, db, sql) }
 }
 
+func newPackageTypeFixture(t *testing.T) *database.DB {
+	t.Helper()
+	db, exec := newFixture(t)
+	exec(`
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity) VALUES
+			(1, 'CVE-3', 'pkg:maven/org.example/lib@1', 'pkg:maven/org.example/lib', '1', 'affected', 'HIGH'),
+			(1, 'CVE-3', 'pkg:npm/%40scope/lib@1', 'pkg:npm/%40scope/lib', '1', 'affected', 'HIGH'),
+			(2, 'CVE-3', 'pkg:golang/example.com/lib@1', 'pkg:golang/example.com/lib', '1', 'affected', 'HIGH'),
+			(2, 'CVE-3', 'pkg:npm-tools/helper@1', 'pkg:npm-tools/helper', '1', 'affected', 'HIGH'),
+			(2, 'CVE-3', 'pkg:kpm/helper@1', 'pkg:kpm/helper', '1', 'affected', 'HIGH');
+	`)
+	return db
+}
+
 // findingKeys returns "team/workload vulnerability purl" for each finding.
 func findingKeys(findings []database.WorkloadFinding) []string {
 	keys := make([]string, 0, len(findings))
@@ -71,6 +85,13 @@ const (
 	workerLodash  = "team-a/worker CVE-1 pkg:npm/lodash@4.17.20"
 	workerExpress = "team-a/worker CVE-2 pkg:npm/express@4.0.0"
 	otherLodash   = "team-b/other CVE-1 pkg:npm/lodash@4.17.19"
+	appMaven      = "team-a/app CVE-3 pkg:maven/org.example/lib@1"
+	workerMaven   = "team-a/worker CVE-3 pkg:maven/org.example/lib@1"
+	appScoped     = "team-a/app CVE-3 pkg:npm/%40scope/lib@1"
+	workerScoped  = "team-a/worker CVE-3 pkg:npm/%40scope/lib@1"
+	otherGo       = "team-b/other CVE-3 pkg:golang/example.com/lib@1"
+	otherTools    = "team-b/other CVE-3 pkg:npm-tools/helper@1"
+	otherKpm      = "team-b/other CVE-3 pkg:kpm/helper@1"
 )
 
 func TestListFindingsFilters(t *testing.T) {
@@ -130,6 +151,107 @@ func TestListFindingsFilters(t *testing.T) {
 			t.Errorf("err = %v, want ErrInvalid", err)
 		}
 	})
+}
+
+func TestListFindingsPackageTypes(t *testing.T) {
+	db := newPackageTypeFixture(t)
+	ctx := context.Background()
+	npm := []string{appLodash, appExpress, appScoped, workerLodash, workerExpress, workerScoped, otherLodash}
+	all := append(slices.Clone(npm), appMaven, workerMaven, otherGo, otherTools, otherKpm)
+	slices.Sort(all)
+	type testCase struct {
+		name    string
+		filter  database.FindingFilter
+		want    []string
+		wantErr error
+	}
+	tests := []testCase{
+		{name: "empty", want: all},
+		{name: "npm", filter: database.FindingFilter{PackageType: "npm"}, want: npm},
+		{name: "uppercase", filter: database.FindingFilter{PackageType: "NPM"}, want: npm},
+		{name: "maven", filter: database.FindingFilter{PackageType: "maven"}, want: []string{appMaven, workerMaven}},
+		{name: "golang", filter: database.FindingFilter{PackageType: "golang"}, want: []string{otherGo}},
+		{name: "type boundary", filter: database.FindingFilter{PackageType: "npm-tools"}, want: []string{otherTools}},
+		{name: "custom type", filter: database.FindingFilter{PackageType: "kpm"}, want: []string{otherKpm}},
+		{name: "unknown", filter: database.FindingFilter{PackageType: "unknown"}},
+		{name: "exact package", filter: database.FindingFilter{PackageType: "npm", Package: "pkg:npm/lodash@4.17.20"}, want: []string{appLodash, workerLodash}},
+		{name: "conflicting package", filter: database.FindingFilter{PackageType: "maven", Package: "pkg:npm/lodash"}},
+		{name: "severity", filter: database.FindingFilter{PackageType: "npm", Severities: []v0s.Severity{v0s.SeverityLow}}, want: []string{appExpress, workerExpress}},
+	}
+	for _, typ := range []string{"npm/", "npm/%40scope", "npm%2F", "pkg:npm", "%", "_pm", " npm", "npm ", "n*m", "\u212Apm"} {
+		tests = append(tests, testCase{name: "invalid " + typ, filter: database.FindingFilter{PackageType: typ}, wantErr: database.ErrInvalid})
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			findings, next, err := db.ListFindings(ctx, tt.filter, database.Page{})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if got := findingKeys(findings); !slices.Equal(got, tt.want) {
+				t.Errorf("findings = %q, want %q", got, tt.want)
+			}
+			if next != "" {
+				t.Errorf("next page token = %q, want none", next)
+			}
+		})
+	}
+}
+
+func TestCountFindingsPackageTypes(t *testing.T) {
+	db := newPackageTypeFixture(t)
+	ctx := context.Background()
+	tests := []struct {
+		name    string
+		filter  database.FindingFilter
+		want    []database.FindingCount
+		wantErr error
+	}{
+		{name: "empty", want: []database.FindingCount{{Key: "HIGH", Count: 10}, {Key: "LOW", Count: 2}}},
+		{name: "npm", filter: database.FindingFilter{PackageType: "npm"}, want: []database.FindingCount{{Key: "HIGH", Count: 5}, {Key: "LOW", Count: 2}}},
+		{name: "uppercase", filter: database.FindingFilter{PackageType: "MAVEN"}, want: []database.FindingCount{{Key: "HIGH", Count: 2}}},
+		{name: "unknown", filter: database.FindingFilter{PackageType: "unknown"}},
+		{name: "namespace is not a type", filter: database.FindingFilter{PackageType: "npm/%40scope"}, wantErr: database.ErrInvalid},
+		{name: "exact package", filter: database.FindingFilter{PackageType: "npm", Package: "pkg:npm/lodash@4.17.20"}, want: []database.FindingCount{{Key: "HIGH", Count: 2}}},
+		{name: "conflicting package", filter: database.FindingFilter{PackageType: "maven", Package: "pkg:npm/lodash"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := db.CountFindings(ctx, tt.filter, database.GroupBySeverity)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("counts = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestListFindingsPackageTypePagination(t *testing.T) {
+	db := newPackageTypeFixture(t)
+	ctx := context.Background()
+	want := []string{appLodash, appExpress, appScoped, workerLodash, workerExpress, workerScoped, otherLodash}
+	var (
+		got  []database.WorkloadFinding
+		page = database.Page{Size: 2}
+	)
+	for range len(want) + 1 {
+		findings, next, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, findings...)
+		if next == "" {
+			break
+		}
+		if next == page.Token {
+			t.Fatal("page token did not advance")
+		}
+		page.Token = next
+	}
+	if !slices.Equal(findingKeys(got), want) {
+		t.Errorf("paged findings = %q, want %q", findingKeys(got), want)
+	}
 }
 
 func TestListFindingsPagination(t *testing.T) {

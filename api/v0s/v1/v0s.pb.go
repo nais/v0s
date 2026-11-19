@@ -487,8 +487,11 @@ type FindingFilter struct {
 	// Only findings for vulnerabilities known exploited in the wild according to CISA KEV.
 	OnlyKnownExploited bool             `protobuf:"varint,10,opt,name=only_known_exploited,json=onlyKnownExploited,proto3" json:"only_known_exploited,omitempty"`
 	Suppressed         SuppressedFilter `protobuf:"varint,11,opt,name=suppressed,proto3,enum=v0s.v1.SuppressedFilter" json:"suppressed,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Purl type, e.g. "npm" or "maven", case-insensitive and combined with other filters.
+	// Empty does not filter; unknown types match nothing; malformed types are InvalidArgument.
+	PackageType   string `protobuf:"bytes,13,opt,name=package_type,json=packageType,proto3" json:"package_type,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *FindingFilter) Reset() {
@@ -596,6 +599,13 @@ func (x *FindingFilter) GetSuppressed() SuppressedFilter {
 		return x.Suppressed
 	}
 	return SuppressedFilter_SUPPRESSED_FILTER_UNSPECIFIED
+}
+
+func (x *FindingFilter) GetPackageType() string {
+	if x != nil {
+		return x.PackageType
+	}
+	return ""
 }
 
 // A vulnerability in a package in a workload's image.
@@ -2334,7 +2344,7 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12'\n" +
 	"\x0fimage_reference\x18\x05 \x01(\tR\x0eimageReference\x12#\n" +
 	"\x05image\x18\x04 \x01(\v2\r.v0s.v1.ImageR\x05image\x12#\n" +
-	"\rresolve_error\x18\x06 \x01(\tR\fresolveError\"\xb1\x03\n" +
+	"\rresolve_error\x18\x06 \x01(\tR\fresolveError\"\xd4\x03\n" +
 	"\rFindingFilter\x12\x12\n" +
 	"\x04team\x18\f \x01(\tR\x04team\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
@@ -2352,7 +2362,8 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	" \x01(\bR\x12onlyKnownExploited\x128\n" +
 	"\n" +
 	"suppressed\x18\v \x01(\x0e2\x18.v0s.v1.SuppressedFilterR\n" +
-	"suppressedJ\x04\b\x01\x10\x02R\x05teamsR\x03kev\"\xc3\x04\n" +
+	"suppressed\x12!\n" +
+	"\fpackage_type\x18\r \x01(\tR\vpackageTypeJ\x04\b\x01\x10\x02R\x05teamsR\x03kev\"\xc3\x04\n" +
 	"\aFinding\x12/\n" +
 	"\bworkload\x18\x01 \x01(\v2\x13.v0s.v1.WorkloadRefR\bworkload\x12#\n" +
 	"\x05image\x18\x02 \x01(\v2\r.v0s.v1.ImageR\x05image\x12)\n" +

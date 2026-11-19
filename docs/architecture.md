@@ -100,6 +100,12 @@ from the advisory source; EPSS and KEV come from FIRST and CISA without our own
 thresholds or scoring. Components are searchable even when they have no findings.
 No finding history, trends or first-seen timestamps are kept.
 
+`ListFindings` and `CountFindings` accept `FindingFilter.package_type`, such as
+`npm`, `maven` or `golang`. It is case-insensitive and combines with the other
+filters using AND, including the existing exact-purl/package-key filter.
+An empty type does not filter; unknown types match nothing. Malformed types
+return `InvalidArgument`, like malformed values of the `package` filter.
+
 The public read contract accepts one team or the whole tenant. A workload name
 requires a team and environment. CVSS details are a versioned list per source on
 the advisory, with optional scores/vectors instead of a versionless maximum on

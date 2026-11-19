@@ -143,6 +143,7 @@ type FindingFilter struct {
 	ImageDigest        string
 	VulnerabilityID    string // ID or alias
 	Package            string // package key, or purl with version for an exact match
+	PackageType        string
 	Severities         []v0s.Severity
 	HasFix             bool // only findings with a fixed version
 	OnlyKnownExploited bool // only findings for vulnerabilities in CISA KEV
@@ -176,6 +177,12 @@ func (f FindingFilter) conditions(args *sqlArgs) ([]string, error) {
 			return nil, err
 		}
 		where = append(where, cond)
+	}
+	if f.PackageType != "" {
+		if !packageurl.TypePattern.MatchString(f.PackageType) {
+			return nil, fmt.Errorf("package type %q is invalid: %w", f.PackageType, ErrInvalid)
+		}
+		where = append(where, "starts_with(f.package_key, "+args.add("pkg:"+strings.ToLower(f.PackageType)+"/")+")")
 	}
 	if len(f.Severities) > 0 {
 		sev := make([]string, len(f.Severities))

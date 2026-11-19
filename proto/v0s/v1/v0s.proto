@@ -114,6 +114,9 @@ message FindingFilter {
   // Only findings for vulnerabilities known exploited in the wild according to CISA KEV.
   bool only_known_exploited = 10;
   SuppressedFilter suppressed = 11;
+  // Purl type, e.g. "npm" or "maven", case-insensitive and combined with other filters.
+  // Empty does not filter; unknown types match nothing; malformed types are InvalidArgument.
+  string package_type = 13;
 }
 
 enum SuppressedFilter {

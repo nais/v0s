@@ -239,6 +239,7 @@ func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
 		ImageDigest:        f.GetImageDigest(),
 		VulnerabilityID:    f.GetVulnerabilityId(),
 		Package:            f.GetPackage(),
+		PackageType:        f.GetPackageType(),
 		HasFix:             f.GetHasFix(),
 		OnlyKnownExploited: f.GetOnlyKnownExploited(),
 	}

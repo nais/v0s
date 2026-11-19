@@ -144,6 +144,55 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	}
 }
 
+func TestFindingPackageTypeFilter(t *testing.T) {
+	s := newServer(t, `
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		SELECT id, 'CVE-1', 'pkg:maven/org.example/lib@1', 'pkg:maven/org.example/lib', '1', 'affected', 'LOW' FROM images;
+	`)
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		typ  string
+		purl string
+		want int
+	}{
+		{name: "empty", want: 8},
+		{name: "npm", typ: "npm", purl: "pkg:npm/lodash@4.17.20", want: 4},
+		{name: "uppercase", typ: "MAVEN", purl: "pkg:maven/org.example/lib@1", want: 4},
+		{name: "unknown", typ: "golang"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := &v0sv1.FindingFilter{PackageType: tt.typ}
+			found, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: filter})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(found.GetFindings()) != tt.want {
+				t.Errorf("findings = %d, want %d", len(found.GetFindings()), tt.want)
+			}
+			for _, finding := range found.GetFindings() {
+				if tt.purl != "" && finding.GetPurl() != tt.purl {
+					t.Errorf("purl = %q, want %q", finding.GetPurl(), tt.purl)
+				}
+			}
+			counted, err := s.CountFindings(ctx, &v0sv1.CountFindingsRequest{
+				Filter: filter, GroupBy: v0sv1.CountFindingsRequest_GROUP_BY_SEVERITY,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var total int64
+			for _, bucket := range counted.GetBuckets() {
+				total += bucket.GetCount()
+			}
+			if total != int64(tt.want) {
+				t.Errorf("count = %d, want %d", total, tt.want)
+			}
+		})
+	}
+}
+
 func TestErrorCodes(t *testing.T) {
 	s := newServer(t)
 	ctx := context.Background()
@@ -159,6 +208,17 @@ func TestErrorCodes(t *testing.T) {
 		}},
 		{name: "unspecified severity", want: codes.InvalidArgument, call: func() error {
 			_, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Severities: []v0sv1.Severity{0}}})
+			return err
+		}},
+		{name: "invalid package type in list", want: codes.InvalidArgument, call: func() error {
+			_, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{PackageType: "npm/namespace"}})
+			return err
+		}},
+		{name: "invalid package type in count", want: codes.InvalidArgument, call: func() error {
+			_, err := s.CountFindings(ctx, &v0sv1.CountFindingsRequest{
+				Filter:  &v0sv1.FindingFilter{PackageType: "npm/namespace"},
+				GroupBy: v0sv1.CountFindingsRequest_GROUP_BY_SEVERITY,
+			})
 			return err
 		}},
 		{name: "invalid in the database", want: codes.InvalidArgument, call: func() error {
