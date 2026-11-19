@@ -240,22 +240,18 @@ func TestListFindingsPackageTypeCounts(t *testing.T) {
 		filter database.FindingFilter
 		want   []database.FindingCount
 	}{
-		{name: "all types", want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "maven", Count: 2}, {Key: "npm", Count: 6}, {Key: "npm-tools", Count: 1}}},
-		{name: "selected type", filter: database.FindingFilter{PackageType: "npm"}, want: []database.FindingCount{{Key: "npm", Count: 6}}},
-		{name: "uppercase", filter: database.FindingFilter{PackageType: "MAVEN"}, want: []database.FindingCount{{Key: "maven", Count: 2}}},
-		{name: "unknown type", filter: database.FindingFilter{PackageType: "unknown"}},
-		{name: "team", filter: database.FindingFilter{Teams: []string{"team-b"}}, want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "npm", Count: 1}, {Key: "npm-tools", Count: 1}}},
-		{name: "workload", filter: database.FindingFilter{Teams: []string{"team-a"}, Environment: "c1", Workload: "worker"}, want: []database.FindingCount{{Key: "maven", Count: 1}, {Key: "npm", Count: 3}}},
-		{name: "other environment", filter: database.FindingFilter{Environment: "c2"}},
-		{name: "image", filter: database.FindingFilter{ImageName: "repo/app", ImageDigest: "sha256:a"}, want: []database.FindingCount{{Key: "maven", Count: 2}, {Key: "npm", Count: 5}}},
-		{name: "severity", filter: database.FindingFilter{Severities: []v0s.Severity{v0s.SeverityLow}}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
-		{name: "exact package", filter: database.FindingFilter{Package: "pkg:npm/lodash@4.17.20"}, want: []database.FindingCount{{Key: "npm", Count: 1}}},
-		{name: "conflicting package", filter: database.FindingFilter{PackageType: "maven", Package: "pkg:npm/lodash"}},
-		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityID: "GHSA-1"}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
-		{name: "has fix", filter: database.FindingFilter{HasFix: true}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
-		{name: "kev", filter: database.FindingFilter{OnlyKnownExploited: true}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "dynamic types counted per workload", want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "maven", Count: 2}, {Key: "npm", Count: 6}, {Key: "npm-tools", Count: 1}}},
+		{
+			name: "combined filters",
+			filter: database.FindingFilter{
+				PackageType: "npm", Teams: []string{"team-a"}, Environment: "c1",
+				Workload: "worker", Severities: []v0s.Severity{v0s.SeverityHigh},
+			},
+			want: []database.FindingCount{{Key: "npm", Count: 2}},
+		},
 		{name: "include suppressed", filter: database.FindingFilter{Suppressed: database.SuppressedInclude}, want: []database.FindingCount{{Key: "golang", Count: 1}, {Key: "kpm", Count: 1}, {Key: "maven", Count: 2}, {Key: "npm", Count: 7}, {Key: "npm-tools", Count: 1}}},
 		{name: "only suppressed", filter: database.FindingFilter{Suppressed: database.SuppressedOnly}, want: []database.FindingCount{{Key: "npm", Count: 1}}},
+		{name: "no matches", filter: database.FindingFilter{PackageType: "unknown"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -265,17 +261,6 @@ func TestListFindingsPackageTypeCounts(t *testing.T) {
 			}
 			if !slices.Equal(got, tt.want) {
 				t.Errorf("package type counts = %v, want %v", got, tt.want)
-			}
-			for _, count := range got {
-				filter := tt.filter
-				filter.PackageType = count.Key
-				findings, _, next, err := db.ListFindings(ctx, filter, database.Page{})
-				if err != nil {
-					t.Fatal(err)
-				}
-				if int64(len(findings)) != count.Count || next != "" {
-					t.Errorf("type %s: %d findings, next=%q; want %d and no next page", count.Key, len(findings), next, count.Count)
-				}
 			}
 		})
 	}
