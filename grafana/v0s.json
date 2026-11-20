@@ -7,7 +7,7 @@
   "spec": {
     "title": "v0s",
     "uid": "v0s",
-    "description": "Inventory freshness, image processing, vulnerability database, enrichment and gRPC. Select a tenant datasource and cluster. Image counts come from one replica's view of the shared database, never a sum across replicas. No data is not a healthy zero.",
+    "description": "Inventory freshness, image processing, vulnerability database, enrichment and gRPC for the selected tenant's management cluster. Image counts automatically use one replica's view of the shared database, never a sum across replicas. No data is not a healthy zero.",
     "editable": false,
     "graphTooltip": 1,
     "refresh": "1m",
@@ -32,37 +32,7 @@
           "query": "prometheus", "regex": "/.*-metrics$/",
           "current": {"text": "nav-metrics", "value": "P91A6F0B3584B90E7"},
           "refresh": 1, "multi": false, "includeAll": false, "options": [],
-          "description": "Management metrics for one tenant. NAV is the default, as in the nais/cli dashboard."
-        },
-        {
-          "name": "cluster", "label": "Cluster", "type": "query",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "query": {
-            "query": "label_values(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\"}, k8s_cluster_name)",
-            "refId": "cluster"
-          },
-          "refresh": 2, "sort": 1, "multi": false, "includeAll": false, "options": []
-        },
-        {
-          "name": "job", "label": "Scrape job", "type": "query",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "query": {
-            "query": "label_values(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\"}, job)",
-            "refId": "job"
-          },
-          "refresh": 2, "sort": 1, "multi": false, "includeAll": false, "options": [],
-          "description": "Discovered from v0s metrics; does not assume a PodMonitor job name."
-        },
-        {
-          "name": "inventory_pod", "label": "Image snapshot replica", "type": "query",
-          "datasource": {"type": "prometheus", "uid": "${datasource}"},
-          "query": {
-            "query": "query_result(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"})",
-            "refId": "inventory_pod"
-          },
-          "regex": "/pod=\"([^\"]+)\"/",
-          "refresh": 2, "sort": 1, "multi": false, "includeAll": false, "options": [],
-          "description": "Only the three image-state panels use this replica. All other panels cover every replica in the selected job."
+          "description": "Management metrics for one tenant, such as nav-metrics or ssb-metrics. NAV is the default."
         }
       ]
     },
@@ -86,7 +56,7 @@
         "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
         "targets": [{
           "refId": "A", "instant": true, "range": false,
-          "expr": "avg(up{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"})"
+          "expr": "avg(up{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"})"
         }]
       },
       {
@@ -103,7 +73,7 @@
         "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
         "targets": [{
           "refId": "A", "instant": true, "range": false,
-          "expr": "time() - max(v0s_inventory_sync_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"} > 0)"
+          "expr": "time() - max(v0s_inventory_sync_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} > 0)"
         }]
       },
       {
@@ -120,7 +90,7 @@
         "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
         "targets": [{
           "refId": "A", "instant": true, "range": false,
-          "expr": "time() - min(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"} > 0)"
+          "expr": "time() - min(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} > 0)"
         }]
       },
       {
@@ -137,7 +107,7 @@
         "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
         "targets": [{
           "refId": "A", "instant": true, "range": false,
-          "expr": "sum(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"} == bool 0)"
+          "expr": "sum(v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} == bool 0)"
         }]
       },
       {
@@ -154,7 +124,7 @@
         "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
         "targets": [{
           "refId": "A", "instant": true, "range": false,
-          "expr": "time() - max(v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", feed=\"epss\"} > 0)"
+          "expr": "time() - max(v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", feed=\"epss\"} > 0)"
         }]
       },
       {
@@ -171,16 +141,16 @@
         "options": {"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"]}},
         "targets": [{
           "refId": "A", "instant": true, "range": false,
-          "expr": "time() - max(v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", feed=\"kev\"} > 0)"
+          "expr": "time() - max(v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", feed=\"kev\"} > 0)"
         }]
       },
       {
-        "id": 8, "type": "row", "title": "In-use images - snapshot from $inventory_pod",
+        "id": 8, "type": "row", "title": "In-use images",
         "collapsed": false, "panels": [], "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5}
       },
       {
         "id": 9, "type": "bargauge", "title": "Image states",
-        "description": "Unique in-use images, not workloads or findings. The selected replica reads the shared database; summing replicas would duplicate images. Scan state is relative to this replica's loaded vulnerability DB. Unresolved workload references are not represented. No data can indicate an image-collector database error even while up=1.",
+        "description": "Unique in-use images, not workloads or findings. Automatically uses one replica with the newest loaded vulnerability DB at the end of the time range; summing replicas would duplicate images. Scan state is relative to this replica's loaded DB. Unresolved workload references are not represented. No data can indicate an image-collector database error even while up=1.",
         "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "gridPos": {"h": 8, "w": 8, "x": 0, "y": 6},
         "fieldConfig": {"defaults": {
@@ -189,24 +159,24 @@
         }, "overrides": []},
         "options": {"orientation": "horizontal", "displayMode": "basic", "showUnfilled": true, "reduceOptions": {"calcs": ["lastNotNull"]}},
         "targets": [
-          {"refId": "A", "instant": true, "range": false, "legendFormat": "SBOM pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"pending\"}"},
-          {"refId": "B", "instant": true, "range": false, "legendFormat": "SBOM missing", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"missing\"}"},
-          {"refId": "C", "instant": true, "range": false, "legendFormat": "SBOM fetch failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"failed\"}"},
-          {"refId": "D", "instant": true, "range": false, "legendFormat": "Scan pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"pending\"}"},
-          {"refId": "E", "instant": true, "range": false, "legendFormat": "Scan current", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"current\"}"},
-          {"refId": "F", "instant": true, "range": false, "legendFormat": "Scan failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"failed\"}"}
+          {"refId": "A", "instant": true, "range": false, "legendFormat": "SBOM pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"pending\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"},
+          {"refId": "B", "instant": true, "range": false, "legendFormat": "SBOM missing", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"missing\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"},
+          {"refId": "C", "instant": true, "range": false, "legendFormat": "SBOM fetch failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"failed\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"},
+          {"refId": "D", "instant": true, "range": false, "legendFormat": "Scan pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"fetched\", scan=\"pending\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"},
+          {"refId": "E", "instant": true, "range": false, "legendFormat": "Scan current", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"fetched\", scan=\"current\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"},
+          {"refId": "F", "instant": true, "range": false, "legendFormat": "Scan failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"fetched\", scan=\"failed\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"}
         ]
       },
       {
         "id": 10, "type": "timeseries", "title": "Image backlog",
-        "description": "Images waiting for an SBOM fetch or a scan, using only $inventory_pod. Pending scan includes images awaiting a newer loaded DB. A growing backlog with no processing rate needs investigation.",
+        "description": "Images waiting for an SBOM fetch or a scan, using the same automatically selected replica as Image states. History before that replica started is unavailable. A growing backlog with no processing rate needs investigation.",
         "datasource": {"type": "prometheus", "uid": "${datasource}"},
         "gridPos": {"h": 8, "w": 8, "x": 8, "y": 6},
         "fieldConfig": {"defaults": {"unit": "short", "min": 0, "custom": {"drawStyle": "line", "fillOpacity": 10, "spanNulls": false}}, "overrides": []},
         "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}},
         "targets": [
-          {"refId": "A", "range": true, "legendFormat": "SBOM pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"pending\"}"},
-          {"refId": "B", "range": true, "legendFormat": "Scan pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"pending\"}"}
+          {"refId": "A", "range": true, "legendFormat": "SBOM pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"pending\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"},
+          {"refId": "B", "range": true, "legendFormat": "Scan pending", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"fetched\", scan=\"pending\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"}
         ]
       },
       {
@@ -217,9 +187,9 @@
         "fieldConfig": {"defaults": {"unit": "short", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
         "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}},
         "targets": [
-          {"refId": "A", "range": true, "legendFormat": "SBOM missing", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"missing\"}"},
-          {"refId": "B", "range": true, "legendFormat": "SBOM fetch failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"failed\"}"},
-          {"refId": "C", "range": true, "legendFormat": "Scan failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", pod=~\"${inventory_pod:regex}\", sbom=\"fetched\", scan=\"failed\"}"}
+          {"refId": "A", "range": true, "legendFormat": "SBOM missing", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"missing\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"},
+          {"refId": "B", "range": true, "legendFormat": "SBOM fetch failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"failed\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"},
+          {"refId": "C", "range": true, "legendFormat": "Scan failed", "expr": "v0s_images{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", sbom=\"fetched\", scan=\"failed\"} and on (job, instance) topk(1, v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} @ end())"}
         ]
       },
       {
@@ -236,7 +206,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{result}}",
           "interval": "1m",
-          "expr": "60 * sum by (result) (rate(v0s_fetches_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval]))"
+          "expr": "60 * sum by (result) (rate(v0s_fetches_total{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval]))"
         }]
       },
       {
@@ -249,7 +219,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{result}}",
           "interval": "1m",
-          "expr": "60 * sum by (result) (rate(v0s_scans_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval]))"
+          "expr": "60 * sum by (result) (rate(v0s_scans_total{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval]))"
         }]
       },
       {
@@ -260,8 +230,8 @@
         "fieldConfig": {"defaults": {"unit": "s", "min": 0, "custom": {"spanNulls": false}}, "overrides": []},
         "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "table", "placement": "bottom", "calcs": ["lastNotNull", "max"]}},
         "targets": [
-          {"refId": "A", "range": true, "interval": "1m", "legendFormat": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(v0s_scan_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval])))"},
-          {"refId": "B", "range": true, "interval": "1m", "legendFormat": "p99", "expr": "histogram_quantile(0.99, sum by (le) (rate(v0s_scan_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval])))"}
+          {"refId": "A", "range": true, "interval": "1m", "legendFormat": "p95", "expr": "histogram_quantile(0.95, sum by (le) (rate(v0s_scan_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval])))"},
+          {"refId": "B", "range": true, "interval": "1m", "legendFormat": "p99", "expr": "histogram_quantile(0.99, sum by (le) (rate(v0s_scan_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval])))"}
         ]
       },
       {
@@ -278,7 +248,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{result}}",
           "interval": "1m",
-          "expr": "60 * sum by (result) (rate(v0s_inventory_syncs_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval]))"
+          "expr": "60 * sum by (result) (rate(v0s_inventory_syncs_total{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval]))"
         }]
       },
       {
@@ -290,7 +260,7 @@
         "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{pod}}",
-          "expr": "time() - (v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"} > 0)"
+          "expr": "time() - (v0s_trivy_db_version_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} > 0)"
         }]
       },
       {
@@ -303,7 +273,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{result}}",
           "interval": "1m",
-          "expr": "60 * sum by (result) (rate(v0s_trivy_db_updates_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval]))"
+          "expr": "60 * sum by (result) (rate(v0s_trivy_db_updates_total{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval]))"
         }]
       },
       {
@@ -315,7 +285,7 @@
         "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{feed}}",
-          "expr": "time() - max by (feed) (v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"} > 0)"
+          "expr": "time() - max by (feed) (v0s_enrichment_last_success_timestamp_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"} > 0)"
         }]
       },
       {
@@ -332,7 +302,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{method}}",
           "interval": "1m",
-          "expr": "sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval]))"
+          "expr": "sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval]))"
         }]
       },
       {
@@ -345,7 +315,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{method}}",
           "interval": "1m",
-          "expr": "(sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\", code=~\"Unknown|Internal|Unavailable|DataLoss\"}[$__rate_interval])) or on (method) (0 * sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval])))) / sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval]))"
+          "expr": "(sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\", code=~\"Unknown|Internal|Unavailable|DataLoss\"}[$__rate_interval])) or on (method) (0 * sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval])))) / sum by (method) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval]))"
         }]
       },
       {
@@ -358,7 +328,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{method}}",
           "interval": "1m",
-          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(v0s_grpc_request_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval])))"
+          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(v0s_grpc_request_duration_seconds_bucket{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval])))"
         }]
       },
       {
@@ -371,7 +341,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{code}}",
           "interval": "1m",
-          "expr": "sum by (code) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval]))"
+          "expr": "sum by (code) (rate(v0s_grpc_request_duration_seconds_count{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval]))"
         }]
       },
       {
@@ -388,7 +358,7 @@
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{pod}}",
           "interval": "1m",
-          "expr": "rate(process_cpu_seconds_total{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}[$__rate_interval])"
+          "expr": "rate(process_cpu_seconds_total{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}[$__rate_interval])"
         }]
       },
       {
@@ -400,7 +370,7 @@
         "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{pod}}",
-          "expr": "process_resident_memory_bytes{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}"
+          "expr": "process_resident_memory_bytes{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}"
         }]
       },
       {
@@ -412,7 +382,7 @@
         "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{pod}}",
-          "expr": "go_goroutines{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}"
+          "expr": "go_goroutines{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}"
         }]
       },
       {
@@ -424,7 +394,7 @@
         "options": {"tooltip": {"mode": "multi"}, "legend": {"displayMode": "list", "placement": "bottom"}},
         "targets": [{
           "refId": "A", "range": true, "legendFormat": "{{pod}}",
-          "expr": "time() - process_start_time_seconds{namespace=\"nais-system\", k8s_cluster_name=~\"${cluster:regex}\", job=\"${job}\"}"
+          "expr": "time() - process_start_time_seconds{namespace=\"nais-system\", k8s_cluster_name=\"management\", job=\"nais-system/v0s\"}"
         }]
       }
     ]

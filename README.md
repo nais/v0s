@@ -40,8 +40,9 @@ Database tests need PostgreSQL's `initdb` and `pg_ctl` on `PATH` or in `V0S_PG_B
 or an existing server via `V0S_TEST_DATABASE_URL`. Without either, they skip.
 Run `mise run generate` after changing protobufs. `mise run build` writes
 `bin/v0s`; `mise run build:image` builds a local Linux image without pushing.
-Green builds on `main` publish signed images and Helm charts to GAR; Fasit
-assignments and rollout remain manual.
+Green builds on `main` publish signed images and Helm charts to GAR, then assign
+the chart through Fasit to `ci-nais` management with a wait for success before
+assigning all management environments.
 
 ## Documentation
 

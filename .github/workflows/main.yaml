@@ -1,4 +1,4 @@
-name: Check and publish image and chart
+name: Check, publish and deploy
 
 on:
   pull_request:
@@ -73,6 +73,8 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.image.outputs.version }}
     permissions:
       contents: read
       id-token: write
@@ -97,15 +99,21 @@ jobs:
           VERSION: ${{ steps.image.outputs.version }}
         # Reuse the short-lived registry login established by the image action.
         run: mise exec -- helm push "dist/v0s-${VERSION}.tgz" "$FEATURE_REPOSITORY" --registry-config "$HOME/.docker/config.json"
-      - name: References for manual Fasit assignment
-        env:
-          VERSION: ${{ steps.image.outputs.version }}
-          IMAGE: ${{ steps.image.outputs.image }}
-        run: |
-          {
-            printf '## Manual Fasit assignment\n\n'
-            printf -- "- Chart: \`%s/v0s\`\n" "$FEATURE_REPOSITORY"
-            printf -- "- Version: \`%s\`\n" "$VERSION"
-            printf -- "- Image: \`%s\`\n" "$IMAGE"
-            printf '\nNo Fasit assignment or rollout was created.\n'
-          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: publish
+    runs-on: fasit-deploy
+    permissions:
+      id-token: write
+    steps:
+      - uses: nais/fasit-deploy@53e433b1bdd08fc622e03a78584c0832c9083bd3 # v4.1.1
+        with:
+          chart: oci://europe-north1-docker.pkg.dev/nais-io/nais/feature/v0s
+          version: ${{ needs.publish.outputs.version }}
+          targets: |
+            [
+              { "target": { "kind": "management", "tenant": "ci-nais" }, "wait": true },
+              { "target": { "kind": "management" } }
+            ]

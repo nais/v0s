@@ -19,9 +19,10 @@ Pushes to `main` publish to
 `nais/platform-build-push-sign`, including an SBOM attestation and signing.
 The same job packages and pushes the OCI Helm chart to
 `oci://europe-north1-docker.pkg.dev/nais-io/nais/feature/v0s`, using the image
-version for both the chart version and `appVersion`. Its Actions summary gives
-the chart reference, version and image reference with digest for manual Fasit
-assignment. No assignment or deployment is created automatically.
+version for both the chart version and `appVersion`. After publication,
+`nais/fasit-deploy` assigns that version to `ci-nais` management and waits for
+success before assigning all management environments. A failed or timed-out
+CI deployment stops the wider rollout.
 
 Image and chart publication require infrastructure outside this repo:
 
@@ -81,9 +82,9 @@ other names need corresponding identity bindings. There are no Kubernetes API
 permissions or service-account keys. Additional private registries may need
 separate read grants. Set trusted GitHub organizations and review the
 HTTPS egress allowlist for the tenant. See the chart README for rendering and
-packaging commands. CI publishes the chart after the signed image, but creating
-or updating its Fasit assignment is a separate, manual step. Assign the chart
-reference and version from the Actions summary, not the container image URL.
+packaging commands. CI publishes the chart after the signed image, then creates
+Fasit assignments for `ci-nais` management first, with a wait for success, and
+then all management environments.
 
 ## Runtime configuration
 
@@ -189,12 +190,10 @@ not a client-side freshness protocol.
 [`grafana/v0s.json`](../grafana/v0s.json) follows the
 [`nais/cli` example](https://github.com/nais/cli/tree/main/grafana): a
 `dashboard.grafana.app/v1` resource, read-only in Grafana, with Git as the source.
-In [management Grafana](https://monitoring.nais.io/d/v0s), select the tenant's
-`*-metrics` datasource, cluster and discovered scrape job. NAV is the default.
-Cluster filtering uses the management stack's `k8s_cluster_name` label.
-The single-select scrape job uses an exact label match: Grafana's `:regex`
-formatter escapes `/` in jobs such as `nais-system/v0s`, which PromQL rejects
-as an invalid string escape.
+In [management Grafana](https://monitoring.nais.io/d/v0s), select only the tenant's
+`*-metrics` datasource, such as `nav-metrics` or `ssb-metrics`. NAV is the default.
+All panels use `k8s_cluster_name="management"` and `job="nais-system/v0s"`;
+there are no cluster, scrape-job or replica selectors.
 
 The [handbook's Git Sync setup](https://handbook.nais.io/technical/observability/#grafana-dashboards)
 requires this repository to be accessible to the `grafana-git-sync` GitHub App.
@@ -207,9 +206,11 @@ Read the dashboard in this order:
 1. **Serving and freshness:** scrape availability, last inventory sync, oldest
    loaded vulnerability DB, unloaded replicas, and independent EPSS/KEV sync ages.
 2. **Images:** current state, backlog and missing/failed images. These three panels
-   use only the selected snapshot replica, since all replicas count the same
-   database and may have different loaded DB versions. Counts are images, not
-   workloads; unresolved image references are not included.
+   automatically use one replica with the newest loaded DB at the end of the
+   selected time range, since all replicas count the same database. All image
+   states use that same replica, including when DB versions differ. History
+   before it started is unavailable. Counts are images, not workloads;
+   unresolved image references are not included.
 3. **Processing and dependencies:** fetch/scan outcomes, scan latency, sync
    outcomes, per-replica DB age and update checks, and enrichment age.
 4. **gRPC and process:** requests, service errors, response codes, p95 latency,
