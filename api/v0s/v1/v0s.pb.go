@@ -999,9 +999,8 @@ func (x *ListFindingsRequest) GetPageToken() string {
 type ListFindingsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Ordered by workload, vulnerability ID and purl.
-	Findings      []*Finding `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
-	NextPageToken string     `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	// Counts for all matching workload findings before pagination, ordered by type.
+	Findings          []*Finding          `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
+	NextPageToken     string              `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	PackageTypeCounts []*PackageTypeCount `protobuf:"bytes,3,rep,name=package_type_counts,json=packageTypeCounts,proto3" json:"package_type_counts,omitempty"`
 	unknownFields     protoimpl.UnknownFields
 	sizeCache         protoimpl.SizeCache
