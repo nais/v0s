@@ -239,6 +239,17 @@ type findingCursor struct {
 	PURL            string `json:"p"`
 }
 
+// PageToken returns a cursor immediately after this finding.
+func (f WorkloadFinding) PageToken() (string, error) {
+	return encodePageToken(findingCursor{
+		Environment:     f.Workload.Environment,
+		Team:            f.Workload.Team,
+		Workload:        f.Workload.Name,
+		VulnerabilityID: f.Finding.VulnerabilityID,
+		PURL:            f.Finding.PURL,
+	})
+}
+
 // ListFindings lists the findings of workloads that match filter, ordered by
 // workload, vulnerability and purl. It returns the next page token, empty on the last page.
 func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page) ([]WorkloadFinding, string, error) {
@@ -328,14 +339,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	var next string
 	if len(findings) > limit {
 		findings = findings[:limit]
-		last := findings[limit-1]
-		next, err = encodePageToken(findingCursor{
-			Environment:     last.Workload.Environment,
-			Team:            last.Workload.Team,
-			Workload:        last.Workload.Name,
-			VulnerabilityID: last.Finding.VulnerabilityID,
-			PURL:            last.Finding.PURL,
-		})
+		next, err = findings[limit-1].PageToken()
 		if err != nil {
 			return nil, "", err
 		}

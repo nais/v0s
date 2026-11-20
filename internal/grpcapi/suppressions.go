@@ -58,7 +58,18 @@ func (s *Server) ListSuppressions(ctx context.Context, req *v0sv1.ListSuppressio
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
-	return &v0sv1.ListSuppressionsResponse{Suppressions: suppressionsToProto(suppressions), NextPageToken: next}, nil
+	resp := &v0sv1.ListSuppressionsResponse{
+		Suppressions: suppressionsToProto(suppressions), NextPageToken: next,
+		Cursors: make([]string, 0, len(suppressions)),
+	}
+	for _, suppression := range suppressions {
+		cursor, err := suppression.PageToken()
+		if err != nil {
+			return nil, s.toStatus(ctx, err)
+		}
+		resp.Cursors = append(resp.Cursors, cursor)
+	}
+	return resp, nil
 }
 
 func suppressionKey(k *v0sv1.SuppressionKey) database.SuppressionKey {

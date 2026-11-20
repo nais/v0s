@@ -204,6 +204,11 @@ type suppressionCursor struct {
 	VulnerabilityID string `json:"v"`
 }
 
+// PageToken returns a cursor immediately after this suppression.
+func (s Suppression) PageToken() (string, error) {
+	return encodePageToken(suppressionCursor{s.Team, s.Environment, s.Workload, s.ImageName, s.Package, s.VulnerabilityID})
+}
+
 // ListSuppressions lists suppressions matching filter, ordered by key.
 func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, page Page) ([]Suppression, string, error) {
 	var cursor suppressionCursor
@@ -255,8 +260,7 @@ func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, pa
 	var next string
 	if len(suppressions) > limit {
 		suppressions = suppressions[:limit]
-		last := suppressions[limit-1]
-		next, err = encodePageToken(suppressionCursor{last.Team, last.Environment, last.Workload, last.ImageName, last.Package, last.VulnerabilityID})
+		next, err = suppressions[limit-1].PageToken()
 		if err != nil {
 			return nil, "", err
 		}

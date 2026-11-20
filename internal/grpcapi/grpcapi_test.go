@@ -79,6 +79,88 @@ func TestSuppressions(t *testing.T) {
 	}
 }
 
+func TestFindingCursorsSurviveSuppression(t *testing.T) {
+	s := newServer(t)
+	ctx := context.Background()
+	listed, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.GetFindings()) != 4 || len(listed.GetCursors()) != 4 || listed.GetNextPageToken() != "" {
+		t.Fatalf("initial findings = %v, want four findings and their cursors on the last page", listed)
+	}
+	first := listed.GetFindings()[0]
+	_, err = s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{
+		Team: "team", Actor: "me",
+		Suppressions: []*v0sv1.NewSuppression{{
+			Key: &v0sv1.SuppressionKey{
+				Environment: first.GetWorkload().GetEnvironment(), Workload: first.GetWorkload().GetName(),
+				ImageName: first.GetImage().GetName(), Package: first.GetPackageKey(), VulnerabilityId: first.GetVulnerabilityId(),
+			},
+			State: v0sv1.SuppressionState_SUPPRESSION_STATE_ACCEPTED_RISK, Detail: "assessed",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, cursor := range listed.GetCursors() {
+		resumed, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{PageSize: 10, PageToken: cursor})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := len(resumed.GetFindings()), 3-i; got != want {
+			t.Fatalf("cursor %d returned %d findings after suppression, want %d", i, got, want)
+		}
+		if i < 3 {
+			got, want := resumed.GetFindings()[0].GetWorkload(), listed.GetFindings()[i+1].GetWorkload()
+			if got.GetEnvironment() != want.GetEnvironment() || got.GetName() != want.GetName() {
+				t.Fatalf("cursor %d skipped the next workload: got %v, want %v", i, got, want)
+			}
+		}
+	}
+}
+
+func TestSuppressionCursorsSurviveDeletion(t *testing.T) {
+	s := newServer(t)
+	ctx := context.Background()
+	keys := []*v0sv1.SuppressionKey{}
+	items := []*v0sv1.NewSuppression{}
+	for _, name := range []string{"app", "worker"} {
+		key := &v0sv1.SuppressionKey{
+			Environment: "prod", Workload: name, ImageName: "repo/app", Package: "pkg:npm/lodash", VulnerabilityId: "CVE-1",
+		}
+		keys = append(keys, key)
+		items = append(items, &v0sv1.NewSuppression{
+			Key: key, State: v0sv1.SuppressionState_SUPPRESSION_STATE_ACCEPTED_RISK, Detail: "assessed",
+		})
+	}
+	if _, err := s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{Team: "team", Actor: "me", Suppressions: items}); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{Team: "team"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.GetSuppressions()) != 2 || len(listed.GetCursors()) != 2 || listed.GetNextPageToken() != "" {
+		t.Fatalf("initial suppressions = %v, want two suppressions and their cursors on the last page", listed)
+	}
+	if _, err := s.DeleteSuppressions(ctx, &v0sv1.DeleteSuppressionsRequest{Team: "team", Keys: keys[:1]}); err != nil {
+		t.Fatal(err)
+	}
+	for i, cursor := range listed.GetCursors() {
+		resumed, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{Team: "team", PageToken: cursor})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := len(resumed.GetSuppressions()), 1-i; got != want {
+			t.Fatalf("cursor %d returned %d suppressions after deletion, want %d", i, got, want)
+		}
+		if i == 0 && resumed.GetSuppressions()[0].GetWorkload() != "worker" {
+			t.Fatalf("next workload was skipped: %v", resumed)
+		}
+	}
+}
+
 func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	s := newServer(t)
 	ctx := context.Background()

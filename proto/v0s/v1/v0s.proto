@@ -182,6 +182,9 @@ message ListFindingsResponse {
   // Ordered by workload, vulnerability ID and purl.
   repeated Finding findings = 1;
   string next_page_token = 2;
+  // One cursor per finding, in the same order. Each can be used as page_token
+  // to continue after that finding, including when it is no longer present.
+  repeated string cursors = 3;
 }
 
 message CountFindingsRequest {
@@ -349,4 +352,7 @@ message ListSuppressionsResponse {
   // Ordered by team, environment, workload, image name, package key and vulnerability ID.
   repeated Suppression suppressions = 1;
   string next_page_token = 2;
+  // One cursor per suppression, in the same order. Each can be used as page_token
+  // to continue after that suppression, including when it has been deleted.
+  repeated string cursors = 3;
 }

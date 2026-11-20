@@ -991,6 +991,9 @@ type ListFindingsResponse struct {
 	// Ordered by workload, vulnerability ID and purl.
 	Findings      []*Finding `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
 	NextPageToken string     `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// One cursor per finding, in the same order. Each can be used as page_token
+	// to continue after that finding, including when it is no longer present.
+	Cursors       []string `protobuf:"bytes,3,rep,name=cursors,proto3" json:"cursors,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1037,6 +1040,13 @@ func (x *ListFindingsResponse) GetNextPageToken() string {
 		return x.NextPageToken
 	}
 	return ""
+}
+
+func (x *ListFindingsResponse) GetCursors() []string {
+	if x != nil {
+		return x.Cursors
+	}
+	return nil
 }
 
 type CountFindingsRequest struct {
@@ -2215,6 +2225,9 @@ type ListSuppressionsResponse struct {
 	// Ordered by team, environment, workload, image name, package key and vulnerability ID.
 	Suppressions  []*Suppression `protobuf:"bytes,1,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
 	NextPageToken string         `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// One cursor per suppression, in the same order. Each can be used as page_token
+	// to continue after that suppression, including when it has been deleted.
+	Cursors       []string `protobuf:"bytes,3,rep,name=cursors,proto3" json:"cursors,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2261,6 +2274,13 @@ func (x *ListSuppressionsResponse) GetNextPageToken() string {
 		return x.NextPageToken
 	}
 	return ""
+}
+
+func (x *ListSuppressionsResponse) GetCursors() []string {
+	if x != nil {
+		return x.Cursors
+	}
+	return nil
 }
 
 type CountFindingsResponse_Bucket struct {
@@ -2389,10 +2409,11 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x06filter\x18\x01 \x01(\v2\x15.v0s.v1.FindingFilterR\x06filter\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
-	"page_token\x18\x03 \x01(\tR\tpageToken\"k\n" +
+	"page_token\x18\x03 \x01(\tR\tpageToken\"\x85\x01\n" +
 	"\x14ListFindingsResponse\x12+\n" +
 	"\bfindings\x18\x01 \x03(\v2\x0f.v0s.v1.FindingR\bfindings\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\"\x9d\x02\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x18\n" +
+	"\acursors\x18\x03 \x03(\tR\acursors\"\x9d\x02\n" +
 	"\x14CountFindingsRequest\x12-\n" +
 	"\x06filter\x18\x01 \x01(\v2\x15.v0s.v1.FindingFilterR\x06filter\x12?\n" +
 	"\bgroup_by\x18\x02 \x01(\x0e2$.v0s.v1.CountFindingsRequest.GroupByR\agroupBy\"\x94\x01\n" +
@@ -2501,10 +2522,11 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\n" +
 	"page_token\x18\x05 \x01(\tR\tpageToken\x12 \n" +
 	"\venvironment\x18\x06 \x01(\tR\venvironment\x12\x1a\n" +
-	"\bworkload\x18\a \x01(\tR\bworkloadJ\x04\b\x01\x10\x02R\x05teams\"{\n" +
+	"\bworkload\x18\a \x01(\tR\bworkloadJ\x04\b\x01\x10\x02R\x05teams\"\x95\x01\n" +
 	"\x18ListSuppressionsResponse\x127\n" +
 	"\fsuppressions\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\fsuppressions\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken*\x8b\x01\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x18\n" +
+	"\acursors\x18\x03 \x03(\tR\acursors*\x8b\x01\n" +
 	"\bSeverity\x12\x18\n" +
 	"\x14SEVERITY_UNSPECIFIED\x10\x00\x12\x14\n" +
 	"\x10SEVERITY_UNKNOWN\x10\x01\x12\x10\n" +

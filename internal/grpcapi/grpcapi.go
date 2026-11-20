@@ -114,8 +114,15 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
-	resp := &v0sv1.ListFindingsResponse{Findings: make([]*v0sv1.Finding, 0, len(findings)), NextPageToken: next}
+	resp := &v0sv1.ListFindingsResponse{
+		Findings: make([]*v0sv1.Finding, 0, len(findings)), NextPageToken: next,
+		Cursors: make([]string, 0, len(findings)),
+	}
 	for _, f := range findings {
+		cursor, err := f.PageToken()
+		if err != nil {
+			return nil, s.toStatus(ctx, err)
+		}
 		pf := &v0sv1.Finding{
 			Workload:         &v0sv1.WorkloadRef{Environment: f.Workload.Environment, Team: f.Workload.Team, Name: f.Workload.Name},
 			Image:            imageToProto(f.Image),
@@ -134,6 +141,7 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 			pf.Suppression = suppressionToProto(*f.Suppression)
 		}
 		resp.Findings = append(resp.Findings, pf)
+		resp.Cursors = append(resp.Cursors, cursor)
 	}
 	return resp, nil
 }
