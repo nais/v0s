@@ -192,6 +192,9 @@ not a client-side freshness protocol.
 In [management Grafana](https://monitoring.nais.io/d/v0s), select the tenant's
 `*-metrics` datasource, cluster and discovered scrape job. NAV is the default.
 Cluster filtering uses the management stack's `k8s_cluster_name` label.
+The single-select scrape job uses an exact label match: Grafana's `:regex`
+formatter escapes `/` in jobs such as `nais-system/v0s`, which PromQL rejects
+as an invalid string escape.
 
 The [handbook's Git Sync setup](https://handbook.nais.io/technical/observability/#grafana-dashboards)
 requires this repository to be accessible to the `grafana-git-sync` GitHub App.
