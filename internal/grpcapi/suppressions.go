@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	v0sv1 "github.com/nais/v0s/api/v0s/v1"
+	v0sv1 "github.com/nais/v0s-api/v0s/v1"
 	"github.com/nais/v0s/internal/database"
 )
 

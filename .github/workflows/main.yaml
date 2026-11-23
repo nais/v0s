@@ -41,8 +41,6 @@ jobs:
           restore-keys: go-${{ runner.os }}-
       - name: Check Go formatting
         run: mise run check:fmt
-      - name: Lint protobufs
-        run: mise run check:proto
       - name: Lint Helm chart
         run: mise run check:helm
       - name: Go vet

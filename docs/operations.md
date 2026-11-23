@@ -124,7 +124,7 @@ KEV. A blocked attestation lookup is an error, not evidence that no SBOM exists.
 ## Simplified public contract
 
 The 2026-11-17 source change simplifies the
-[gRPC contract](../proto/v0s/v1/v0s.proto). It is not a deployment or an
+[gRPC contract](https://github.com/nais/v0s-api/blob/main/proto/v0s/v1/v0s.proto). It is not a deployment or an
 implementation of the proposed GraphQL layer in Nais API.
 
 - Read filters take one `team`, or no team for tenant-wide reads. A `workload`

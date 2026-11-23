@@ -9,7 +9,7 @@ require (
 	github.com/aquasecurity/trivy-db v0.0.0-20261012084708-cbebf2ecd6df
 	github.com/google/go-containerregistry v0.22.1
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/nais/v0s/api v0.0.0
+	github.com/nais/v0s-api v0.1.0
 	github.com/package-url/packageurl-go v0.1.7
 	github.com/pandatix/go-cvss v0.6.2
 	github.com/prometheus/client_golang v1.25.0
@@ -20,8 +20,6 @@ require (
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
-
-replace github.com/nais/v0s/api => ./api
 
 require (
 	cel.dev/expr v0.25.3 // indirect

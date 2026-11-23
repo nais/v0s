@@ -126,5 +126,5 @@ varslingssidene, med endringsvarsel ved brudd. Dette repo-dokumentet er
 beslutningsgrunnlaget, ikke en konkurrerende offentlig sannhetskilde.
 
 Teknisk fasit for det implementerte API-et:
-[protobuf](../proto/v0s/v1/v0s.proto), [domenespråk](../CONTEXT.md) og
+[protobuf](https://github.com/nais/v0s-api/blob/main/proto/v0s/v1/v0s.proto), [domenespråk](../CONTEXT.md) og
 [arkitektur](architecture.md).

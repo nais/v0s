@@ -5,7 +5,7 @@ inventory. It reports source facts and teams' assessments; it does not decide
 which findings to prioritize. It is separately deployable, not independent of
 Nais API.
 See [CONTEXT.md](../CONTEXT.md) for identities and counting semantics, and the
-[protobuf contract](../proto/v0s/v1/v0s.proto) for the API.
+[protobuf contract](https://github.com/nais/v0s-api/blob/main/proto/v0s/v1/v0s.proto) for the API.
 
 ## Required Nais API dependency
 

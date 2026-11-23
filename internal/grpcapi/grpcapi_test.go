@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	v0sv1 "github.com/nais/v0s/api/v0s/v1"
+	v0sv1 "github.com/nais/v0s-api/v0s/v1"
 	"github.com/nais/v0s/internal/database/databasetest"
 	"github.com/nais/v0s/internal/grpcapi"
 	"google.golang.org/grpc"

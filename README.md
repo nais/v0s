@@ -38,7 +38,8 @@ mise run check
 
 Database tests need PostgreSQL's `initdb` and `pg_ctl` on `PATH` or in `V0S_PG_BIN`,
 or an existing server via `V0S_TEST_DATABASE_URL`. Without either, they skip.
-Run `mise run generate` after changing protobufs. `mise run build` writes
+The v0s gRPC contract and Go bindings live in [nais/v0s-api](https://github.com/nais/v0s-api).
+Run `mise run generate` after updating the vendored Nais API proto. `mise run build` writes
 `bin/v0s`; `mise run build:image` builds a local Linux image without pushing.
 Green builds on `main` publish signed images and Helm charts to GAR, then assign
 the chart through Fasit to `ci-nais` management with a wait for success before

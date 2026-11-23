@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	v0sv1 "github.com/nais/v0s/api/v0s/v1"
+	v0sv1 "github.com/nais/v0s-api/v0s/v1"
 	"github.com/nais/v0s/internal/v0s"
 	cvss30 "github.com/pandatix/go-cvss/30"
 	cvss31 "github.com/pandatix/go-cvss/31"
