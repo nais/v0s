@@ -588,7 +588,7 @@ type VulnerabilitySuppression {
   workload: Workload!
   imageName: String!
   packageKey: String!
-  vulnerabilityIdentifier: String!
+  vulnerability: Vulnerability!
   state: VulnerabilitySuppressionState!
   reason: String!
   updatedBy: String!
@@ -699,7 +699,7 @@ extend type Mutation {
         <tr><td>Advisory: <code>identifier</code>, <code>aliases</code>, <code>title</code>, <code>description</code>, <code>references</code>, <code>epss</code>, <code>knownExploited</code></td><td>Detaljer og kildelenker for én sårbarhet, også slått opp via alias. EPSS og KEV må også kunne leses uten funn i eget scope. Tittel og beskrivelse hører hjemme her, ikke gjentatt på hvert funn.</td></tr>
         <tr><td>EPSS: <code>score</code>, <code>date</code></td><td>EPSS estimerer utnyttelse i praksis de neste 30 dagene, ikke risiko for vår workload. Datoen viser hvilket estimat vi viser.</td></tr>
         <tr><td>Vurderingsfilter: <code>vulnerabilityIdentifier</code>, <code>imageName</code></td><td>Finne lagrede vurderinger for en sårbarhet eller et bestemt image-repository, også etter at funnet er borte.</td></tr>
-        <tr><td>Vurdering/nøkkel: <code>workload</code>, <code>imageName</code>, <code>packageKey</code>, <code>vulnerabilityIdentifier</code></td><td>På aktive vurderinger finnes navn, miljø og team via <code>workload</code>. Team sendes fortsatt én gang per skrivebatch. Aktivitetsloggen lagrer verdiene direkte, også etter at workloaden er borte.</td></tr>
+        <tr><td>Aktiv vurdering: <code>workload</code>, <code>imageName</code>, <code>packageKey</code>, <code>vulnerability { identifier }</code></td><td>Navn, miljø og team finnes via <code>workload</code>. Skrivenøkkelen bruker fortsatt <code>vulnerabilityIdentifier</code>. Aktivitetsloggen lagrer verdiene direkte, også etter at workloaden er borte.</td></tr>
         <tr><td>Vurdering: <code>state</code>, <code>reason</code>, <code>updatedBy</code>, <code>updatedAt</code>. Set/delete: <code>items</code>, <code>key</code>, <code>keys</code>, <code>suppressions</code>, <code>deleted</code></td><td>Beslutning, begrunnelse og hvem som sist endret den. Eksplisitte nøkler for atomisk batch; svaret bekrefter faktisk lagret/fjernet tilstand. Aktør og tid settes av serveren, ikke klienten. Ingen historikk.</td></tr>
         <tr><td>Connections: <code>edges</code>, <code>node</code>, <code>cursor</code>, <code>pageInfo { hasNextPage endCursor }</code></td><td>Samme forward-only-mønster for funn og vurderinger. Klienten kan fortsette uten sideindeks eller obligatorisk totalCount. Ingen ny listevariant bare for å spare wrappers.</td></tr>
       </tbody>
@@ -802,7 +802,7 @@ extend type Mutation {
   setVulnerabilitySuppressions(input: $input) {
     suppressions {
       workload { name team { slug } teamEnvironment { environment { name } } }
-      imageName packageKey vulnerabilityIdentifier
+      imageName packageKey vulnerability { identifier }
       state reason updatedBy updatedAt
     }
   }
@@ -844,7 +844,7 @@ extend type Mutation {
     edges {
       node {
         workload { name team { slug } teamEnvironment { environment { name } } }
-        imageName packageKey vulnerabilityIdentifier
+        imageName packageKey vulnerability { identifier }
         state reason updatedBy updatedAt
       }
     }
@@ -1353,7 +1353,7 @@ extend type Mutation {
           teamEnvironment: { environment: { name: f.w.environment } },
         },
         imageName: f.suppression.imageName, packageKey: f.suppression.packageKey,
-        vulnerabilityIdentifier: f.suppression.identifier, state: f.suppression.state,
+        vulnerability: { identifier: f.suppression.identifier }, state: f.suppression.state,
         reason: f.suppression.reason, updatedBy: f.suppression.updatedBy, updatedAt: f.suppression.updatedAt,
       } : null,
     };
