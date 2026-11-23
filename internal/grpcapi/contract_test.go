@@ -189,25 +189,8 @@ func TestKnownExploited(t *testing.T) {
 	}
 }
 
-func TestVulnerabilityCVSSVersionsAndPresence(t *testing.T) {
-	const (
-		v30Zero = "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"
-		v31Zero = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N"
-		v31     = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
-		v40     = "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N"
-		v40Zero = "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:N/VI:N/VA:N/SC:N/SI:N/SA:N"
-	)
+func TestVulnerabilityZeroEPSS(t *testing.T) {
 	s := newServer(t, `
-		UPDATE vulnerabilities SET cvss = '{
-			"alpine": {"v3_vector": "`+v30Zero+`"},
-			"empty": {},
-			"ghsa": {"v3_vector": "`+v31+`", "v3_score": 7.5, "v40_vector": "`+v40+`", "v40_score": 6.9},
-			"invalid": {"v3_vector": "CVSS:3.1/broken"},
-			"missing": {"v3_vector": "`+v31+`"},
-			"nvd": {"v3_score": 8.1},
-			"zero-v3": {"v3_vector": "`+v31Zero+`"},
-			"zero-v4": {"v40_vector": "`+v40Zero+`"}
-		}' WHERE id = 'CVE-1';
 		INSERT INTO epss (cve, score, percentile, date) VALUES ('CVE-1', 0, 0, '2026-11-17');`)
 	got, err := s.GetVulnerability(t.Context(), &v0sv1.GetVulnerabilityRequest{Id: "CVE-1"})
 	if err != nil {
@@ -220,25 +203,6 @@ func TestVulnerabilityCVSSVersionsAndPresence(t *testing.T) {
 	decoded := new(v0sv1.GetVulnerabilityResponse)
 	if err := proto.Unmarshal(wire, decoded); err != nil {
 		t.Fatal(err)
-	}
-	want := []*v0sv1.Cvss{
-		{Source: "alpine", Version: "3.0", Vector: proto.String(v30Zero), Score: proto.Float64(0)},
-		{Source: "ghsa", Version: "3.1", Vector: proto.String(v31), Score: proto.Float64(7.5)},
-		{Source: "ghsa", Version: "4.0", Vector: proto.String(v40), Score: proto.Float64(6.9)},
-		{Source: "invalid", Version: "3.1", Vector: proto.String("CVSS:3.1/broken")},
-		{Source: "missing", Version: "3.1", Vector: proto.String(v31)},
-		{Source: "nvd", Version: "3.x", Score: proto.Float64(8.1)},
-		{Source: "zero-v3", Version: "3.1", Vector: proto.String(v31Zero), Score: proto.Float64(0)},
-		{Source: "zero-v4", Version: "4.0", Vector: proto.String(v40Zero), Score: proto.Float64(0)},
-	}
-	scores := decoded.GetVulnerability().GetCvss()
-	if len(scores) != len(want) {
-		t.Fatalf("CVSS = %v, want %v", scores, want)
-	}
-	for i := range want {
-		if !proto.Equal(scores[i], want[i]) {
-			t.Errorf("CVSS[%d] = %v, want %v", i, scores[i], want[i])
-		}
 	}
 	epss := decoded.GetVulnerability().GetEpss()
 	if epss == nil || epss.GetScore() != 0 || epss.GetDate() != "2026-11-17" {

@@ -192,7 +192,6 @@ func (s *Server) GetVulnerability(ctx context.Context, req *v0sv1.GetVulnerabili
 		Aliases:        v.Aliases,
 		Title:          v.Title,
 		Description:    v.Description,
-		Cvss:           cvssToProto(v.CVSS),
 		References:     v.References,
 		Epss:           epssToProto(v.EPSS),
 		KnownExploited: v.KnownExploited,

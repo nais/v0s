@@ -29,10 +29,10 @@ INSERT INTO workloads (environment, team, name, image_reference, image_id) VALUE
 	('c1', 'team-a', 'app', 'repo/app:1', 1),
 	('c1', 'team-a', 'worker', 'repo/app:1', 1),
 	('c1', 'team-b', 'other', 'repo/app:2', 2);
-INSERT INTO vulnerabilities (id, title, cvss, db_version) VALUES
-	('CVE-1', 'lodash bug', '{"nvd": {"v3_score": 7.5}, "ghsa": {"v3_score": 8.1}}', now()),
-	('CVE-2', 'express bug', '{}', now()),
-	('CVE-3', 'other bug', '{}', now());
+INSERT INTO vulnerabilities (id, title, db_version) VALUES
+	('CVE-1', 'lodash bug', now()),
+	('CVE-2', 'express bug', now()),
+	('CVE-3', 'other bug', now());
 INSERT INTO vulnerability_aliases (alias, vulnerability_id) VALUES
 	('GHSA-1', 'CVE-1'), ('GHSA-2', 'CVE-2'), ('GHSA-2', 'CVE-3');
 INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, fixed_version, status, severity) VALUES

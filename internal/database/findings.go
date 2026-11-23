@@ -492,11 +492,11 @@ func (db *DB) GetVulnerability(ctx context.Context, idOrAlias string) (Vulnerabi
 		publishedAt, modifiedAt pgtype.Timestamptz
 		epss                    epssScan
 	)
-	dest := []any{&d.ID, &d.Title, &d.Description, &d.Severities, &d.CVSS, &d.References, &publishedAt, &modifiedAt, &d.Aliases}
+	dest := []any{&d.ID, &d.Title, &d.Description, &d.Severities, &d.References, &publishedAt, &modifiedAt, &d.Aliases}
 	dest = append(dest, epss.dest()...)
 	dest = append(dest, &d.KnownExploited)
 	err = db.pool.QueryRow(ctx, `
-		SELECT v.id, v.title, v.description, v.severities, v.cvss, v."references", v.published_at, v.modified_at,
+		SELECT v.id, v.title, v.description, v.severities, v."references", v.published_at, v.modified_at,
 			ARRAY(SELECT alias FROM vulnerability_aliases WHERE vulnerability_id = v.id ORDER BY alias),
 			e.score, e.date, k.cve IS NOT NULL
 		FROM vulnerabilities v
