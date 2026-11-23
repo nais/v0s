@@ -104,7 +104,7 @@ message FindingFilter {
   string workload = 3;
   string image_name = 4;
   string image_digest = 5;
-  // Vulnerability ID or alias.
+  // Vulnerability ID or alias. Combined with vulnerability_ids if both are set.
   string vulnerability_id = 6;
   // Package key or full purl. A full purl matches only that version.
   string package = 7;
@@ -114,6 +114,8 @@ message FindingFilter {
   // Only findings for vulnerabilities known exploited in the wild according to CISA KEV.
   bool only_known_exploited = 10;
   SuppressedFilter suppressed = 11;
+  // Match any listed vulnerability ID or alias.
+  repeated string vulnerability_ids = 13;
 }
 
 enum SuppressedFilter {

@@ -239,6 +239,11 @@ func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
 	if err := validateScope(f.GetTeam(), f.GetEnvironment(), f.GetWorkload()); err != nil {
 		return database.FindingFilter{}, err
 	}
+	for _, id := range f.GetVulnerabilityIds() {
+		if strings.TrimSpace(id) == "" {
+			return database.FindingFilter{}, invalidArgument("vulnerability_ids cannot contain empty values")
+		}
+	}
 	filter := database.FindingFilter{
 		Teams:              teamFilter(f.GetTeam()),
 		Environment:        f.GetEnvironment(),
@@ -246,6 +251,7 @@ func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
 		ImageName:          f.GetImageName(),
 		ImageDigest:        f.GetImageDigest(),
 		VulnerabilityID:    f.GetVulnerabilityId(),
+		VulnerabilityIDs:   f.GetVulnerabilityIds(),
 		Package:            f.GetPackage(),
 		HasFix:             f.GetHasFix(),
 		OnlyKnownExploited: f.GetOnlyKnownExploited(),

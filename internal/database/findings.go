@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -141,8 +142,9 @@ type FindingFilter struct {
 	Workload           string
 	ImageName          string
 	ImageDigest        string
-	VulnerabilityID    string // ID or alias
-	Package            string // package key, or purl with version for an exact match
+	VulnerabilityID    string   // ID or alias
+	VulnerabilityIDs   []string // IDs or aliases; combined with VulnerabilityID
+	Package            string   // package key, or purl with version for an exact match
 	Severities         []v0s.Severity
 	HasFix             bool // only findings with a fixed version
 	OnlyKnownExploited bool // only findings for vulnerabilities in CISA KEV
@@ -167,7 +169,14 @@ func (f FindingFilter) conditions(args *sqlArgs) ([]string, error) {
 	if f.ImageDigest != "" {
 		where = append(where, "i.digest = "+args.add(f.ImageDigest))
 	}
-	if f.VulnerabilityID != "" {
+	if len(f.VulnerabilityIDs) > 0 {
+		ids := f.VulnerabilityIDs
+		if f.VulnerabilityID != "" {
+			ids = append(slices.Clone(ids), f.VulnerabilityID)
+		}
+		p := args.add(ids)
+		where = append(where, fmt.Sprintf("(f.vulnerability_id = ANY(%[1]s) OR f.vulnerability_id IN (SELECT vulnerability_id FROM vulnerability_aliases WHERE alias = ANY(%[1]s)))", p))
+	} else if f.VulnerabilityID != "" {
 		where = append(where, vulnerabilityMatch("f.vulnerability_id", f.VulnerabilityID, args))
 	}
 	if f.Package != "" {

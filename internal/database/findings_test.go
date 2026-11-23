@@ -86,6 +86,9 @@ func TestListFindingsFilters(t *testing.T) {
 		{name: "every workload's findings", want: []string{appLodash, appExpress, workerLodash, workerExpress, otherLodash}},
 		{name: "vulnerability ID", filter: database.FindingFilter{VulnerabilityID: "CVE-1"}, want: []string{appLodash, workerLodash, otherLodash}},
 		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityID: "GHSA-1"}, want: []string{appLodash, workerLodash, otherLodash}},
+		{name: "IDs and overlapping aliases", filter: database.FindingFilter{
+			VulnerabilityID: "CVE-2", VulnerabilityIDs: []string{"GHSA-1", "CVE-1", "CVE-404"},
+		}, want: []string{appLodash, appExpress, workerLodash, workerExpress, otherLodash}},
 		{name: "package key", filter: database.FindingFilter{Package: "pkg:npm/lodash"}, want: []string{appLodash, workerLodash, otherLodash}},
 		{name: "purl without version matches key", filter: database.FindingFilter{Package: "pkg:npm/lodash?arch=x"}, want: []string{appLodash, workerLodash, otherLodash}},
 		{name: "purl with version", filter: database.FindingFilter{Package: "pkg:npm/lodash@4.17.20"}, want: []string{appLodash, workerLodash}},

@@ -477,7 +477,7 @@ type FindingFilter struct {
 	Workload    string                 `protobuf:"bytes,3,opt,name=workload,proto3" json:"workload,omitempty"`
 	ImageName   string                 `protobuf:"bytes,4,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
 	ImageDigest string                 `protobuf:"bytes,5,opt,name=image_digest,json=imageDigest,proto3" json:"image_digest,omitempty"`
-	// Vulnerability ID or alias.
+	// Vulnerability ID or alias. Combined with vulnerability_ids if both are set.
 	VulnerabilityId string `protobuf:"bytes,6,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
 	// Package key or full purl. A full purl matches only that version.
 	Package    string     `protobuf:"bytes,7,opt,name=package,proto3" json:"package,omitempty"`
@@ -487,8 +487,10 @@ type FindingFilter struct {
 	// Only findings for vulnerabilities known exploited in the wild according to CISA KEV.
 	OnlyKnownExploited bool             `protobuf:"varint,10,opt,name=only_known_exploited,json=onlyKnownExploited,proto3" json:"only_known_exploited,omitempty"`
 	Suppressed         SuppressedFilter `protobuf:"varint,11,opt,name=suppressed,proto3,enum=v0s.v1.SuppressedFilter" json:"suppressed,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// Match any listed vulnerability ID or alias.
+	VulnerabilityIds []string `protobuf:"bytes,13,rep,name=vulnerability_ids,json=vulnerabilityIds,proto3" json:"vulnerability_ids,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *FindingFilter) Reset() {
@@ -596,6 +598,13 @@ func (x *FindingFilter) GetSuppressed() SuppressedFilter {
 		return x.Suppressed
 	}
 	return SuppressedFilter_SUPPRESSED_FILTER_UNSPECIFIED
+}
+
+func (x *FindingFilter) GetVulnerabilityIds() []string {
+	if x != nil {
+		return x.VulnerabilityIds
+	}
+	return nil
 }
 
 // A vulnerability in a package in a workload's image.
@@ -2354,7 +2363,7 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12'\n" +
 	"\x0fimage_reference\x18\x05 \x01(\tR\x0eimageReference\x12#\n" +
 	"\x05image\x18\x04 \x01(\v2\r.v0s.v1.ImageR\x05image\x12#\n" +
-	"\rresolve_error\x18\x06 \x01(\tR\fresolveError\"\xb1\x03\n" +
+	"\rresolve_error\x18\x06 \x01(\tR\fresolveError\"\xde\x03\n" +
 	"\rFindingFilter\x12\x12\n" +
 	"\x04team\x18\f \x01(\tR\x04team\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
@@ -2372,7 +2381,8 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	" \x01(\bR\x12onlyKnownExploited\x128\n" +
 	"\n" +
 	"suppressed\x18\v \x01(\x0e2\x18.v0s.v1.SuppressedFilterR\n" +
-	"suppressedJ\x04\b\x01\x10\x02R\x05teamsR\x03kev\"\xc3\x04\n" +
+	"suppressed\x12+\n" +
+	"\x11vulnerability_ids\x18\r \x03(\tR\x10vulnerabilityIdsJ\x04\b\x01\x10\x02R\x05teamsR\x03kev\"\xc3\x04\n" +
 	"\aFinding\x12/\n" +
 	"\bworkload\x18\x01 \x01(\v2\x13.v0s.v1.WorkloadRefR\bworkload\x12#\n" +
 	"\x05image\x18\x02 \x01(\v2\r.v0s.v1.ImageR\x05image\x12)\n" +
