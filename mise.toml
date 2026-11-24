@@ -7,7 +7,10 @@ helm = "4.1.0"
 
 [tasks.build]
 description = "Build the v0s binary"
-run = "go build -trimpath -o bin/v0s ./cmd/v0s"
+run = [
+  "go build -trimpath -o bin/v0s ./cmd/v0s",
+  "go -C api build ./...",
+]
 
 [tasks."build:image"]
 description = "Build the Linux image locally without pushing"
@@ -34,16 +37,20 @@ description = "Format Go code"
 run = "gofmt -w cmd internal api"
 
 [tasks.test]
-description = "Run race tests (vet is a separate check)"
+description = "Run race tests in both Go modules (vet is a separate check)"
 depends = ["charts:dependencies"]
-run = "go test -race -vet=off -count=1 ./..."
+run = [
+  "go test -race -vet=off -count=1 ./...",
+  "go -C api test -race -vet=off -count=1 ./...",
+]
 
 [tasks.check]
-description = "Check formatting, protobufs, Go code and tests sequentially"
+description = "Check formatting, protobufs, Helm and both Go modules sequentially"
 run = [
   "mise run check:fmt",
   "mise run check:proto",
   "mise run check:helm",
+  "mise run check:api-release",
   "mise run check:vet",
   "mise run check:staticcheck",
   "mise run test",
@@ -72,9 +79,21 @@ run = [
 ]
 
 [tasks."check:vet"]
-description = "Run go vet"
-run = "go vet ./..."
+description = "Run go vet in both Go modules"
+run = [
+  "go vet ./...",
+  "go -C api vet ./...",
+]
+
+[tasks."check:api-release"]
+description = "Test automatic API release tag selection"
+run = "python3 -B -m unittest discover -s tools -p test_api_release.py"
 
 [tasks."check:staticcheck"]
-description = "Run staticcheck"
-run = "go tool staticcheck ./..."
+description = "Run staticcheck in both Go modules"
+run = '''
+go tool staticcheck ./... || exit 1
+staticcheck=$(go tool -n staticcheck) || exit 1
+cd api
+"$staticcheck" ./...
+'''

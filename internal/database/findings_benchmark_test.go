@@ -29,9 +29,8 @@ func BenchmarkListFindings(b *testing.B) {
 		SELECT 'prod', 'team-' || lpad(((n-1)/50)::text, 3, '0'),
 			'app-' || lpad(n::text, 5, '0'), 'registry/app:' || n, (n-1)%3200+1
 		FROM generate_series(1, 5000) n;
-		INSERT INTO vulnerabilities (id, title, cvss, db_version)
-		SELECT 'CVE-' || lpad(n::text, 4, '0'), 'Example vulnerability ' || n,
-			'{"nvd":{"v3_score":7.5},"ghsa":{"v3_score":8.1}}', now()
+		INSERT INTO vulnerabilities (id, title, db_version)
+		SELECT 'CVE-' || lpad(n::text, 4, '0'), 'Example vulnerability ' || n, now()
 		FROM generate_series(1, 20) n;
 		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, fixed_version, status, severity)
 		SELECT i.id, v.id, 'pkg:npm/package-' || n || '@1', 'pkg:npm/package-' || n,

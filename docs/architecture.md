@@ -58,6 +58,13 @@ in-process against a local vulnerability DB; no images are pulled. Only
 `internal/scan` imports Trivy. This avoids a separate scanner service, at the cost
 of Trivy's large module graph and unstable internal APIs.
 
+The choice reuses the existing attested CycloneDX input rather than introducing
+another image-scanning pipeline. Matching quality still depends on both that
+input and Trivy's source catalog. Differences from Dependency-Track are not all
+false positives or all missed vulnerabilities; they require source-level review.
+See the [verification method](verification.md#findings-and-coverage) and
+[source-contract considerations](utviklerkontrakt.md#kildeavgrensninger).
+
 ## Reconciliation, not a queue
 
 Loops compare stored state with work still to do. PostgreSQL advisory locks
@@ -86,9 +93,15 @@ when they arise. Retry and failure behaviour is described in [Operations](operat
 
 `cmd/v0s` wires the service together. Private Go packages, including the shared
 domain types in `internal/v0s`, live under `internal/`; the generated public
-gRPC client stays in `api/v0s/v1`. There is one Go module.
+gRPC client stays in `api/v0s/v1`. There are two Go modules: the server at the
+root and the lightweight `github.com/nais/v0s/api` client under `api/`.
+The server uses `replace github.com/nais/v0s/api => ./api`, so both server and
+external clients use code generated from the same authoritative protobuf.
+The client has no server or Trivy dependency. See the
+[client release instructions](../README.md#go-client).
 
-`internal/database` owns hand-written SQL and embedded, numbered migrations
+`internal/database` owns hand-written SQL so optional read filters remain
+explicit alongside the code that uses them. Embedded, numbered migrations are
 applied by `v0s migrate` under an advisory lock using the database owner. The
 service uses a separate read/write role, checks the schema version on startup
 and does not perform DDL. The chart stops old replicas before the migration
@@ -110,12 +123,14 @@ return `InvalidArgument`, like malformed values of the `package` filter.
 matching package keys. All active filters apply, including `package_type`
 and suppression. Counts cover the full filtered result, not just the current
 page, and count a finding once per workload using its image. The page and counts
-come from the same database snapshot.
+come from the same database snapshot. Per-finding `cursors` remain available
+alongside the counts; resuming from a cursor does not narrow the counts to the
+remaining findings.
 
 The public read contract accepts one team or the whole tenant. A workload name
-requires a team and environment. CVSS details are a versioned list per source on
-the advisory, with optional scores/vectors instead of a versionless maximum on
-every finding. CISA KEV is catalog membership, not exploitability. Until a
+requires a team and environment. Advisory details include links to the sources;
+v0s uses the scanner's severity rather than storing a separate score.
+CISA KEV is catalog membership, not exploitability. Until a
 nonempty catalog has been imported, reads that expose or filter on membership
 fail with `Unavailable`; a failed refresh retains the last valid catalog.
 EPSS and KEV refreshes are independent. See
@@ -146,7 +161,7 @@ operator feature. Existing databases can remain independently managed with
 `postgresqlEnabled=false`. Managed Clusters are retained on Helm uninstall by
 default, but that is not independent release ownership or backup protection.
 The shared subchart does not configure backups. See [Operations](operations.md)
-for the existing dev-nais database boundary and rollout requirements.
+for database ownership boundaries and rollout requirements.
 
 ## Trust and current-state contract
 

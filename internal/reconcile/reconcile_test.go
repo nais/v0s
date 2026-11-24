@@ -369,7 +369,7 @@ func TestScanFailureRecordsUsedVersion(t *testing.T) {
 
 	v1 := time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
 	v2 := v1.Add(time.Hour)
-	r.Scanner = staleScanner{fakeScanner: fakeScanner{version: v2}, used: v1}
+	r.Scanner = staleScanner{version: v2, used: v1}
 	job, ok, err := db.NextScan(ctx, v2)
 	if err != nil || !ok {
 		t.Fatalf("NextScan = %t, %v, want a job", ok, err)

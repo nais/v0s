@@ -167,7 +167,7 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, 
 	n := len(vulns)
 	var (
 		ids, titles, descriptions      = make([]string, n), make([]string, n), make([]string, n)
-		severities, cvss, references   = make([]string, n), make([]string, n), make([]string, n)
+		severities, references         = make([]string, n), make([]string, n)
 		publishedAt, modifiedAt        = make([]pgtype.Timestamptz, n), make([]pgtype.Timestamptz, n)
 		aliases, aliasVulnerabilityIDs []string
 	)
@@ -176,9 +176,6 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, 
 		var err error
 		if severities[i], err = jsonObject(v.Severities); err != nil {
 			return fmt.Errorf("encoding severities of %s: %w", v.ID, err)
-		}
-		if cvss[i], err = jsonObject(v.CVSS); err != nil {
-			return fmt.Errorf("encoding cvss of %s: %w", v.ID, err)
 		}
 		if references[i], err = jsonArray(v.References); err != nil {
 			return fmt.Errorf("encoding references of %s: %w", v.ID, err)
@@ -192,24 +189,23 @@ func upsertVulnerabilities(ctx context.Context, tx pgx.Tx, dbVersion time.Time, 
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO vulnerabilities AS v (id, title, description, severities, cvss, "references", published_at, modified_at, db_version)
+		INSERT INTO vulnerabilities AS v (id, title, description, severities, "references", published_at, modified_at, db_version)
 		SELECT DISTINCT ON (t.id)
-			t.id, t.title, t.description, t.severities, t.cvss,
-			ARRAY(SELECT jsonb_array_elements_text(t.refs)), t.published_at, t.modified_at, $9::timestamptz
-		FROM unnest($1::text[], $2::text[], $3::text[], $4::jsonb[], $5::jsonb[], $6::jsonb[], $7::timestamptz[], $8::timestamptz[])
-			AS t (id, title, description, severities, cvss, refs, published_at, modified_at)
+			t.id, t.title, t.description, t.severities,
+			ARRAY(SELECT jsonb_array_elements_text(t.refs)), t.published_at, t.modified_at, $8::timestamptz
+		FROM unnest($1::text[], $2::text[], $3::text[], $4::jsonb[], $5::jsonb[], $6::timestamptz[], $7::timestamptz[])
+			AS t (id, title, description, severities, refs, published_at, modified_at)
 		ORDER BY t.id
 		ON CONFLICT (id) DO UPDATE SET
 			title = excluded.title,
 			description = excluded.description,
 			severities = excluded.severities,
-			cvss = excluded.cvss,
 			"references" = excluded."references",
 			published_at = excluded.published_at,
 			modified_at = excluded.modified_at,
 			db_version = excluded.db_version
 		WHERE v.db_version < excluded.db_version`,
-		ids, titles, descriptions, severities, cvss, references, publishedAt, modifiedAt, dbVersion,
+		ids, titles, descriptions, severities, references, publishedAt, modifiedAt, dbVersion,
 	); err != nil {
 		return fmt.Errorf("upserting vulnerabilities: %w", err)
 	}

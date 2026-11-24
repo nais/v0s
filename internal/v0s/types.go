@@ -108,14 +108,6 @@ type Finding struct {
 	DataSource       string
 }
 
-// CVSS scores from one source.
-type CVSS struct {
-	V3Vector  string  `json:"v3_vector,omitempty"`
-	V3Score   float64 `json:"v3_score,omitempty"`
-	V40Vector string  `json:"v40_vector,omitempty"`
-	V40Score  float64 `json:"v40_score,omitempty"`
-}
-
 // Vulnerability is a vulnerability record from the DB.
 type Vulnerability struct {
 	ID          string
@@ -123,7 +115,6 @@ type Vulnerability struct {
 	Title       string
 	Description string
 	Severities  map[string]Severity // by source
-	CVSS        map[string]CVSS     // by source
 	References  []string
 	PublishedAt time.Time // zero if unknown
 	ModifiedAt  time.Time // zero if unknown

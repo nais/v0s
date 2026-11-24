@@ -14,14 +14,26 @@ PostgreSQL 18, verifies generated code, and builds PR images without publishing.
 Checks have separate Actions steps; vet, staticcheck and tests run sequentially
 rather than competing for runner resources. `mise run check` uses the same order.
 Tests disable built-in vet because the full vet check runs separately.
+Tests, vet and staticcheck run explicitly in both the root and `api/` Go
+modules. CI also tests the client with Go 1.26.11 and automatic toolchain
+upgrades disabled. `mise run build` builds both modules, and `mise run generate`
+regenerates the public client and the vendored Nais API client; CI requires no
+generated-file changes. After checks pass on `main`, a separate job publishes
+an `api/v*` Git tag if the client module or public contract differs from the
+last client release. It starts at `api/v0.3.0` and increments minor versions
+automatically, independently of image/chart publication and deployment.
+Release jobs are serialized; reruns and older commits do not duplicate releases.
+A later green main build retries any unpublished client changes.
+See [Go client](../README.md#go-client).
 Pushes to `main` publish to
 `europe-north1-docker.pkg.dev/nais-io/nais/images/v0s` through
 `nais/platform-build-push-sign`, including an SBOM attestation and signing.
 The same job packages and pushes the OCI Helm chart to
 `oci://europe-north1-docker.pkg.dev/nais-io/nais/feature/v0s`, using the image
-version for both the chart version and `appVersion`. Its Actions summary gives
-the chart reference, version and image reference with digest for manual Fasit
-assignment. No assignment or deployment is created automatically.
+version for both the chart version and `appVersion`. After publication,
+`nais/fasit-deploy` assigns that version to `ci-nais` management and waits for
+success before assigning all management environments. A failed or timed-out
+CI deployment stops the wider rollout.
 
 Image and chart publication require infrastructure outside this repo:
 
@@ -81,9 +93,9 @@ other names need corresponding identity bindings. There are no Kubernetes API
 permissions or service-account keys. Additional private registries may need
 separate read grants. Set trusted GitHub organizations and review the
 HTTPS egress allowlist for the tenant. See the chart README for rendering and
-packaging commands. CI publishes the chart after the signed image, but creating
-or updating its Fasit assignment is a separate, manual step. Assign the chart
-reference and version from the Actions summary, not the container image URL.
+packaging commands. CI publishes the chart after the signed image, then creates
+Fasit assignments for `ci-nais` management first, with a wait for success, and
+then all management environments.
 
 ## Runtime configuration
 
@@ -141,24 +153,21 @@ implementation of the proposed GraphQL layer in Nais API.
 - A failed feed refresh retains the last catalog. EPSS and KEV refreshes are
   attempted independently, so an EPSS failure does not block the first KEV
   import. Feed age remains an operational concern, not a new client protocol.
-- CVSS is returned only by `GetVulnerability`, as one entry per source/version.
-  Versions are `3.0`, `3.1` and `4.0`; `3.x` means a v3 score without a vector
-  that identifies its minor version. Both `score` and `vector` have protobuf
-  presence. Callers must inspect `Score != nil` before reading it; `GetScore()`
-  alone collapses absence to zero. Trivy and older stored records use zero for
-  missing scores, so zero is exposed only when a valid zero-impact vector
-  confirms it. Missing scores remain absent, including malformed/nonzero-impact
-  vectors without a source score. Existing stored CVSS records remain readable.
-- The public API no longer exposes finding title/raw fix status/aggregate CVSS,
+- The public API no longer exposes finding title, raw fix status,
   source-severity matrices, advisory dates, KEV metadata, EPSS percentile or the
   scanner DB version. Internal source data and scan bookkeeping are retained.
 
-This intentionally breaks generated client/source compatibility. Regenerate
-all v0s consumers and coordinate their rollout with the server; do not rely on
-old clients interpreting the new response fields. Removed protobuf field
-numbers and names are reserved, not reused. Keep rollback builds with matching
-clients available. No database migration or reset is required for this contract
-change; existing workload-scoped assessments and source data are unchanged.
+CVSS is no longer returned or stored by v0s. Use the advisory links to look up
+scores at the source. Clients that used the removed field must update to the
+`github.com/nais/v0s/api` client and stop expecting scores.
+Finding filters use `vulnerability_ids` for both single and multiple IDs or
+aliases; there is no separate singular filter.
+Removed protobuf field numbers and names are reserved, not reused.
+
+Migration 0003 drops the score column. The Deployment already stops the old
+server before running migrations. Do not roll back to a binary that expects the
+old schema after applying it; use a forward fix or restore a pre-migration
+backup. Other advisory data and workload assessments are unchanged.
 
 ## Health and diagnostics
 
@@ -189,9 +198,10 @@ not a client-side freshness protocol.
 [`grafana/v0s.json`](../grafana/v0s.json) follows the
 [`nais/cli` example](https://github.com/nais/cli/tree/main/grafana): a
 `dashboard.grafana.app/v1` resource, read-only in Grafana, with Git as the source.
-In [management Grafana](https://monitoring.nais.io/d/v0s), select the tenant's
-`*-metrics` datasource, cluster and discovered scrape job. NAV is the default.
-Cluster filtering uses the management stack's `k8s_cluster_name` label.
+In [management Grafana](https://monitoring.nais.io/d/v0s), select only the tenant's
+`*-metrics` datasource, such as `nav-metrics` or `ssb-metrics`. NAV is the default.
+All panels use `k8s_cluster_name="management"` and `job="nais-system/v0s"`;
+there are no cluster, scrape-job or replica selectors.
 
 The [handbook's Git Sync setup](https://handbook.nais.io/technical/observability/#grafana-dashboards)
 requires this repository to be accessible to the `grafana-git-sync` GitHub App.
@@ -204,9 +214,11 @@ Read the dashboard in this order:
 1. **Serving and freshness:** scrape availability, last inventory sync, oldest
    loaded vulnerability DB, unloaded replicas, and independent EPSS/KEV sync ages.
 2. **Images:** current state, backlog and missing/failed images. These three panels
-   use only the selected snapshot replica, since all replicas count the same
-   database and may have different loaded DB versions. Counts are images, not
-   workloads; unresolved image references are not included.
+   automatically use one replica with the newest loaded DB at the end of the
+   selected time range, since all replicas count the same database. All image
+   states use that same replica, including when DB versions differ. History
+   before it started is unavailable. Counts are images, not workloads;
+   unresolved image references are not included.
 3. **Processing and dependencies:** fetch/scan outcomes, scan latency, sync
    outcomes, per-replica DB age and update checks, and enrichment age.
 4. **gRPC and process:** requests, service errors, response codes, p95 latency,
@@ -254,26 +266,7 @@ Postgres is not disposable in production. Inventory, SBOMs and scan results can
 be rebuilt from external sources; suppressions cannot. Back up the database and
 verify recovery of the assessments. A caller's activity log is not a substitute.
 
-## Pilot and remaining validation
-
-The [archived manual manifest](archive/dev-nais-manual-manifest.yaml) records
-the historical manual pilot, not the current app installation. It uses
-`v13s-sa`, one PostgreSQL 18 instance and no backups; do not bulk-delete it,
-because it also defines the database. The [manual deployment verification](archive/dev-nais-deploy-2026-11-06.md)
-is a historical snapshot.
-
-On 2026-11-06, Fasit took over the dev-nais app with the dedicated `v0s`
-runtime identity, initially retaining the independent pilot database.
-Session verification on 2026-11-09 subsequently observed chart-managed CNPG
-provisioning and working read APIs in both dev-nais and NAV at
-`2026-11-09-115640-d881a93`. Dev-nais also exercised a temporary suppression
-write/read/delete. The database provisioning and later network-policy rollout
-are therefore no longer untested; backup/restore and failure recovery remain
-unverified. See the [dated consolidated evidence](status-2026-11-10.md).
-
-The 2026-11-10 NAV comparison still observed `d881a93`, without the later
-pagination and fetch/credential fixes. Local tests of those fixes are not
-live validation. These are dated observations, not a fresh deployment check.
+## Workload-suppression upgrade
 
 Schema changes now use forward migrations; do not reset a database to upgrade it.
 `0002_workload_suppressions.sql` preserves old team/image assessments in
@@ -296,10 +289,13 @@ requests missing them are rejected, and old suppression page tokens must be
 discarded. Rolling back requires a coordinated schema/data recovery; old binaries
 must not be pointed at the new schema.
 
-The comparison tool still targets the old API; see
-[`tools/compare`](../tools/compare/README.md). Live multi-replica failures, recovery
-and tenant-scale performance remain to be verified using the
-[verification checklist](verification.md).
+## Validation and integration
+
+Use the [verification checklist](verification.md) to record evidence for the
+actual deployed build: finding discrepancies, multi-replica failures, recovery
+and tenant-scale performance. Historical pilot results and local tests do not
+establish that a current deployment has passed those checks. The comparison tool
+still targets the old API; see [`tools/compare`](../tools/compare/README.md).
 
 Known integration/security follow-ups:
 
@@ -309,5 +305,3 @@ Known integration/security follow-ups:
 - Console assessment states still need mapping to v0s's three suppression states.
 - Missing packages in source SBOMs limit coverage; a successful scan is not proof
   that every package or runtime binary was represented.
-- An earlier pilot session printed a v13s database password in terminal output.
-  Confirm that it has been rotated; the archived handover records the incident.

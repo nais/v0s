@@ -1,4 +1,4 @@
-name: Check and publish image and chart
+name: Check, publish and deploy
 
 on:
   pull_request:
@@ -37,7 +37,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', 'api/go.mod', 'api/go.sum') }}
           restore-keys: go-${{ runner.os }}-
       - name: Check Go formatting
         run: mise run check:fmt
@@ -45,16 +45,24 @@ jobs:
         run: mise run check:proto
       - name: Lint Helm chart
         run: mise run check:helm
+      - name: Test API release tagging
+        run: mise run check:api-release
       - name: Go vet
         run: mise run check:vet
       - name: Staticcheck
         run: mise run check:staticcheck
       - name: Race tests
         run: mise run test
+      - name: Check client with minimum Go version
+        env:
+          GOTOOLCHAIN: local
+          GOWORK: "off"
+        run: mise exec go@1.26.11 -- go -C api test -mod=readonly ./...
       - name: Check generated code
         run: |
           mise run generate
           git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard api internal/naisapi/protoapi)"
 
   build:
     name: Build image without publishing
@@ -68,11 +76,39 @@ jobs:
           name: v0s
           push: false
 
+  release-api:
+    name: Release Go API client
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-api
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Publish API module tag
+        run: |
+          tag=$(bash tools/api-release-tag.sh)
+          if [ -z "$tag" ]; then
+            echo "No unreleased API changes."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              tag -a "$tag" -m "Release Go API client $tag"
+          git push origin "refs/tags/$tag"
+
   publish:
     name: Publish signed image and chart
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.image.outputs.version }}
     permissions:
       contents: read
       id-token: write
@@ -97,15 +133,21 @@ jobs:
           VERSION: ${{ steps.image.outputs.version }}
         # Reuse the short-lived registry login established by the image action.
         run: mise exec -- helm push "dist/v0s-${VERSION}.tgz" "$FEATURE_REPOSITORY" --registry-config "$HOME/.docker/config.json"
-      - name: References for manual Fasit assignment
-        env:
-          VERSION: ${{ steps.image.outputs.version }}
-          IMAGE: ${{ steps.image.outputs.image }}
-        run: |
-          {
-            printf '## Manual Fasit assignment\n\n'
-            printf -- "- Chart: \`%s/v0s\`\n" "$FEATURE_REPOSITORY"
-            printf -- "- Version: \`%s\`\n" "$VERSION"
-            printf -- "- Image: \`%s\`\n" "$IMAGE"
-            printf '\nNo Fasit assignment or rollout was created.\n'
-          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: publish
+    runs-on: fasit-deploy
+    permissions:
+      id-token: write
+    steps:
+      - uses: nais/fasit-deploy@53e433b1bdd08fc622e03a78584c0832c9083bd3 # v4.1.1
+        with:
+          chart: oci://europe-north1-docker.pkg.dev/nais-io/nais/feature/v0s
+          version: ${{ needs.publish.outputs.version }}
+          targets: |
+            [
+              { "target": { "kind": "management", "tenant": "ci-nais" }, "wait": true },
+              { "target": { "kind": "management" } }
+            ]

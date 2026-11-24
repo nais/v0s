@@ -30,10 +30,10 @@ INSERT INTO workloads (environment, team, name, image_reference, image_id) VALUE
 	('c1', 'team-a', 'app', 'repo/app:1', 1),
 	('c1', 'team-a', 'worker', 'repo/app:1', 1),
 	('c1', 'team-b', 'other', 'repo/app:2', 2);
-INSERT INTO vulnerabilities (id, title, cvss, db_version) VALUES
-	('CVE-1', 'lodash bug', '{"nvd": {"v3_score": 7.5}, "ghsa": {"v3_score": 8.1}}', now()),
-	('CVE-2', 'express bug', '{}', now()),
-	('CVE-3', 'other bug', '{}', now());
+INSERT INTO vulnerabilities (id, title, db_version) VALUES
+	('CVE-1', 'lodash bug', now()),
+	('CVE-2', 'express bug', now()),
+	('CVE-3', 'other bug', now());
 INSERT INTO vulnerability_aliases (alias, vulnerability_id) VALUES
 	('GHSA-1', 'CVE-1'), ('GHSA-2', 'CVE-2'), ('GHSA-2', 'CVE-3');
 INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, fixed_version, status, severity) VALUES
@@ -106,8 +106,11 @@ func TestListFindingsFilters(t *testing.T) {
 	}{
 		// sha256:a runs in two workloads, so its findings are listed for each.
 		{name: "every workload's findings", want: []string{appLodash, appExpress, workerLodash, workerExpress, otherLodash}},
-		{name: "vulnerability ID", filter: database.FindingFilter{VulnerabilityID: "CVE-1"}, want: []string{appLodash, workerLodash, otherLodash}},
-		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityID: "GHSA-1"}, want: []string{appLodash, workerLodash, otherLodash}},
+		{name: "vulnerability ID", filter: database.FindingFilter{VulnerabilityIDs: []string{"CVE-1"}}, want: []string{appLodash, workerLodash, otherLodash}},
+		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityIDs: []string{"GHSA-1"}}, want: []string{appLodash, workerLodash, otherLodash}},
+		{name: "IDs and overlapping aliases", filter: database.FindingFilter{
+			VulnerabilityIDs: []string{"CVE-2", "GHSA-1", "CVE-1", "CVE-404"},
+		}, want: []string{appLodash, appExpress, workerLodash, workerExpress, otherLodash}},
 		{name: "package key", filter: database.FindingFilter{Package: "pkg:npm/lodash"}, want: []string{appLodash, workerLodash, otherLodash}},
 		{name: "purl without version matches key", filter: database.FindingFilter{Package: "pkg:npm/lodash?arch=x"}, want: []string{appLodash, workerLodash, otherLodash}},
 		{name: "purl with version", filter: database.FindingFilter{Package: "pkg:npm/lodash@4.17.20"}, want: []string{appLodash, workerLodash}},
@@ -135,7 +138,7 @@ func TestListFindingsFilters(t *testing.T) {
 	}
 
 	t.Run("facts", func(t *testing.T) {
-		list, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityID: "CVE-1", Workload: "app"}, database.Page{})
+		list, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityIDs: []string{"CVE-1"}, Workload: "app"}, database.Page{})
 		if err != nil || len(list.Findings) != 1 {
 			t.Fatalf("ListFindings = %d findings, %v; want 1", len(list.Findings), err)
 		}
@@ -186,6 +189,8 @@ func TestListFindingsPackageTypes(t *testing.T) {
 		{name: "exact package", filter: database.FindingFilter{PackageType: "npm", Package: "pkg:npm/lodash@4.17.20"}, want: []string{appLodash, workerLodash}},
 		{name: "conflicting package", filter: database.FindingFilter{PackageType: "maven", Package: "pkg:npm/lodash"}},
 		{name: "severity", filter: database.FindingFilter{PackageType: "npm", Severities: []v0s.Severity{v0s.SeverityLow}}, want: []string{appExpress, workerExpress}},
+		{name: "IDs and overlapping aliases", filter: database.FindingFilter{PackageType: "npm", VulnerabilityIDs: []string{"CVE-1", "GHSA-1", "CVE-3"}}, want: []string{appLodash, appScoped, workerLodash, workerScoped, otherLodash}},
+		{name: "conflicting vulnerability", filter: database.FindingFilter{PackageType: "maven", VulnerabilityIDs: []string{"CVE-1"}}},
 	}
 	for _, typ := range []string{"npm/", "npm/%40scope", "npm%2F", "pkg:npm", "%", "_pm", " npm", "npm ", "n*m", "\u212Apm"} {
 		tests = append(tests, packageTypeListCase{name: "invalid " + typ, filter: database.FindingFilter{PackageType: typ}, wantErr: database.ErrInvalid})
@@ -217,6 +222,7 @@ func TestCountFindingsPackageTypes(t *testing.T) {
 		{name: "namespace is not a type", filter: database.FindingFilter{PackageType: "npm/%40scope"}, wantErr: database.ErrInvalid},
 		{name: "exact package", filter: database.FindingFilter{PackageType: "npm", Package: "pkg:npm/lodash@4.17.20"}, want: []database.FindingCount{{Key: "HIGH", Count: 2}}},
 		{name: "conflicting package", filter: database.FindingFilter{PackageType: "maven", Package: "pkg:npm/lodash"}},
+		{name: "IDs and overlapping aliases", filter: database.FindingFilter{PackageType: "npm", VulnerabilityIDs: []string{"CVE-1", "GHSA-1", "CVE-3"}}, want: []database.FindingCount{{Key: "HIGH", Count: 5}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -250,7 +256,8 @@ func TestListFindingsPackageTypeCounts(t *testing.T) {
 		{name: "severity", filter: database.FindingFilter{Severities: []v0s.Severity{v0s.SeverityLow}}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
 		{name: "exact package", filter: database.FindingFilter{Package: "pkg:npm/lodash@4.17.20"}, want: []database.FindingCount{{Key: "npm", Count: 1}}},
 		{name: "conflicting package", filter: database.FindingFilter{PackageType: "maven", Package: "pkg:npm/lodash"}},
-		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityID: "GHSA-1"}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityIDs: []string{"GHSA-1"}}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
+		{name: "IDs and overlapping aliases", filter: database.FindingFilter{PackageType: "npm", VulnerabilityIDs: []string{"CVE-1", "GHSA-1", "CVE-3"}}, want: []database.FindingCount{{Key: "npm", Count: 4}}},
 		{name: "has fix", filter: database.FindingFilter{HasFix: true}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
 		{name: "kev", filter: database.FindingFilter{OnlyKnownExploited: true}, want: []database.FindingCount{{Key: "npm", Count: 2}}},
 		{
@@ -402,7 +409,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 		{Environment: "c2", Teams: []string{"team-1", "team-2"}},
 		{Workload: "app-020"},
 		{ImageName: "repo/app", ImageDigest: "sha256:a"},
-		{VulnerabilityID: "GHSA-1"},
+		{VulnerabilityIDs: []string{"GHSA-1"}},
 		{Package: "pkg:npm/lodash@4.17.20"},
 		{HasFix: true},
 		{OnlyKnownExploited: true},

@@ -111,11 +111,11 @@ func TestStoreScan(t *testing.T) {
 		t.Errorf("components = %q, want %q", got, want)
 	}
 	got = queryStrings(t, db, `
-		SELECT v.id || ' ' || (v.severities ->> 'nvd') || ' ' || (v.cvss -> 'nvd' ->> 'v3_score') || ' ' ||
+		SELECT v.id || ' ' || (v.severities ->> 'nvd') || ' ' ||
 			array_to_string(v."references", ',') || ' ' || a.alias
 		FROM vulnerabilities v JOIN vulnerability_aliases a ON a.vulnerability_id = v.id
 		WHERE v.id = 'CVE-A'`)
-	if want := []string{"CVE-A HIGH 7.5 https://example.com/CVE-A GHSA-CVE-A"}; !slices.Equal(got, want) {
+	if want := []string{"CVE-A HIGH https://example.com/CVE-A GHSA-CVE-A"}; !slices.Equal(got, want) {
 		t.Errorf("vulnerability = %q, want %q", got, want)
 	}
 }
@@ -255,7 +255,6 @@ func scanResult(findings ...string) v0s.ScanResult {
 			ID:         id,
 			Aliases:    []string{"GHSA-" + id},
 			Severities: map[string]v0s.Severity{"nvd": v0s.SeverityHigh},
-			CVSS:       map[string]v0s.CVSS{"nvd": {V3Score: 7.5}},
 			References: []string{"https://example.com/" + id},
 		})
 		r.Components = append(r.Components, v0s.Component{PURL: purl, PackageKey: purl, Name: purl, Version: "1"})

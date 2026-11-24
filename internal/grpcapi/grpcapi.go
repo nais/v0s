@@ -114,11 +114,18 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
-	resp := &v0sv1.ListFindingsResponse{Findings: make([]*v0sv1.Finding, 0, len(found.Findings)), NextPageToken: found.NextPageToken}
+	resp := &v0sv1.ListFindingsResponse{
+		Findings: make([]*v0sv1.Finding, 0, len(found.Findings)), NextPageToken: found.NextPageToken,
+		Cursors: make([]string, 0, len(found.Findings)),
+	}
 	for _, c := range found.PackageTypeCounts {
 		resp.PackageTypeCounts = append(resp.PackageTypeCounts, &v0sv1.PackageTypeCount{Value: c.Key, Count: c.Count})
 	}
 	for _, f := range found.Findings {
+		cursor, err := f.PageToken()
+		if err != nil {
+			return nil, s.toStatus(ctx, err)
+		}
 		pf := &v0sv1.Finding{
 			Workload:         &v0sv1.WorkloadRef{Environment: f.Workload.Environment, Team: f.Workload.Team, Name: f.Workload.Name},
 			Image:            imageToProto(f.Image),
@@ -137,6 +144,7 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 			pf.Suppression = suppressionToProto(*f.Suppression)
 		}
 		resp.Findings = append(resp.Findings, pf)
+		resp.Cursors = append(resp.Cursors, cursor)
 	}
 	return resp, nil
 }
@@ -187,7 +195,6 @@ func (s *Server) GetVulnerability(ctx context.Context, req *v0sv1.GetVulnerabili
 		Aliases:        v.Aliases,
 		Title:          v.Title,
 		Description:    v.Description,
-		Cvss:           cvssToProto(v.CVSS),
 		References:     v.References,
 		Epss:           epssToProto(v.EPSS),
 		KnownExploited: v.KnownExploited,
@@ -234,13 +241,18 @@ func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
 	if err := validateScope(f.GetTeam(), f.GetEnvironment(), f.GetWorkload()); err != nil {
 		return database.FindingFilter{}, err
 	}
+	for _, id := range f.GetVulnerabilityIds() {
+		if strings.TrimSpace(id) == "" {
+			return database.FindingFilter{}, invalidArgument("vulnerability_ids cannot contain empty values")
+		}
+	}
 	filter := database.FindingFilter{
 		Teams:              teamFilter(f.GetTeam()),
 		Environment:        f.GetEnvironment(),
 		Workload:           f.GetWorkload(),
 		ImageName:          f.GetImageName(),
 		ImageDigest:        f.GetImageDigest(),
-		VulnerabilityID:    f.GetVulnerabilityId(),
+		VulnerabilityIDs:   f.GetVulnerabilityIds(),
 		Package:            f.GetPackage(),
 		PackageType:        f.GetPackageType(),
 		HasFix:             f.GetHasFix(),

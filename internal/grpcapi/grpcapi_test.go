@@ -48,6 +48,55 @@ func newServer(t *testing.T, statements ...string) *grpcapi.Server {
 	return grpcapi.New(db, slog.New(slog.DiscardHandler))
 }
 
+func TestFindingVulnerabilityIDs(t *testing.T) {
+	s := newServer(t, `
+		INSERT INTO vulnerabilities (id, title, db_version) VALUES ('CVE-2', 'other bug', now());
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		SELECT id, 'CVE-2', 'pkg:npm/express@4.0.0', 'pkg:npm/express', '4.0.0', 'affected', 'HIGH' FROM images;`)
+	tests := []struct {
+		name      string
+		ids       []string
+		want      int
+		wantError codes.Code
+	}{
+		{name: "no filter", want: 8},
+		{name: "one ID", ids: []string{"CVE-1"}, want: 4},
+		{name: "multiple IDs and overlapping aliases", ids: []string{"CVE-1", "GHSA-1", "CVE-2", "CVE-404"}, want: 8},
+		{name: "alias", ids: []string{"GHSA-1"}, want: 4},
+		{name: "unknown ID", ids: []string{"CVE-404"}},
+		{name: "empty ID", ids: []string{""}, wantError: codes.InvalidArgument},
+		{name: "blank ID", ids: []string{"CVE-1", " "}, wantError: codes.InvalidArgument},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := &v0sv1.FindingFilter{VulnerabilityIds: tt.ids}
+			findings, err := s.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{Filter: filter})
+			if status.Code(err) != tt.wantError {
+				t.Fatalf("list: %v, want %v", err, tt.wantError)
+			}
+			counts, err := s.CountFindings(t.Context(), &v0sv1.CountFindingsRequest{
+				Filter: filter, GroupBy: v0sv1.CountFindingsRequest_GROUP_BY_SEVERITY,
+			})
+			if status.Code(err) != tt.wantError {
+				t.Fatalf("count: %v, want %v", err, tt.wantError)
+			}
+			if tt.wantError != codes.OK {
+				return
+			}
+			if len(findings.GetFindings()) != tt.want {
+				t.Errorf("findings = %d, want %d", len(findings.GetFindings()), tt.want)
+			}
+			var total int64
+			for _, bucket := range counts.GetBuckets() {
+				total += bucket.GetCount()
+			}
+			if total != int64(tt.want) {
+				t.Errorf("count = %d, want %d", total, tt.want)
+			}
+		})
+	}
+}
+
 func TestSuppressions(t *testing.T) {
 	s := newServer(t)
 	ctx := context.Background()
@@ -79,12 +128,94 @@ func TestSuppressions(t *testing.T) {
 	}
 }
 
+func TestFindingCursorsSurviveSuppression(t *testing.T) {
+	s := newServer(t)
+	ctx := context.Background()
+	listed, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.GetFindings()) != 4 || len(listed.GetCursors()) != 4 || listed.GetNextPageToken() != "" {
+		t.Fatalf("initial findings = %v, want four findings and their cursors on the last page", listed)
+	}
+	first := listed.GetFindings()[0]
+	_, err = s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{
+		Team: "team", Actor: "me",
+		Suppressions: []*v0sv1.NewSuppression{{
+			Key: &v0sv1.SuppressionKey{
+				Environment: first.GetWorkload().GetEnvironment(), Workload: first.GetWorkload().GetName(),
+				ImageName: first.GetImage().GetName(), Package: first.GetPackageKey(), VulnerabilityId: first.GetVulnerabilityId(),
+			},
+			State: v0sv1.SuppressionState_SUPPRESSION_STATE_ACCEPTED_RISK, Detail: "assessed",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, cursor := range listed.GetCursors() {
+		resumed, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{PageSize: 10, PageToken: cursor})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := len(resumed.GetFindings()), 3-i; got != want {
+			t.Fatalf("cursor %d returned %d findings after suppression, want %d", i, got, want)
+		}
+		if i < 3 {
+			got, want := resumed.GetFindings()[0].GetWorkload(), listed.GetFindings()[i+1].GetWorkload()
+			if got.GetEnvironment() != want.GetEnvironment() || got.GetName() != want.GetName() {
+				t.Fatalf("cursor %d skipped the next workload: got %v, want %v", i, got, want)
+			}
+		}
+	}
+}
+
+func TestSuppressionCursorsSurviveDeletion(t *testing.T) {
+	s := newServer(t)
+	ctx := context.Background()
+	keys := []*v0sv1.SuppressionKey{}
+	items := []*v0sv1.NewSuppression{}
+	for _, name := range []string{"app", "worker"} {
+		key := &v0sv1.SuppressionKey{
+			Environment: "prod", Workload: name, ImageName: "repo/app", Package: "pkg:npm/lodash", VulnerabilityId: "CVE-1",
+		}
+		keys = append(keys, key)
+		items = append(items, &v0sv1.NewSuppression{
+			Key: key, State: v0sv1.SuppressionState_SUPPRESSION_STATE_ACCEPTED_RISK, Detail: "assessed",
+		})
+	}
+	if _, err := s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{Team: "team", Actor: "me", Suppressions: items}); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{Team: "team"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.GetSuppressions()) != 2 || len(listed.GetCursors()) != 2 || listed.GetNextPageToken() != "" {
+		t.Fatalf("initial suppressions = %v, want two suppressions and their cursors on the last page", listed)
+	}
+	if _, err := s.DeleteSuppressions(ctx, &v0sv1.DeleteSuppressionsRequest{Team: "team", Keys: keys[:1]}); err != nil {
+		t.Fatal(err)
+	}
+	for i, cursor := range listed.GetCursors() {
+		resumed, err := s.ListSuppressions(ctx, &v0sv1.ListSuppressionsRequest{Team: "team", PageToken: cursor})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := len(resumed.GetSuppressions()), 1-i; got != want {
+			t.Fatalf("cursor %d returned %d suppressions after deletion, want %d", i, got, want)
+		}
+		if i == 0 && resumed.GetSuppressions()[0].GetWorkload() != "worker" {
+			t.Fatalf("next workload was skipped: %v", resumed)
+		}
+	}
+}
+
 func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	s := newServer(t)
 	ctx := context.Background()
 	req := &v0sv1.ListFindingsRequest{
 		Filter: &v0sv1.FindingFilter{
-			Team: "team", VulnerabilityId: "GHSA-1",
+			Team: "team", VulnerabilityIds: []string{"GHSA-1"},
 			Suppressed: v0sv1.SuppressedFilter_SUPPRESSED_FILTER_INCLUDE,
 		},
 		PageSize: 1,
@@ -118,7 +249,7 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	if _, err := s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{Team: "team", Actor: "me", Suppressions: selected}); err != nil {
 		t.Fatal(err)
 	}
-	active, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Team: "team", VulnerabilityId: "CVE-1"}})
+	active, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Team: "team", VulnerabilityIds: []string{"CVE-1"}}})
 	if err != nil || len(active.GetFindings()) != 2 {
 		t.Fatalf("active findings = %v, %v; want both dev workloads", active, err)
 	}
@@ -147,14 +278,16 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 type packageTypeFilterCase struct {
 	name string
 	typ  string
+	ids  []string
 	purl string
 	want int
 }
 
 func TestFindingPackageTypeFilter(t *testing.T) {
 	s := newServer(t, `
+		INSERT INTO vulnerabilities (id, title, db_version) VALUES ('CVE-2', 'maven bug', now());
 		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
-		SELECT id, 'CVE-1', 'pkg:maven/org.example/lib@1', 'pkg:maven/org.example/lib', '1', 'affected', 'LOW' FROM images;
+		SELECT id, 'CVE-2', 'pkg:maven/org.example/lib@1', 'pkg:maven/org.example/lib', '1', 'affected', 'LOW' FROM images;
 	`)
 	ctx := context.Background()
 	tests := []packageTypeFilterCase{
@@ -162,10 +295,12 @@ func TestFindingPackageTypeFilter(t *testing.T) {
 		{name: "npm", typ: "npm", purl: "pkg:npm/lodash@4.17.20", want: 4},
 		{name: "uppercase", typ: "MAVEN", purl: "pkg:maven/org.example/lib@1", want: 4},
 		{name: "unknown", typ: "golang"},
+		{name: "IDs and overlapping aliases", typ: "npm", ids: []string{"CVE-1", "GHSA-1", "CVE-2"}, purl: "pkg:npm/lodash@4.17.20", want: 4},
+		{name: "conflicting vulnerability", typ: "npm", ids: []string{"CVE-2"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			filter := &v0sv1.FindingFilter{PackageType: tt.typ}
+			filter := &v0sv1.FindingFilter{PackageType: tt.typ, VulnerabilityIds: tt.ids}
 			found, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: filter})
 			if err != nil {
 				t.Fatal(err)
@@ -193,6 +328,40 @@ func TestFindingPackageTypeFilter(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("filtered cursors and counts across pages", func(t *testing.T) {
+		req := &v0sv1.ListFindingsRequest{
+			Filter:   &v0sv1.FindingFilter{PackageType: "npm", VulnerabilityIds: []string{"CVE-1", "GHSA-1", "CVE-2"}},
+			PageSize: 1,
+		}
+		var previous *v0sv1.WorkloadRef
+		for i := range 4 {
+			found, err := s.ListFindings(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(found.GetFindings()) != 1 || len(found.GetCursors()) != 1 {
+				t.Fatalf("page %d = %v, want one finding and its cursor", i, found)
+			}
+			finding := found.GetFindings()[0]
+			workload := finding.GetWorkload()
+			if finding.GetPurl() != "pkg:npm/lodash@4.17.20" ||
+				(previous != nil && previous.GetEnvironment() == workload.GetEnvironment() && previous.GetName() == workload.GetName()) {
+				t.Fatalf("page %d returned an unexpected or repeated finding: %v", i, finding)
+			}
+			counts := found.GetPackageTypeCounts()
+			if len(counts) != 1 || counts[0].GetValue() != "npm" || counts[0].GetCount() != 4 {
+				t.Fatalf("page %d counts = %v, want npm:4", i, counts)
+			}
+			cursor := found.GetCursors()[0]
+			if cursor == "" || cursor == req.PageToken ||
+				(i < 3 && found.GetNextPageToken() != cursor) || (i == 3 && found.GetNextPageToken() != "") {
+				t.Fatalf("page %d returned an invalid cursor or next page token: %v", i, found)
+			}
+			req.PageToken = cursor
+			previous = workload
+		}
+	})
 
 	t.Run("package type counts before pagination", func(t *testing.T) {
 		found, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{PageSize: 1})

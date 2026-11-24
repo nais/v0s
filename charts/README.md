@@ -184,14 +184,16 @@ VERSION="$VERSION" mise run build:chart
 
 After green checks, pushes to `main` publish the signed image and a self-contained
 OCI chart. The chart version and `appVersion` both use the image build version.
-The Actions summary supplies the chart reference, version and image digest:
+The release uses:
 
 - Chart: `oci://europe-north1-docker.pkg.dev/nais-io/nais/feature/v0s`
 - Version: the published build version
 - Image: the corresponding container reference with digest
 
-Fasit assignments remain manual. The pipeline does not deploy or change an
-assignment. The publisher needs writer access to the `nais` GAR repository;
+The pipeline assigns the chart through Fasit to `ci-nais` management and waits
+for success before assigning all management environments. Failure or timeout
+stops the wider rollout.
+The publisher needs writer access to the `nais` GAR repository;
 checks must be able to read the `nais-postgresql` chart dependency.
 
 Rendering does not prove live database bootstrap, NetworkPolicy enforcement,

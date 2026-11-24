@@ -142,8 +142,8 @@ type FindingFilter struct {
 	Workload           string
 	ImageName          string
 	ImageDigest        string
-	VulnerabilityID    string // ID or alias
-	Package            string // package key, or purl with version for an exact match
+	VulnerabilityIDs   []string // IDs or aliases
+	Package            string   // package key, or purl with version for an exact match
 	PackageType        string
 	Severities         []v0s.Severity
 	HasFix             bool // only findings with a fixed version
@@ -169,8 +169,9 @@ func (f FindingFilter) conditions(args *sqlArgs) ([]string, error) {
 	if f.ImageDigest != "" {
 		where = append(where, "i.digest = "+args.add(f.ImageDigest))
 	}
-	if f.VulnerabilityID != "" {
-		where = append(where, vulnerabilityMatch("f.vulnerability_id", f.VulnerabilityID, args))
+	if len(f.VulnerabilityIDs) > 0 {
+		p := args.add(f.VulnerabilityIDs)
+		where = append(where, fmt.Sprintf("(f.vulnerability_id = ANY(%[1]s) OR f.vulnerability_id IN (SELECT vulnerability_id FROM vulnerability_aliases WHERE alias = ANY(%[1]s)))", p))
 	}
 	if f.Package != "" {
 		cond, err := packageMatch("f.purl", "f.package_key", f.Package, args)
@@ -255,6 +256,17 @@ type FindingList struct {
 	NextPageToken     string
 }
 
+// PageToken returns a cursor immediately after this finding.
+func (f WorkloadFinding) PageToken() (string, error) {
+	return encodePageToken(findingCursor{
+		Environment:     f.Workload.Environment,
+		Team:            f.Workload.Team,
+		Workload:        f.Workload.Name,
+		VulnerabilityID: f.Finding.VulnerabilityID,
+		PURL:            f.Finding.PURL,
+	})
+}
+
 // ListFindings lists the findings of workloads that match filter, ordered by
 // workload, vulnerability and purl, with package type counts before pagination.
 func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page) (FindingList, error) {
@@ -328,18 +340,16 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		fi.EPSS = epss.epss(fi.Finding.VulnerabilityID)
 		if state != nil {
 			fi.Suppression = &Suppression{
-				SuppressionKey: SuppressionKey{
-					Environment:     fi.Workload.Environment,
-					Workload:        fi.Workload.Name,
-					ImageName:       fi.Image.Name,
-					Package:         fi.Finding.PackageKey,
-					VulnerabilityID: fi.Finding.VulnerabilityID,
-				},
-				Team:      fi.Workload.Team,
-				State:     *state,
-				Detail:    *detail,
-				UpdatedBy: *updatedBy,
-				UpdatedAt: updatedAt.Time,
+				Environment:     fi.Workload.Environment,
+				Workload:        fi.Workload.Name,
+				ImageName:       fi.Image.Name,
+				Package:         fi.Finding.PackageKey,
+				VulnerabilityID: fi.Finding.VulnerabilityID,
+				Team:            fi.Workload.Team,
+				State:           *state,
+				Detail:          *detail,
+				UpdatedBy:       *updatedBy,
+				UpdatedAt:       updatedAt.Time,
 			}
 		}
 		return fi, nil
@@ -351,14 +361,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	var next string
 	if len(findings) > limit {
 		findings = findings[:limit]
-		last := findings[limit-1]
-		next, err = encodePageToken(findingCursor{
-			Environment:     last.Workload.Environment,
-			Team:            last.Workload.Team,
-			Workload:        last.Workload.Name,
-			VulnerabilityID: last.Finding.VulnerabilityID,
-			PURL:            last.Finding.PURL,
-		})
+		next, err = findings[limit-1].PageToken()
 		if err != nil {
 			return FindingList{}, err
 		}
@@ -516,11 +519,11 @@ func (db *DB) GetVulnerability(ctx context.Context, idOrAlias string) (Vulnerabi
 		publishedAt, modifiedAt pgtype.Timestamptz
 		epss                    epssScan
 	)
-	dest := []any{&d.ID, &d.Title, &d.Description, &d.Severities, &d.CVSS, &d.References, &publishedAt, &modifiedAt, &d.Aliases}
+	dest := []any{&d.ID, &d.Title, &d.Description, &d.Severities, &d.References, &publishedAt, &modifiedAt, &d.Aliases}
 	dest = append(dest, epss.dest()...)
 	dest = append(dest, &d.KnownExploited)
 	err = db.pool.QueryRow(ctx, `
-		SELECT v.id, v.title, v.description, v.severities, v.cvss, v."references", v.published_at, v.modified_at,
+		SELECT v.id, v.title, v.description, v.severities, v."references", v.published_at, v.modified_at,
 			ARRAY(SELECT alias FROM vulnerability_aliases WHERE vulnerability_id = v.id ORDER BY alias),
 			e.score, e.date, k.cve IS NOT NULL
 		FROM vulnerabilities v
