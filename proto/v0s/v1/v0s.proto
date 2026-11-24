@@ -115,6 +115,9 @@ message FindingFilter {
   SuppressedFilter suppressed = 11;
   // Match any listed vulnerability ID or alias.
   repeated string vulnerability_ids = 13;
+  // Purl type, e.g. "npm" or "maven", case-insensitive and combined with other filters.
+  // Empty does not filter; unknown types match nothing; malformed types are InvalidArgument.
+  string package_type = 14;
 }
 
 enum SuppressedFilter {
@@ -186,6 +189,12 @@ message ListFindingsResponse {
   // One cursor per finding, in the same order. Each can be used as page_token
   // to continue after that finding, including when it is no longer present.
   repeated string cursors = 3;
+  repeated PackageTypeCount package_type_counts = 4;
+}
+
+message PackageTypeCount {
+  string value = 1;
+  int64 count = 2;
 }
 
 message CountFindingsRequest {

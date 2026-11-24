@@ -113,6 +113,20 @@ from the advisory source; EPSS and KEV come from FIRST and CISA without our own
 thresholds or scoring. Components are searchable even when they have no findings.
 No finding history, trends or first-seen timestamps are kept.
 
+`ListFindings` and `CountFindings` accept `FindingFilter.package_type`, such as
+`npm`, `maven` or `golang`. It is case-insensitive and combines with the other
+filters using AND, including the existing exact-purl/package-key filter.
+An empty type does not filter; unknown types match nothing. Malformed types
+return `InvalidArgument`, like malformed values of the `package` filter.
+
+`ListFindings` returns `package_type_counts` in byte order, derived from the
+matching package keys. All active filters apply, including `package_type`
+and suppression. Counts cover the full filtered result, not just the current
+page, and count a finding once per workload using its image. The page and counts
+come from the same database snapshot. Per-finding `cursors` remain available
+alongside the counts; resuming from a cursor does not narrow the counts to the
+remaining findings.
+
 The public read contract accepts one team or the whole tenant. A workload name
 requires a team and environment. Advisory details include links to the sources;
 v0s uses the scanner's severity rather than storing a separate score.

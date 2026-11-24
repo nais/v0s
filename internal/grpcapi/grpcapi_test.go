@@ -275,6 +275,115 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	}
 }
 
+type packageTypeFilterCase struct {
+	name string
+	typ  string
+	ids  []string
+	purl string
+	want int
+}
+
+func TestFindingPackageTypeFilter(t *testing.T) {
+	s := newServer(t, `
+		INSERT INTO vulnerabilities (id, title, db_version) VALUES ('CVE-2', 'maven bug', now());
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		SELECT id, 'CVE-2', 'pkg:maven/org.example/lib@1', 'pkg:maven/org.example/lib', '1', 'affected', 'LOW' FROM images;
+	`)
+	ctx := context.Background()
+	tests := []packageTypeFilterCase{
+		{name: "empty", want: 8},
+		{name: "npm", typ: "npm", purl: "pkg:npm/lodash@4.17.20", want: 4},
+		{name: "uppercase", typ: "MAVEN", purl: "pkg:maven/org.example/lib@1", want: 4},
+		{name: "unknown", typ: "golang"},
+		{name: "IDs and overlapping aliases", typ: "npm", ids: []string{"CVE-1", "GHSA-1", "CVE-2"}, purl: "pkg:npm/lodash@4.17.20", want: 4},
+		{name: "conflicting vulnerability", typ: "npm", ids: []string{"CVE-2"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := &v0sv1.FindingFilter{PackageType: tt.typ, VulnerabilityIds: tt.ids}
+			found, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: filter})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(found.GetFindings()) != tt.want {
+				t.Errorf("findings = %d, want %d", len(found.GetFindings()), tt.want)
+			}
+			for _, finding := range found.GetFindings() {
+				if tt.purl != "" && finding.GetPurl() != tt.purl {
+					t.Errorf("purl = %q, want %q", finding.GetPurl(), tt.purl)
+				}
+			}
+			counted, err := s.CountFindings(ctx, &v0sv1.CountFindingsRequest{
+				Filter: filter, GroupBy: v0sv1.CountFindingsRequest_GROUP_BY_SEVERITY,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var total int64
+			for _, bucket := range counted.GetBuckets() {
+				total += bucket.GetCount()
+			}
+			if total != int64(tt.want) {
+				t.Errorf("count = %d, want %d", total, tt.want)
+			}
+		})
+	}
+
+	t.Run("filtered cursors and counts across pages", func(t *testing.T) {
+		req := &v0sv1.ListFindingsRequest{
+			Filter:   &v0sv1.FindingFilter{PackageType: "npm", VulnerabilityIds: []string{"CVE-1", "GHSA-1", "CVE-2"}},
+			PageSize: 1,
+		}
+		var previous *v0sv1.WorkloadRef
+		for i := range 4 {
+			found, err := s.ListFindings(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(found.GetFindings()) != 1 || len(found.GetCursors()) != 1 {
+				t.Fatalf("page %d = %v, want one finding and its cursor", i, found)
+			}
+			finding := found.GetFindings()[0]
+			workload := finding.GetWorkload()
+			if finding.GetPurl() != "pkg:npm/lodash@4.17.20" ||
+				(previous != nil && previous.GetEnvironment() == workload.GetEnvironment() && previous.GetName() == workload.GetName()) {
+				t.Fatalf("page %d returned an unexpected or repeated finding: %v", i, finding)
+			}
+			counts := found.GetPackageTypeCounts()
+			if len(counts) != 1 || counts[0].GetValue() != "npm" || counts[0].GetCount() != 4 {
+				t.Fatalf("page %d counts = %v, want npm:4", i, counts)
+			}
+			cursor := found.GetCursors()[0]
+			if cursor == "" || cursor == req.PageToken ||
+				(i < 3 && found.GetNextPageToken() != cursor) || (i == 3 && found.GetNextPageToken() != "") {
+				t.Fatalf("page %d returned an invalid cursor or next page token: %v", i, found)
+			}
+			req.PageToken = cursor
+			previous = workload
+		}
+	})
+
+	t.Run("package type counts before pagination", func(t *testing.T) {
+		found, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{PageSize: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(found.GetFindings()) != 1 || found.GetNextPageToken() == "" {
+			t.Fatalf("findings = %d, next=%q; want one finding and continuation", len(found.GetFindings()), found.GetNextPageToken())
+		}
+		want := []*v0sv1.PackageTypeCount{{Value: "maven", Count: 4}, {Value: "npm", Count: 4}}
+		counts := found.GetPackageTypeCounts()
+		if len(counts) != len(want) {
+			t.Fatalf("package type counts = %v, want %v", counts, want)
+		}
+		for i, count := range counts {
+			if count.GetValue() != want[i].GetValue() || count.GetCount() != want[i].GetCount() {
+				t.Errorf("ListFindings package type count = %v, want %v", count, want[i])
+			}
+		}
+	})
+}
+
 func TestErrorCodes(t *testing.T) {
 	s := newServer(t)
 	ctx := context.Background()
@@ -290,6 +399,17 @@ func TestErrorCodes(t *testing.T) {
 		}},
 		{name: "unspecified severity", want: codes.InvalidArgument, call: func() error {
 			_, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Severities: []v0sv1.Severity{0}}})
+			return err
+		}},
+		{name: "invalid package type in list", want: codes.InvalidArgument, call: func() error {
+			_, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{PackageType: "npm/namespace"}})
+			return err
+		}},
+		{name: "invalid package type in count", want: codes.InvalidArgument, call: func() error {
+			_, err := s.CountFindings(ctx, &v0sv1.CountFindingsRequest{
+				Filter:  &v0sv1.FindingFilter{PackageType: "npm/namespace"},
+				GroupBy: v0sv1.CountFindingsRequest_GROUP_BY_SEVERITY,
+			})
 			return err
 		}},
 		{name: "invalid in the database", want: codes.InvalidArgument, call: func() error {

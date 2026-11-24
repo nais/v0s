@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -143,6 +144,7 @@ type FindingFilter struct {
 	ImageDigest        string
 	VulnerabilityIDs   []string // IDs or aliases
 	Package            string   // package key, or purl with version for an exact match
+	PackageType        string
 	Severities         []v0s.Severity
 	HasFix             bool // only findings with a fixed version
 	OnlyKnownExploited bool // only findings for vulnerabilities in CISA KEV
@@ -177,6 +179,12 @@ func (f FindingFilter) conditions(args *sqlArgs) ([]string, error) {
 			return nil, err
 		}
 		where = append(where, cond)
+	}
+	if f.PackageType != "" {
+		if !packageurl.TypePattern.MatchString(f.PackageType) {
+			return nil, fmt.Errorf("package type %q is invalid: %w", f.PackageType, ErrInvalid)
+		}
+		where = append(where, "starts_with(f.package_key, "+args.add("pkg:"+strings.ToLower(f.PackageType)+"/")+")")
 	}
 	if len(f.Severities) > 0 {
 		sev := make([]string, len(f.Severities))
@@ -240,6 +248,14 @@ type findingCursor struct {
 	PURL            string `json:"p"`
 }
 
+// FindingList is one page of findings with package type counts for every page.
+// NextPageToken is empty on the last page.
+type FindingList struct {
+	Findings          []WorkloadFinding
+	PackageTypeCounts []FindingCount
+	NextPageToken     string
+}
+
 // PageToken returns a cursor immediately after this finding.
 func (f WorkloadFinding) PageToken() (string, error) {
 	return encodePageToken(findingCursor{
@@ -252,19 +268,20 @@ func (f WorkloadFinding) PageToken() (string, error) {
 }
 
 // ListFindings lists the findings of workloads that match filter, ordered by
-// workload, vulnerability and purl. It returns the next page token, empty on the last page.
-func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page) ([]WorkloadFinding, string, error) {
+// workload, vulnerability and purl, with package type counts before pagination.
+func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page) (FindingList, error) {
 	var cursor findingCursor
 	if err := decodePageToken(page.Token, &cursor); err != nil {
-		return nil, "", err
+		return FindingList{}, err
 	}
 	var args sqlArgs
 	where, err := filter.conditions(&args)
 	if err != nil {
-		return nil, "", err
+		return FindingList{}, err
 	}
+	countWhere, countArgs := slices.Clone(where), slices.Clone(args)
 	if err := db.requireKEVCatalog(ctx); err != nil {
-		return nil, "", err
+		return FindingList{}, err
 	}
 	if page.Token != "" {
 		env, team, workload := args.add(cursor.Environment), args.add(cursor.Team), args.add(cursor.Workload)
@@ -278,7 +295,13 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	}
 	limit := page.limit()
 
-	rows, err := db.pool.Query(ctx, `
+	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return FindingList{}, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	rows, err := tx.Query(ctx, `
 		SELECT w.environment, w.team, w.name, `+imageColumns+`,
 			f.vulnerability_id, f.purl, f.package_key, f.installed_version, f.fixed_version, f.status,
 			f.severity, f.severity_source, f.data_source,
@@ -291,7 +314,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		ORDER BY w.environment, w.team, w.name, f.vulnerability_id, f.purl
 		LIMIT `+args.add(limit+1), args...)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing findings: %w", err)
+		return FindingList{}, fmt.Errorf("listing findings: %w", err)
 	}
 	findings, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (WorkloadFinding, error) {
 		var (
@@ -332,7 +355,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		return fi, nil
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("listing findings: %w", err)
+		return FindingList{}, fmt.Errorf("listing findings: %w", err)
 	}
 
 	var next string
@@ -340,10 +363,14 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		findings = findings[:limit]
 		next, err = findings[limit-1].PageToken()
 		if err != nil {
-			return nil, "", err
+			return FindingList{}, err
 		}
 	}
-	return findings, next, nil
+	counts, err := countFindings(ctx, tx, GroupByPackageType, countWhere, countArgs)
+	if err != nil {
+		return FindingList{}, err
+	}
+	return FindingList{Findings: findings, PackageTypeCounts: counts, NextPageToken: next}, nil
 }
 
 // epssScan reads e.score and e.date from a LEFT JOIN.
@@ -371,7 +398,26 @@ const (
 	GroupByWorkload // key "environment/team/name"
 	GroupByImage    // key "name@digest"
 	GroupByVulnerability
+	GroupByPackageType
 )
+
+func (g GroupBy) key() string {
+	switch g {
+	case GroupBySeverity:
+		return "f.severity"
+	case GroupByTeam:
+		return "w.team"
+	case GroupByWorkload:
+		return "w.environment || '/' || w.team || '/' || w.name"
+	case GroupByImage:
+		return "i.name || '@' || i.digest"
+	case GroupByVulnerability:
+		return "f.vulnerability_id"
+	case GroupByPackageType:
+		return `split_part(split_part(f.package_key, '/', 1), ':', 2) COLLATE "C"`
+	}
+	return ""
+}
 
 // FindingCount is the number of findings with one value of the grouped dimension.
 type FindingCount struct {
@@ -383,19 +429,7 @@ type FindingCount struct {
 // one dimension and ordered by key. Like ListFindings, it counts a finding once
 // for every workload whose image has it.
 func (db *DB) CountFindings(ctx context.Context, filter FindingFilter, groupBy GroupBy) ([]FindingCount, error) {
-	var key string
-	switch groupBy {
-	case GroupBySeverity:
-		key = "f.severity"
-	case GroupByTeam:
-		key = "w.team"
-	case GroupByWorkload:
-		key = "w.environment || '/' || w.team || '/' || w.name"
-	case GroupByImage:
-		key = "i.name || '@' || i.digest"
-	case GroupByVulnerability:
-		key = "f.vulnerability_id"
-	default:
+	if groupBy.key() == "" {
 		return nil, fmt.Errorf("group by is required: %w", ErrInvalid)
 	}
 	var args sqlArgs
@@ -408,9 +442,12 @@ func (db *DB) CountFindings(ctx context.Context, filter FindingFilter, groupBy G
 			return nil, err
 		}
 	}
+	return countFindings(ctx, db.pool, groupBy, where, args)
+}
 
-	rows, err := db.pool.Query(ctx, `
-		SELECT `+key+`, count(*)
+func countFindings(ctx context.Context, q pgxQuerier, groupBy GroupBy, where []string, args sqlArgs) ([]FindingCount, error) {
+	rows, err := q.Query(ctx, `
+		SELECT `+groupBy.key()+`, count(*)
 		FROM `+findingsFrom+`
 		WHERE `+and(where)+`
 		GROUP BY 1 ORDER BY 1`, args...)

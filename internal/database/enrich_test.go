@@ -91,7 +91,7 @@ func TestKEVCatalogAvailability(t *testing.T) {
 	db, exec := newFixture(t)
 	exec(`DELETE FROM kev`)
 	ctx := t.Context()
-	if _, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{}); !errors.Is(err, database.ErrUnavailable) {
+	if _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{}); !errors.Is(err, database.ErrUnavailable) {
 		t.Errorf("findings without catalog: %v, want ErrUnavailable", err)
 	}
 	if _, err := db.GetVulnerability(ctx, "CVE-1"); !errors.Is(err, database.ErrUnavailable) {
@@ -106,11 +106,11 @@ func TestKEVCatalogAvailability(t *testing.T) {
 	if err := db.ReplaceKEV(ctx, []v0s.KEV{{CVE: "CVE-1", DateAdded: time.Now()}}); err != nil {
 		t.Fatal(err)
 	}
-	findings, _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
+	list, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range findings {
+	for _, f := range list.Findings {
 		if f.KnownExploited != (f.Finding.VulnerabilityID == "CVE-1") {
 			t.Errorf("unexpected membership: %+v", f)
 		}
