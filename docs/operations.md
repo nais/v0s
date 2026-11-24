@@ -121,6 +121,7 @@ rollback; scaling only the live Deployment is insufficient. Follow the
 | `PROBE_ADDR` | `:8080` (HTTP probes and metrics) |
 | `TRIVY_DB_DIR` | `/var/cache/v0s/trivy-db` |
 | `TRIVY_DB_REPOSITORIES` | Comma-separated fallback order; default `mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2` |
+| `V13S_FORWARDING_ENABLED` | Unset: suppressions forwarded from v13s are rejected. `true` from the chart's `v13sForwarding.enabled` until cutover |
 
 Nais API must expose a wire-compatible `Workloads.ListImages`; the client schema
 is vendored in [`third_party/naisapi`](../third_party/naisapi/workloads.proto).

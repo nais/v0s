@@ -138,6 +138,17 @@ team; cross-team operations require separate authorization and requests.
 `ListSuppressions` can filter by environment and workload. These are service
 capabilities, not an implemented Console workflow.
 
+Until cutover, v13s forwards its suppression changes with `ForwardV13sSuppression`
+on the same `SuppressionService`, accepted only while `V13S_FORWARDING_ENABLED`
+is `true`. Each call carries v13s's current assessment of one image
+name, package and vulnerability, already normalized and checked for conflicts by
+v13s. v0s resolves the vulnerability IDs against its own catalog and sets the
+assessment, keeping v13s's actor and update time, on every workload currently
+resolved to that image name across teams and environments, or deletes it from all
+of them. An unknown or ambiguous vulnerability, or an image name no workload runs,
+is returned as an outcome and changes nothing. It never adds vulnerabilities or
+aliases. Workloads that start running the image name later inherit nothing.
+
 Inventory and scan results can be rebuilt; suppressions cannot. They are durable
 human assessments owned here and require backup and recovery.
 

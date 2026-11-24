@@ -55,6 +55,9 @@ resources:
   limits:
     memory: 3Gi
 
+v13sForwarding:
+  enabled: false
+
 networkPolicy:
   httpsHosts:
     - europe-north1-docker.pkg.dev

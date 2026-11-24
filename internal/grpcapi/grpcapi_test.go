@@ -19,6 +19,11 @@ func TestMain(m *testing.M) { databasetest.Main(m) }
 
 func newServer(t *testing.T, statements ...string) *grpcapi.Server {
 	t.Helper()
+	return newServerWithV13sForwarding(t, false, statements...)
+}
+
+func newServerWithV13sForwarding(t *testing.T, v13sForwarding bool, statements ...string) *grpcapi.Server {
+	t.Helper()
 	db, url := databasetest.NewWithURL(t)
 	ctx := context.Background()
 	conn, err := pgx.Connect(ctx, url)
@@ -45,7 +50,7 @@ func newServer(t *testing.T, statements ...string) *grpcapi.Server {
 			t.Fatal(err)
 		}
 	}
-	return grpcapi.New(db, slog.New(slog.DiscardHandler))
+	return grpcapi.New(db, slog.New(slog.DiscardHandler), v13sForwarding)
 }
 
 func TestFindingVulnerabilityIDs(t *testing.T) {
