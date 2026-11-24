@@ -19,8 +19,8 @@ func (s *Server) ForwardV13SSuppression(ctx context.Context, req *v0sv1.ForwardV
 		VulnerabilityIDs: req.GetVulnerabilityIds(),
 	}
 	if a := req.GetAssessment(); a != nil {
-		if a.GetUpdatedAt() == nil {
-			return nil, invalidArgument("assessment update time is required")
+		if err := a.GetUpdatedAt().CheckValid(); err != nil {
+			return nil, invalidArgument("assessment update time is required and must be valid")
 		}
 		suppression.Assessment = &database.V13sAssessment{
 			State:     stateToDatabase(a.GetState()),

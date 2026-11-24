@@ -116,6 +116,22 @@ func TestApplyV13sSuppressionRepeatUpdateAndDelete(t *testing.T) {
 	}
 }
 
+func TestApplyV13sSuppressionKeepsNewerAssessment(t *testing.T) {
+	db, _ := newFixture(t)
+	newer := forwardedLodash("CVE-1")
+	newer.Assessment.Detail, newer.Assessment.UpdatedAt = "newer", forwardedAt.Add(time.Hour)
+	apply(t, db, newer)
+
+	if result := apply(t, db, forwardedLodash("CVE-1")); result != (database.ForwardResult{Outcome: database.ForwardApplied}) {
+		t.Errorf("stale = %+v, want nothing applied", result)
+	}
+	for _, s := range listSuppressions(t, db) {
+		if s.Detail != "newer" {
+			t.Errorf("suppression %+v, want the newer assessment kept", s)
+		}
+	}
+}
+
 func TestApplyV13sSuppressionDeletesFromImageNameNoWorkloadRuns(t *testing.T) {
 	db, exec := newFixture(t)
 	exec(`INSERT INTO suppressions (team, environment, workload, image_name, package_key, vulnerability_id, state, detail, updated_by)

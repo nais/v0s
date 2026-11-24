@@ -118,8 +118,7 @@ func (db *DB) ApplyV13sSuppression(ctx context.Context, s V13sSuppression) (Forw
 			ON CONFLICT (team, environment, workload, image_name, package_key, vulnerability_id) DO UPDATE
 			SET state = excluded.state, detail = excluded.detail, updated_by = excluded.updated_by,
 				updated_at = excluded.updated_at
-			WHERE (s.state, s.detail, s.updated_by, s.updated_at)
-				IS DISTINCT FROM (excluded.state, excluded.detail, excluded.updated_by, excluded.updated_at)`,
+			WHERE s.updated_at < excluded.updated_at`,
 			s.ImageName, pkg, ids[0], a.State, a.Detail, a.UpdatedBy, a.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("setting suppressions: %w", err)

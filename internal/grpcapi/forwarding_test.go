@@ -91,6 +91,11 @@ func TestForwardV13sSuppression(t *testing.T) {
 	if _, err := client.ForwardV13SSuppression(ctx, noTime); status.Code(err) != codes.InvalidArgument {
 		t.Errorf("no update time: err = %v, want InvalidArgument", err)
 	}
+	badTime := forwardRequest()
+	badTime.Assessment.UpdatedAt.Nanos = -1
+	if _, err := client.ForwardV13SSuppression(ctx, badTime); status.Code(err) != codes.InvalidArgument {
+		t.Errorf("invalid update time: err = %v, want InvalidArgument", err)
+	}
 	noState := forwardRequest()
 	noState.Assessment.State = v0sv1.SuppressionState_SUPPRESSION_STATE_UNSPECIFIED
 	if _, err := client.ForwardV13SSuppression(ctx, noState); status.Code(err) != codes.InvalidArgument {

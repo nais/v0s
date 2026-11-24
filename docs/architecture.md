@@ -148,7 +148,11 @@ resolved to that image name across teams and environments. Without an assessment
 it deletes the image name's suppression from every workload, including workloads
 that no longer run it, so it cannot reappear when they do again. An unknown or
 ambiguous vulnerability, or an assessment for an image name no workload runs, is
-returned as an outcome and changes nothing. It never adds vulnerabilities or
+returned as an outcome and changes nothing. An assessment only replaces one with an earlier
+update time, so a delayed or repeated call cannot undo a newer assessment, including
+one repaired by hand. Removals leave no marker, so a delayed assessment can still
+recreate a suppression removed after it; the final verification of the migration
+reports it. It never adds vulnerabilities or
 aliases. Workloads that start running the image name later inherit nothing.
 
 Inventory and scan results can be rebuilt; suppressions cannot. They are durable
