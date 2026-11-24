@@ -81,6 +81,21 @@ Separate resource requests and limits from observed use; neither configured
 reservations nor an idle snapshot proves equal capacity or availability.
 Include application replicas and databases when comparing deployment footprints.
 
+For local findings measurements, run the existing pagination benchmark and the
+scope benchmark against an isolated PostgreSQL instance:
+
+```sh
+mise exec -- go test ./internal/database -run '^$' \
+  -bench '^BenchmarkListFindings(Scopes)?$' -benchtime=10x -count=3
+```
+
+Set `V0S_TEST_DATABASE_URL` to a disposable local instance if PostgreSQL server
+binaries are unavailable. The scope benchmark compares tenant, team and workload
+queries with 0, 500 and 50,000 suppressions across the fixture. Those are total
+suppression counts, not counts within each requested scope. Compare identical
+fixtures and scopes before and after a change; a faster tenant-wide query with
+no suppressions does not establish a general improvement.
+
 Before adding consumers:
 
 - Verify the chart's required Fasit features are deployed, especially `nais-api`,

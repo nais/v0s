@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -11,10 +12,8 @@ import (
 	"github.com/nais/v0s/internal/database/databasetest"
 )
 
-// BenchmarkListFindings measures early and deep pages on a tenant-sized inventory:
-// 5,000 workloads, 3,200 images, 128,000 stored findings and 200,000 occurrences.
-// Run with -benchtime=10x -count=3; timings are evidence, not CI assertions.
-func BenchmarkListFindings(b *testing.B) {
+func newFindingsBenchmark(b *testing.B) *database.DB {
+	b.Helper()
 	db, url := databasetest.NewWithURL(b)
 	ctx := context.Background()
 	conn, err := pgx.Connect(ctx, url)
@@ -42,7 +41,15 @@ func BenchmarkListFindings(b *testing.B) {
 	`); err != nil {
 		b.Fatal(err)
 	}
+	return db
+}
 
+// BenchmarkListFindings measures early and deep pages on a tenant-sized inventory:
+// 5,000 workloads, 3,200 images, 128,000 stored findings and 200,000 occurrences.
+// Run with -benchtime=10x -count=3; timings are evidence, not CI assertions.
+func BenchmarkListFindings(b *testing.B) {
+	db := newFindingsBenchmark(b)
+	ctx := context.Background()
 	for _, workload := range []int{0, 2500, 4500} {
 		b.Run(fmt.Sprintf("after_workload_%d", workload), func(b *testing.B) {
 			page := database.Page{Size: 1000}
@@ -58,6 +65,58 @@ func BenchmarkListFindings(b *testing.B) {
 				if len(list.Findings) != page.Size || list.NextPageToken == "" {
 					b.Fatalf("got %d findings, next=%q; want a full page and continuation", len(list.Findings), list.NextPageToken)
 				}
+			}
+
+		})
+	}
+}
+
+func BenchmarkListFindingsScopes(b *testing.B) {
+	for _, suppressed := range []int{0, 500, 50000} {
+		b.Run(fmt.Sprintf("suppressions_%d", suppressed), func(b *testing.B) {
+			db := newFindingsBenchmark(b)
+			ctx := context.Background()
+			if suppressed > 0 {
+				if _, err := db.Pool().Exec(ctx, `
+					INSERT INTO suppressions (team, environment, workload, image_name,
+						package_key, vulnerability_id, state, detail, updated_by)
+					SELECT w.team, w.environment, w.name, i.name, 'pkg:npm/package-1',
+						v.id, 'accepted_risk', 'benchmark', 'benchmark'
+					FROM workloads w JOIN images i ON i.id = w.image_id
+					CROSS JOIN vulnerabilities v
+					WHERE v.id <= 'CVE-0010'
+					ORDER BY v.id, w.team, w.name
+					LIMIT $1
+				`, suppressed); err != nil {
+					b.Fatal(err)
+				}
+			}
+			if _, err := db.Pool().Exec(ctx, "ANALYZE suppressions"); err != nil {
+				b.Fatal(err)
+			}
+			for _, scope := range []struct {
+				name   string
+				filter database.FindingFilter
+			}{
+				{name: "tenant"},
+				{name: "team", filter: database.FindingFilter{Teams: []string{"team-000"}}},
+				{name: "workload", filter: database.FindingFilter{Teams: []string{"team-000"}, Environment: "prod", Workload: "app-00001"}},
+			} {
+				b.Run(scope.name, func(b *testing.B) {
+					want, err := db.CountFindings(ctx, scope.filter, database.GroupByPackageType)
+					if err != nil {
+						b.Fatal(err)
+					}
+					for b.Loop() {
+						list, err := db.ListFindings(ctx, scope.filter, database.Page{Size: 1000})
+						if err != nil {
+							b.Fatal(err)
+						}
+						if !slices.Equal(list.PackageTypeCounts, want) {
+							b.Fatalf("counts = %v, want %v", list.PackageTypeCounts, want)
+						}
+					}
+				})
 			}
 		})
 	}
