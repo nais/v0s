@@ -18,8 +18,13 @@ Tests, vet and staticcheck run explicitly in both the root and `api/` Go
 modules. CI also tests the client with Go 1.26.11 and automatic toolchain
 upgrades disabled. `mise run build` builds both modules, and `mise run generate`
 regenerates the public client and the vendored Nais API client; CI requires no
-generated-file changes. Client releases use independent `api/v*` Git tags;
-see [Go client](../README.md#go-client).
+generated-file changes. After checks pass on `main`, a separate job publishes
+an `api/v*` Git tag if the client module or public contract differs from the
+last client release. It starts at `api/v0.3.0` and increments minor versions
+automatically, independently of image/chart publication and deployment.
+Release jobs are serialized; reruns and older commits do not duplicate releases.
+A later green main build retries any unpublished client changes.
+See [Go client](../README.md#go-client).
 Pushes to `main` publish to
 `europe-north1-docker.pkg.dev/nais-io/nais/images/v0s` through
 `nais/platform-build-push-sign`, including an SBOM attestation and signing.

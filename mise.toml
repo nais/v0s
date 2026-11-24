@@ -50,6 +50,7 @@ run = [
   "mise run check:fmt",
   "mise run check:proto",
   "mise run check:helm",
+  "mise run check:api-release",
   "mise run check:vet",
   "mise run check:staticcheck",
   "mise run test",
@@ -83,6 +84,10 @@ run = [
   "go vet ./...",
   "go -C api vet ./...",
 ]
+
+[tasks."check:api-release"]
+description = "Test automatic API release tag selection"
+run = "python3 -B -m unittest discover -s tools -p test_api_release.py"
 
 [tasks."check:staticcheck"]
 description = "Run staticcheck in both Go modules"

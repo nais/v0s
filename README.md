@@ -56,17 +56,21 @@ Import `github.com/nais/v0s/api/v0s/v1`. The client module requires Go 1.26.11,
 not the server's Go version or its Trivy dependencies.
 
 Client releases use `api/v*` tags on commits in this repository, independently
-of server image/chart releases. For example, after publishing `api/v0.1.0`:
+of server image/chart releases. After checks pass on `main`, CI publishes a
+new tag when `api/` or `proto/v0s/` differs from the last client release.
+The first release is `api/v0.3.0`, continuing after `v0.2.0` in the former
+`nais/v0s-api` repository. Subsequent releases increment the minor version
+(`api/v0.4.0`, `api/v0.5.0`, ...), since v0 contract changes may be breaking.
+For example, after publishing `api/v0.3.0`:
 
 ```sh
-go get github.com/nais/v0s/api@v0.1.0
+go get github.com/nais/v0s/api@v0.3.0
 ```
 
-Choose the next version from existing `api/v*` tags using semantic versioning.
 The `api/` prefix belongs to the Git tag, not the version passed to `go get`.
 Versions `api/v1.x.y` keep the same module/import paths; a future v2 needs a
-major-versioned module path. Tags are created and pushed only as an explicitly
-approved release step.
+major-versioned module path. Automatic version selection currently supports
+only v0; moving to v1 requires updating the release policy.
 
 To adopt this client later, nais/api must add the published module dependency,
 switch its client imports to `github.com/nais/v0s/api/v0s/v1`, and remove any
