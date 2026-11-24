@@ -106,9 +106,9 @@ func TestWorkloadOverviewContract(t *testing.T) {
 			if req.PageToken == "" {
 				break
 			}
-			if !slices.Equal(got, want) || req.PageToken != "" {
-				t.Fatalf("size %d: %v, want %v", size, got, want)
-			}
+		}
+		if !slices.Equal(got, want) || req.PageToken != "" {
+			t.Fatalf("size %d: %v, want %v", size, got, want)
 		}
 	}
 }
