@@ -175,8 +175,11 @@ message ListWorkloadsRequest {
   int32 page_size = 3;
   string page_token = 4;
   // Opt in to counts, full total and versioned per-row cursors. Without this,
-  // existing behavior and legacy cursors are unchanged, with no KEV dependency.
+  // the response is unchanged, with no KEV dependency. Legacy cursors remain
+  // unchanged when workload_selector is also omitted.
   WorkloadOverviewOptions overview = 7;
+  // Intersect with the existing scope, in both legacy and overview modes.
+  WorkloadSelector workload_selector = 8;
 }
 
 message ListWorkloadsResponse {
@@ -196,7 +199,7 @@ message ListWorkloadsResponse {
 
 message WorkloadOverviewOptions {
   // Counts matching findings without removing workloads with zero matches.
-  // Scope comes only from ListWorkloadsRequest.team/environment/workload:
+  // Scope comes only from ListWorkloadsRequest scope and workload_selector:
   // team/environment/workload in this filter must be empty (InvalidArgument).
   FindingFilter finding_filter = 1;
   // Only workloads with at least one matching finding. Defaults to false.
@@ -253,6 +256,7 @@ message ListFindingsRequest {
   // Omitted: environment, team, workload, vulnerability ID and purl ASC.
   // When present, both field and direction are required.
   FindingOrderBy order_by = 4;
+  WorkloadSelector workload_selector = 5;
 }
 
 message FindingOrderBy {
@@ -302,6 +306,7 @@ message ListVulnerabilitiesRequest {
   string page_token = 3;
   // Omitted means severity DESC. When present, both fields are required.
   VulnerabilityOrderBy order_by = 4;
+  WorkloadSelector workload_selector = 5;
 }
 
 message VulnerabilityOrderBy {
@@ -351,6 +356,7 @@ message ListVulnerabilitiesResponse {
 message CountFindingsRequest {
   FindingFilter filter = 1;
   GroupBy group_by = 2;
+  WorkloadSelector workload_selector = 3;
 
   enum GroupBy {
     GROUP_BY_UNSPECIFIED = 0;
@@ -423,6 +429,18 @@ message WorkloadRef {
   string environment = 1;
   string team = 2;
   string name = 3;
+}
+
+// An externally computed workload selection, intersected with all existing scope
+// and finding filters before aggregation and pagination. Omitted: no extra
+// restriction. Present with no workloads: match nothing, never all workloads.
+// All three WorkloadRef fields are required; invalid entries are InvalidArgument.
+// Order and duplicates do not matter. Unknown/deleted workloads match nothing.
+// There is no separate entry-count limit; the server's 4 MiB gRPC receive limit
+// applies to the whole request (ResourceExhausted). Never truncated.
+// Cursors bind the normalized selection; changing it requires restarting.
+message WorkloadSelector {
+  repeated WorkloadRef workloads = 1;
 }
 
 // Identifies a suppression within the request's team. Environment and workload are required.

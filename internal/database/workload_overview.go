@@ -117,16 +117,16 @@ func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter
 		return WorkloadOverviewList{}, err
 	}
 	options.Order = order
-	if len(options.FindingFilter.Teams) > 0 || options.FindingFilter.Environment != "" || options.FindingFilter.Workload != "" {
+	if len(options.FindingFilter.Teams) > 0 || options.FindingFilter.Environment != "" || options.FindingFilter.Workload != "" || options.FindingFilter.Selector != nil {
 		return WorkloadOverviewList{}, fmt.Errorf("finding filter scope must be empty; use workload selection: %w", ErrInvalid)
 	}
 	filter, err := normalizeFindingFilter(options.FindingFilter)
 	if err != nil {
 		return WorkloadOverviewList{}, err
 	}
-	selection.Teams = normalizedSet(selection.Teams)
-	if len(selection.Teams) == 0 {
-		selection.Teams = nil
+	selection, err = selection.normalized()
+	if err != nil {
+		return WorkloadOverviewList{}, err
 	}
 	binding, err := queryBinding(filter, struct {
 		Selection    WorkloadFilter
@@ -148,6 +148,7 @@ func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter
 	var args sqlArgs
 	selected := and(selection.conditions(&args))
 	filter.Teams, filter.Environment, filter.Workload = selection.Teams, selection.Environment, selection.Workload
+	filter.Selector = selection.Selector
 	where, err := filter.conditions(&args)
 	if err != nil {
 		return WorkloadOverviewList{}, err

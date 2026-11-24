@@ -83,6 +83,7 @@ type WorkloadFilter struct {
 	Teams       []string
 	Environment string
 	Workload    string
+	Selector    *WorkloadSelector `json:",omitempty"`
 }
 
 type workloadCursor struct {
@@ -90,6 +91,18 @@ type workloadCursor struct {
 	Team        string `json:"t"`
 	Name        string `json:"w"`
 	Operation   string `json:"operation,omitempty"`
+	Version     int    `json:"version,omitempty"`
+	Binding     string `json:"binding,omitempty"`
+}
+
+func (f WorkloadFilter) normalized() (WorkloadFilter, error) {
+	f.Teams = normalizedSet(f.Teams)
+	if len(f.Teams) == 0 {
+		f.Teams = nil
+	}
+	var err error
+	f.Selector, err = f.Selector.normalized()
+	return f, err
 }
 
 func (f WorkloadFilter) conditions(args *sqlArgs) []string {
@@ -103,17 +116,36 @@ func (f WorkloadFilter) conditions(args *sqlArgs) []string {
 	if f.Workload != "" {
 		where = append(where, "w.name = "+args.add(f.Workload))
 	}
+	if condition := f.Selector.condition(args); condition != "" {
+		where = append(where, condition)
+	}
 	return where
 }
 
 // ListWorkloads lists workloads ordered by environment, team and name.
 func (db *DB) ListWorkloads(ctx context.Context, filter WorkloadFilter, page Page) ([]Workload, string, error) {
+	filter, err := filter.normalized()
+	if err != nil {
+		return nil, "", err
+	}
+	var binding string
+	if filter.Selector != nil {
+		binding, err = queryBinding(FindingFilter{}, filter)
+		if err != nil {
+			return nil, "", err
+		}
+	}
 	var cursor workloadCursor
 	if err := decodePageToken(page.Token, &cursor); err != nil {
 		return nil, "", err
 	}
-	if cursor.Operation != "" {
+	if filter.Selector == nil && (cursor.Operation != "" || cursor.Version != 0 || cursor.Binding != "") {
 		return nil, "", fmt.Errorf("incompatible workload cursor; restart pagination without a token: %w", ErrInvalid)
+	}
+	if filter.Selector != nil && page.Token != "" &&
+		(cursor.Version != 1 || cursor.Operation != "workloads" || cursor.Binding != binding ||
+			cursor.Environment == "" || cursor.Team == "" || cursor.Name == "") {
+		return nil, "", fmt.Errorf("invalid workload cursor or changed selection/scope; restart pagination without a token: %w", ErrInvalid)
 	}
 	var args sqlArgs
 	where := filter.conditions(&args)
@@ -153,7 +185,11 @@ func (db *DB) ListWorkloads(ctx context.Context, filter WorkloadFilter, page Pag
 	if len(workloads) > limit {
 		workloads = workloads[:limit]
 		last := workloads[limit-1]
-		next, err = encodePageToken(workloadCursor{Environment: last.Environment, Team: last.Team, Name: last.Name})
+		cursor := workloadCursor{Environment: last.Environment, Team: last.Team, Name: last.Name}
+		if filter.Selector != nil {
+			cursor.Version, cursor.Operation, cursor.Binding = 1, "workloads", binding
+		}
+		next, err = encodePageToken(cursor)
 		if err != nil {
 			return nil, "", err
 		}

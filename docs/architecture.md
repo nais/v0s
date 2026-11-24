@@ -169,8 +169,9 @@ active, since summaries do not expose KEV membership. See the
 [overview contract and example](../README.md#vulnerability-overview).
 
 `ListWorkloads` has an additive, opt-in `overview` message rather than a parallel
-RPC. Without it, the legacy read path, response and cursor bytes remain unchanged
-and have no KEV dependency. With it, existing top-level scope selects workloads;
+RPC. Without it, the response has no KEV dependency and the legacy read path
+and cursor bytes remain unchanged when no workload selector is supplied.
+With it, existing top-level scope selects workloads;
 scope fields in the nested finding filter are rejected. Finding filters narrow
 counts, not rows, unless `affected_only` explicitly requests positive counts.
 
@@ -191,7 +192,26 @@ lookup, but cannot be mixed with legacy cursors. No snapshot spans page calls.
 See the [workload overview example and limitations](../README.md#workload-overview).
 
 The public read contract accepts one team or the whole tenant. A workload name
-requires a team and environment. Advisory details include links to the sources;
+requires a team and environment. A shared, optional `WorkloadSelector` on the four
+list/count requests intersects that scope with explicit `WorkloadRef` identities.
+It is request-level rather than part of `FindingFilter`, preventing competing
+selectors in workload overview requests. Omitted means no added restriction;
+present-empty means no workloads. Validation, tuple sorting/deduplication and the
+SQL EXISTS predicate are shared across operations. The predicate uses three
+parameterized arrays through `unnest`, before any aggregation/seek/LIMIT, without
+per-workload queries or image-based selection. Unknown/deleted identities simply
+do not match. Workload overview applies it both to the selected rows and their
+finding aggregates, preserving zero-count rows and affected-only semantics.
+
+Normalized selectors participate in existing query bindings; omitted selectors
+are excluded from binding JSON to preserve existing cursor bytes. Plain
+`ListWorkloads` opts into a separate versioned, scope-bound cursor only when a
+selector is present. No entry-count cap is introduced: the existing 4 MiB gRPC
+receive limit bounds the whole request and returns `ResourceExhausted`; no
+truncation or unrestricted fallback is allowed. Label/RBAC/user logic remains
+outside v0s. See [selection examples and semantics](../README.md#explicit-workload-selection).
+
+Advisory details include links to the sources;
 v0s uses the scanner's severity rather than storing a separate score.
 CISA KEV is catalog membership, not exploitability. Until a
 nonempty catalog has been imported, reads that expose or filter on membership

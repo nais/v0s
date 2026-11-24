@@ -88,7 +88,7 @@ func (s *Server) ListWorkloads(ctx context.Context, req *v0sv1.ListWorkloadsRequ
 	if err := validateScope(req.GetTeam(), req.GetEnvironment(), req.GetWorkload()); err != nil {
 		return nil, err
 	}
-	filter := database.WorkloadFilter{Teams: teamFilter(req.GetTeam()), Environment: req.GetEnvironment(), Workload: req.GetWorkload()}
+	filter := database.WorkloadFilter{Teams: teamFilter(req.GetTeam()), Environment: req.GetEnvironment(), Workload: req.GetWorkload(), Selector: workloadSelector(req.GetWorkloadSelector())}
 	if req.GetOverview() != nil {
 		return s.listWorkloadOverview(ctx, req, filter)
 	}
@@ -113,7 +113,7 @@ func workloadToProto(w database.Workload) *v0sv1.Workload {
 
 // ListFindings implements VulnerabilityService.
 func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsRequest) (*v0sv1.ListFindingsResponse, error) {
-	filter, err := findingFilter(req.GetFilter())
+	filter, err := findingFilter(req.GetFilter(), req.GetWorkloadSelector())
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +187,7 @@ func (s *Server) CountFindings(ctx context.Context, req *v0sv1.CountFindingsRequ
 	default:
 		return nil, invalidArgument("group_by is required")
 	}
-	filter, err := findingFilter(req.GetFilter())
+	filter, err := findingFilter(req.GetFilter(), req.GetWorkloadSelector())
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +255,18 @@ func workloadRefsToProto(ws []database.WorkloadRef) []*v0sv1.WorkloadRef {
 	return out
 }
 
-func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
+func workloadSelector(s *v0sv1.WorkloadSelector) *database.WorkloadSelector {
+	if s == nil {
+		return nil
+	}
+	selector := &database.WorkloadSelector{Workloads: make([]database.WorkloadRef, 0, len(s.GetWorkloads()))}
+	for _, w := range s.GetWorkloads() {
+		selector.Workloads = append(selector.Workloads, database.WorkloadRef{Environment: w.GetEnvironment(), Team: w.GetTeam(), Name: w.GetName()})
+	}
+	return selector
+}
+
+func findingFilter(f *v0sv1.FindingFilter, selector *v0sv1.WorkloadSelector) (database.FindingFilter, error) {
 	if err := rejectLegacyTeams(f, 1); err != nil {
 		return database.FindingFilter{}, err
 	}
@@ -278,6 +289,7 @@ func findingFilter(f *v0sv1.FindingFilter) (database.FindingFilter, error) {
 		PackageType:        f.GetPackageType(),
 		HasFix:             f.GetHasFix(),
 		OnlyKnownExploited: f.GetOnlyKnownExploited(),
+		Selector:           workloadSelector(selector),
 	}
 	for _, sev := range f.GetSeverities() {
 		name, ok := v0sv1.Severity_name[int32(sev)]
