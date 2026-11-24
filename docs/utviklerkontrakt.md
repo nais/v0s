@@ -1,8 +1,7 @@
 # Utviklerkontrakt for sårbarhetsoversikten
 
-**Forslag til teamdiskusjon, 2026-11-10.** Kuratert fra sesjonens
-`UTVIKLERKONTRAKT.md`, ikke en publisert kontrakt, implementert Console-opplevelse
-eller godkjenning av backendbytte.
+**Forslag til teamdiskusjon, opprinnelig datert 2026-11-10.** Ikke en publisert
+kontrakt, implementert Console-opplevelse eller godkjenning av backendbytte.
 
 Det viktige skillet er mellom **hva Nais tilbyr teamene**, og **hvordan vi
 produserer informasjonen**. Teamene skal ikke måtte forstå scanner-riggen for å
@@ -105,11 +104,25 @@ Selve gRPC-API-et har ikke autentisering og stoler på tillatte konsumenter
 bak NetworkPolicy. Autorisasjon av brukerhandlinger må ligge i konsumentlaget;
 team og aktør fra en tillatt kallende tjeneste er ikke uavhengig verifisert av v0s.
 
+## Kildeavgrensninger
+
+Scannerbyttet er også et valg av kildepolicy. En katalog kan mangle advisories
+for berørte språkpakker eller utelate vendor-records som ennå ikke har en fiks.
+Samtidig kan en bredere kilde gi feil pakketilskrivning, tilbaketrukne advisories
+eller treff utenfor berørte versjoner. Flere funnrader betyr ikke bedre dekning.
+
+Skill mellom mangler i den opprinnelige SBOM-en, manglende kildeoppføringer,
+bevisst kildeavgrensning og konkrete matcherfeil. Minimale komponenteksempler
+mot pinnede scanner-/DB-versjoner kan isolere årsaken, men erstatter ikke
+verifisering av originale SBOM-er eller vurdering av faktisk utnyttbarhet.
+Overlapp mellom to systemer er ikke målt recall eller en korrekthetsprosent.
+Se [verifiseringsmetoden](verification.md#findings-and-coverage).
+
 ## Før dette kan bli det publiserte løftet
 
 1. **Avklar kildekontrakten.** Aksepter og dokumenter konkrete Trivy-begrensninger,
-   eller krev avgrenset supplerende/upstream-dekning. Se
-   [kataloggapene](status-2026-11-10.md#kataloggap-er-en-produktbeslutning-ikke-bare-en-prosent).
+   eller krev avgrenset supplerende/upstream-dekning. Følg opp minimale
+   reproduksjoner hos datakilden fremfor å hardkode advisory-spesialtilfeller.
 2. **Vis dekning i Console.** Manglende SBOM, feil og tidligere beholdte funn må
    skilles fra vellykket analyse uten treff. Dette er et integrasjonskrav,
    ikke noe denne dokumentasjonen implementerer.
