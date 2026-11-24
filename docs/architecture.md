@@ -144,9 +144,11 @@ is `true`. Each call carries v13s's current assessment of one image
 name, package and vulnerability, already normalized and checked for conflicts by
 v13s. v0s resolves the vulnerability IDs against its own catalog and sets the
 assessment, keeping v13s's actor and update time, on every workload currently
-resolved to that image name across teams and environments, or deletes it from all
-of them. An unknown or ambiguous vulnerability, or an image name no workload runs,
-is returned as an outcome and changes nothing. It never adds vulnerabilities or
+resolved to that image name across teams and environments. Without an assessment
+it deletes the image name's suppression from every workload, including workloads
+that no longer run it, so it cannot reappear when they do again. An unknown or
+ambiguous vulnerability, or an assessment for an image name no workload runs, is
+returned as an outcome and changes nothing. It never adds vulnerabilities or
 aliases. Workloads that start running the image name later inherit nothing.
 
 Inventory and scan results can be rebuilt; suppressions cannot. They are durable

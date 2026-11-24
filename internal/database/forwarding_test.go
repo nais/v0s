@@ -116,6 +116,21 @@ func TestApplyV13sSuppressionRepeatUpdateAndDelete(t *testing.T) {
 	}
 }
 
+func TestApplyV13sSuppressionDeletesFromImageNameNoWorkloadRuns(t *testing.T) {
+	db, exec := newFixture(t)
+	exec(`INSERT INTO suppressions (team, environment, workload, image_name, package_key, vulnerability_id, state, detail, updated_by)
+		VALUES ('team-a', 'c1', 'app', 'repo/old', 'pkg:npm/lodash', 'CVE-1', 'not_affected', 'old image', 'someone')`)
+
+	unsuppressed := forwardedLodash("CVE-1")
+	unsuppressed.ImageName, unsuppressed.Assessment = "repo/old", nil
+	if result := apply(t, db, unsuppressed); result != (database.ForwardResult{Outcome: database.ForwardApplied, Removed: 1}) {
+		t.Errorf("delete = %+v, want 1 removed", result)
+	}
+	if all := listSuppressions(t, db); len(all) != 0 {
+		t.Errorf("after delete = %q, want none", suppressionKeys(all))
+	}
+}
+
 func TestApplyV13sSuppressionBlocked(t *testing.T) {
 	db, _ := newFixture(t)
 	unknown := forwardedLodash("CVE-404")
