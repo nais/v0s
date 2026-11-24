@@ -2,7 +2,6 @@ package database_test
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"slices"
 	"testing"
@@ -54,11 +53,31 @@ func BenchmarkListFindings(b *testing.B) {
 		b.Run(fmt.Sprintf("after_workload_%d", workload), func(b *testing.B) {
 			page := database.Page{Size: 1000}
 			if workload != 0 {
-				cursor := fmt.Sprintf(`{"e":"prod","t":"team-%03d","w":"app-%05d","v":"CVE-0010","p":"pkg:npm/package-1@1"}`, (workload-1)/50, workload)
-				page.Token = base64.RawURLEncoding.EncodeToString([]byte(cursor))
+				target := fmt.Sprintf("app-%05d", workload)
+				for {
+					list, err := db.ListFindings(ctx, database.FindingFilter{}, page, database.FindingOrder{})
+					if err != nil {
+						b.Fatal(err)
+					}
+					found := false
+					for i, f := range list.Findings {
+						if f.Workload.Name == target && f.Finding.VulnerabilityID == "CVE-0010" && f.Finding.PURL == "pkg:npm/package-1@1" {
+							page.Token = list.Cursors[i]
+							found = true
+							break
+						}
+					}
+					if found {
+						break
+					}
+					if list.NextPageToken == "" {
+						b.Fatal("benchmark cursor boundary not found")
+					}
+					page.Token = list.NextPageToken
+				}
 			}
 			for b.Loop() {
-				list, err := db.ListFindings(ctx, database.FindingFilter{}, page)
+				list, err := db.ListFindings(ctx, database.FindingFilter{}, page, database.FindingOrder{})
 				if err != nil {
 					b.Fatal(err)
 				}
@@ -108,7 +127,7 @@ func BenchmarkListFindingsScopes(b *testing.B) {
 						b.Fatal(err)
 					}
 					for b.Loop() {
-						list, err := db.ListFindings(ctx, scope.filter, database.Page{Size: 1000})
+						list, err := db.ListFindings(ctx, scope.filter, database.Page{Size: 1000}, database.FindingOrder{})
 						if err != nil {
 							b.Fatal(err)
 						}

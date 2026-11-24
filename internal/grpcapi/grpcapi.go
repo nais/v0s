@@ -110,22 +110,37 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 	if err != nil {
 		return nil, err
 	}
-	found, err := s.db.ListFindings(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
+	var order database.FindingOrder
+	if o := req.GetOrderBy(); o != nil {
+		switch o.GetField() {
+		case v0sv1.FindingOrderBy_FIELD_SEVERITY:
+			order.Field = database.FindingOrderSeverity
+		case v0sv1.FindingOrderBy_FIELD_VULNERABILITY_ID:
+			order.Field = database.FindingOrderVulnerabilityID
+		default:
+			return nil, invalidArgument("order_by.field is required and must be valid")
+		}
+		switch o.GetDirection() {
+		case v0sv1.FindingOrderBy_DIRECTION_ASC:
+			order.Direction = database.FindingOrderASC
+		case v0sv1.FindingOrderBy_DIRECTION_DESC:
+			order.Direction = database.FindingOrderDESC
+		default:
+			return nil, invalidArgument("order_by.direction is required and must be valid")
+		}
+	}
+	found, err := s.db.ListFindings(ctx, filter, page(req.GetPageSize(), req.GetPageToken()), order)
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
 	resp := &v0sv1.ListFindingsResponse{
 		Findings: make([]*v0sv1.Finding, 0, len(found.Findings)), NextPageToken: found.NextPageToken,
-		Cursors: make([]string, 0, len(found.Findings)),
+		Cursors: found.Cursors,
 	}
 	for _, c := range found.PackageTypeCounts {
 		resp.PackageTypeCounts = append(resp.PackageTypeCounts, &v0sv1.PackageTypeCount{Value: c.Key, Count: c.Count})
 	}
 	for _, f := range found.Findings {
-		cursor, err := f.PageToken()
-		if err != nil {
-			return nil, s.toStatus(ctx, err)
-		}
 		pf := &v0sv1.Finding{
 			Workload:         &v0sv1.WorkloadRef{Environment: f.Workload.Environment, Team: f.Workload.Team, Name: f.Workload.Name},
 			Image:            imageToProto(f.Image),
@@ -144,7 +159,6 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 			pf.Suppression = suppressionToProto(*f.Suppression)
 		}
 		resp.Findings = append(resp.Findings, pf)
-		resp.Cursors = append(resp.Cursors, cursor)
 	}
 	return resp, nil
 }

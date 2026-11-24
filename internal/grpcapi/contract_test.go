@@ -1,6 +1,8 @@
 package grpcapi_test
 
 import (
+	"encoding/base64"
+	"slices"
 	"strings"
 	"testing"
 
@@ -10,6 +12,93 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
+
+func TestFindingOrderContract(t *testing.T) {
+	s := newServer(t, `
+		INSERT INTO vulnerabilities (id, db_version) VALUES ('CVE-2', now());
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		SELECT id, 'CVE-2', 'pkg:maven/example/lib@1', 'pkg:maven/example/lib', '1', 'affected', 'CRITICAL' FROM images;
+	`)
+	for _, field := range []v0sv1.FindingOrderBy_Field{v0sv1.FindingOrderBy_FIELD_SEVERITY, v0sv1.FindingOrderBy_FIELD_VULNERABILITY_ID} {
+		for _, direction := range []v0sv1.FindingOrderBy_Direction{v0sv1.FindingOrderBy_DIRECTION_ASC, v0sv1.FindingOrderBy_DIRECTION_DESC} {
+			req := &v0sv1.ListFindingsRequest{
+				Filter: &v0sv1.FindingFilter{Team: "team"}, PageSize: 1,
+				OrderBy: &v0sv1.FindingOrderBy{Field: field, Direction: direction},
+			}
+			wire, err := proto.Marshal(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded := new(v0sv1.ListFindingsRequest)
+			if err := proto.Unmarshal(wire, decoded); err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for range 9 {
+				resp, err := s.ListFindings(t.Context(), decoded)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if len(resp.GetFindings()) != 1 || len(resp.GetCursors()) != 1 || len(resp.GetPackageTypeCounts()) != 2 {
+					t.Fatalf("unexpected page: %v", resp)
+				}
+				for _, count := range resp.GetPackageTypeCounts() {
+					if count.GetCount() != 4 {
+						t.Fatalf("facet limited to page: %v", resp)
+					}
+				}
+				ids = append(ids, resp.GetFindings()[0].GetVulnerabilityId())
+				if resp.GetNextPageToken() == "" {
+					break
+				}
+				if resp.GetNextPageToken() != resp.GetCursors()[0] {
+					t.Fatal("next token differs from element cursor")
+				}
+				decoded.PageToken = resp.GetNextPageToken()
+			}
+			want := []string{"CVE-1", "CVE-1", "CVE-1", "CVE-1", "CVE-2", "CVE-2", "CVE-2", "CVE-2"}
+			if direction == v0sv1.FindingOrderBy_DIRECTION_DESC {
+				slices.Reverse(want)
+			}
+			if !slices.Equal(ids, want) {
+				t.Fatalf("field %v direction %v: %v, want %v", field, direction, ids, want)
+			}
+			decoded.OrderBy = nil
+			if _, err := s.ListFindings(t.Context(), decoded); status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("changed sort: %v", err)
+			}
+			decoded.OrderBy = req.OrderBy
+			decoded.Filter = &v0sv1.FindingFilter{Environment: "dev"}
+			if _, err := s.ListFindings(t.Context(), decoded); status.Code(err) != codes.InvalidArgument {
+				t.Fatalf("changed filter: %v", err)
+			}
+		}
+	}
+	for _, order := range []*v0sv1.FindingOrderBy{
+		{}, {Field: v0sv1.FindingOrderBy_FIELD_SEVERITY},
+		{Direction: v0sv1.FindingOrderBy_DIRECTION_ASC},
+		{Field: 99, Direction: v0sv1.FindingOrderBy_DIRECTION_ASC},
+		{Field: v0sv1.FindingOrderBy_FIELD_SEVERITY, Direction: 99},
+	} {
+		if _, err := s.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{OrderBy: order}); status.Code(err) != codes.InvalidArgument {
+			t.Errorf("invalid order %v: %v", order, err)
+		}
+	}
+	token := base64.RawURLEncoding.EncodeToString([]byte(`{"e":"dev","t":"team","w":"app","v":"CVE-1","p":"pkg:npm/lodash@4.17.20"}`))
+	if _, err := s.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{PageToken: token}); status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "restart pagination") {
+		t.Errorf("legacy cursor: %v", err)
+	}
+	listed, err := s.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{
+		Filter:    &v0sv1.FindingFilter{Suppressed: v0sv1.SuppressedFilter_SUPPRESSED_FILTER_EXCLUDE},
+		PageToken: listed.GetCursors()[0],
+	}); err != nil {
+		t.Errorf("equivalent default filter: %v", err)
+	}
+}
 
 func TestReadScope(t *testing.T) {
 	s := newServer(t, `

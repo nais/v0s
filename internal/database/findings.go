@@ -240,39 +240,37 @@ type WorkloadFinding struct {
 	Suppression *Suppression
 }
 
-type findingCursor struct {
-	Environment     string `json:"e"`
-	Team            string `json:"t"`
-	Workload        string `json:"w"`
-	VulnerabilityID string `json:"v"`
-	PURL            string `json:"p"`
-}
-
 // FindingList is one page of findings with package type counts for every page.
 // NextPageToken is empty on the last page.
 type FindingList struct {
 	Findings          []WorkloadFinding
 	PackageTypeCounts []FindingCount
 	NextPageToken     string
+	Cursors           []string
 }
 
-// PageToken returns a cursor immediately after this finding.
-func (f WorkloadFinding) PageToken() (string, error) {
-	return encodePageToken(findingCursor{
-		Environment:     f.Workload.Environment,
-		Team:            f.Workload.Team,
-		Workload:        f.Workload.Name,
-		VulnerabilityID: f.Finding.VulnerabilityID,
-		PURL:            f.Finding.PURL,
-	})
-}
-
-// ListFindings lists the findings of workloads that match filter, ordered by
-// workload, vulnerability and purl, with package type counts before pagination.
-func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page) (FindingList, error) {
+// ListFindings lists findings in the requested order, defaulting to environment,
+// team, workload, vulnerability and purl, with package type counts before pagination.
+func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page, order FindingOrder) (FindingList, error) {
+	if err := order.validate(); err != nil {
+		return FindingList{}, err
+	}
+	filter, err := normalizeFindingFilter(filter)
+	if err != nil {
+		return FindingList{}, err
+	}
+	binding, err := findingBinding(filter, order)
+	if err != nil {
+		return FindingList{}, err
+	}
 	var cursor findingCursor
 	if err := decodePageToken(page.Token, &cursor); err != nil {
 		return FindingList{}, err
+	}
+	if page.Token != "" {
+		if err := cursor.validate(binding, order); err != nil {
+			return FindingList{}, err
+		}
 	}
 	var args sqlArgs
 	where, err := filter.conditions(&args)
@@ -284,14 +282,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		return FindingList{}, err
 	}
 	if page.Token != "" {
-		env, team, workload := args.add(cursor.Environment), args.add(cursor.Team), args.add(cursor.Workload)
-		// Split the cursor at the workload boundary to give Postgres an index
-		// bound and avoid underestimating a row comparison spanning two tables.
-		// Include the cursor workload only for its remaining findings.
-		where = append(where,
-			fmt.Sprintf("(w.environment, w.team, w.name) >= (%s, %s, %s)", env, team, workload),
-			fmt.Sprintf("((w.environment, w.team, w.name) <> (%s, %s, %s) OR (f.vulnerability_id, f.purl) > (%s, %s))",
-				env, team, workload, args.add(cursor.VulnerabilityID), args.add(cursor.PURL)))
+		where = append(where, order.after(cursor, &args)...)
 	}
 	limit := page.limit()
 
@@ -311,7 +302,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		LEFT JOIN epss e ON e.cve = f.vulnerability_id
 		LEFT JOIN kev k ON k.cve = f.vulnerability_id
 		WHERE `+and(where)+`
-		ORDER BY w.environment, w.team, w.name, f.vulnerability_id, f.purl
+		ORDER BY `+order.sql()+`
 		LIMIT `+args.add(limit+1), args...)
 	if err != nil {
 		return FindingList{}, fmt.Errorf("listing findings: %w", err)
@@ -359,18 +350,25 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 	}
 
 	var next string
-	if len(findings) > limit {
+	hasNext := len(findings) > limit
+	if hasNext {
 		findings = findings[:limit]
-		next, err = findings[limit-1].PageToken()
+	}
+	cursors := make([]string, len(findings))
+	for i, f := range findings {
+		cursors[i], err = findingPageToken(f, binding, order)
 		if err != nil {
 			return FindingList{}, err
 		}
+	}
+	if hasNext {
+		next = cursors[len(cursors)-1]
 	}
 	counts, err := countFindings(ctx, tx, GroupByPackageType, countWhere, countArgs)
 	if err != nil {
 		return FindingList{}, err
 	}
-	return FindingList{Findings: findings, PackageTypeCounts: counts, NextPageToken: next}, nil
+	return FindingList{Findings: findings, PackageTypeCounts: counts, NextPageToken: next, Cursors: cursors}, nil
 }
 
 // epssScan reads e.score and e.date from a LEFT JOIN.

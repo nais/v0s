@@ -180,15 +180,43 @@ message ListFindingsRequest {
   FindingFilter filter = 1;
   int32 page_size = 2;
   string page_token = 3;
+  // Omitted: environment, team, workload, vulnerability ID and purl ASC.
+  // When present, both field and direction are required.
+  FindingOrderBy order_by = 4;
+}
+
+message FindingOrderBy {
+  Field field = 1;
+  Direction direction = 2;
+
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    // DESC: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN.
+    // ASC: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN.
+    // Ties: vulnerability ID ASC, then environment, team, workload and purl ASC.
+    FIELD_SEVERITY = 1;
+    // Ties: environment, team, workload and purl ASC.
+    FIELD_VULNERABILITY_ID = 2;
+  }
+
+  enum Direction {
+    DIRECTION_UNSPECIFIED = 0;
+    DIRECTION_ASC = 1;
+    DIRECTION_DESC = 2;
+  }
 }
 
 message ListFindingsResponse {
-  // Ordered by workload, vulnerability ID and purl.
+  // Ordered according to order_by, or the documented default when omitted.
   repeated Finding findings = 1;
   string next_page_token = 2;
   // One cursor per finding, in the same order. Each can be used as page_token
   // to continue after that finding, including when it is no longer present.
+  // Opaque, versioned and bound to the normalized filter and order, not page_size.
+  // Incompatible/legacy cursors or changed filters/orders return InvalidArgument;
+  // restart without a token. Pages use live data, not a cross-request snapshot.
   repeated string cursors = 3;
+  // Full filtered selection, independent of cursor, page size and ordering.
   repeated PackageTypeCount package_type_counts = 4;
 }
 
