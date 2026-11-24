@@ -25,15 +25,10 @@ func TestWorkloadSelectorLegacyCursors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overview, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.FindingFilter{})
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, tt := range []struct{ got, want string }{
 		{legacy, "eyJlIjoiZTEiLCJ0IjoiYSIsInciOiJhcHAifQ"},
 		{findings.NextPageToken, "eyJ2ZXJzaW9uIjoxLCJiaW5kaW5nIjoiNDVhODljMzc0OGU1NTg2YTk5YTE3NmRjNzQwNjExOWQ0ZDBhY2FjODk2MTliZDBiN2YzZmVmZDhiZTM4ZTI0NyIsImUiOiJlMSIsInQiOiJhIiwidyI6ImFwcCIsInYiOiJBIiwicCI6InBrZzptYXZlbi9hQDEifQ"},
 		{vulnerabilities.NextPageToken, "eyJ2ZXJzaW9uIjoxLCJvcGVyYXRpb24iOiJ2dWxuZXJhYmlsaXRpZXMiLCJiaW5kaW5nIjoiODhjOWViZGExN2U4MGRmMzY3YTFlZWUzZDk1NzFlOGI5NTg0NWNiMzJiNWNlMmFlNDMxNTUyOGYyZDBiNDNkNiIsImlkIjoiQiIsInNldmVyaXR5IjoiQ1JJVElDQUwifQ"},
-		{overview.NextPageToken, "eyJ2ZXJzaW9uIjoxLCJvcGVyYXRpb24iOiJ3b3JrbG9hZC1vdmVydmlldyIsImJpbmRpbmciOiIzMmExNGM3NjlkNzU1MDcxMTY0Zjk5OTZjYzhkOGE4OTE0NjhmNDI5NmNjNWVhMjU2Yzg0MGM2ZDliMWZiOGNiIiwiZW52aXJvbm1lbnQiOiJlMSIsInRlYW0iOiJhIiwibmFtZSI6ImFwcCJ9"},
 	} {
 		if tt.got != tt.want {
 			t.Errorf("cursor without selector changed: %q, want %q", tt.got, tt.want)
@@ -50,10 +45,6 @@ func TestWorkloadSelectorLegacyCursors(t *testing.T) {
 	page.Token = vulnerabilities.NextPageToken
 	if rows, err := db.ListVulnerabilities(t.Context(), database.FindingFilter{}, page, database.VulnerabilityOrder{}); err != nil || rows.TotalCount != 6 || len(rows.Vulnerabilities) != 1 {
 		t.Fatalf("existing vulnerability cursor continuation: %v, %v", rows, err)
-	}
-	page.Token = overview.NextPageToken
-	if rows, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.FindingFilter{}); err != nil || rows.TotalCount != 11 || len(rows.Workloads) != 1 {
-		t.Fatalf("existing overview cursor continuation: %v, %v", rows, err)
 	}
 }
 

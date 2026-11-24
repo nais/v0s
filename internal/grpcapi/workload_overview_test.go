@@ -98,13 +98,13 @@ func TestWorkloadOverviewContract(t *testing.T) {
 						t.Fatal(w)
 					}
 				}
-				if resp.GetNextPageToken() != "" && resp.GetNextPageToken() == req.PageToken {
-					t.Fatal("next token did not advance")
-				}
-				req.PageToken = resp.GetNextPageToken()
-				if req.PageToken == "" {
-					break
-				}
+			}
+			if resp.GetNextPageToken() != "" && resp.GetNextPageToken() == req.PageToken {
+				t.Fatal("next token did not advance")
+			}
+			req.PageToken = resp.GetNextPageToken()
+			if req.PageToken == "" {
+				break
 			}
 			if !slices.Equal(got, want) || req.PageToken != "" {
 				t.Fatalf("size %d: %v, want %v", size, got, want)
