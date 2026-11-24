@@ -266,6 +266,13 @@ func workloadSelector(s *v0sv1.WorkloadSelector) *database.WorkloadSelector {
 	return selector
 }
 
+func unscopedFindingFilter(f *v0sv1.FindingFilter, field string) (database.FindingFilter, error) {
+	if f.GetTeam() != "" || f.GetEnvironment() != "" || f.GetWorkload() != "" {
+		return database.FindingFilter{}, invalidArgument("%s scope must be empty; use top-level team/environment/workload", field)
+	}
+	return findingFilter(f, nil)
+}
+
 func findingFilter(f *v0sv1.FindingFilter, selector *v0sv1.WorkloadSelector) (database.FindingFilter, error) {
 	if err := rejectLegacyTeams(f, 1); err != nil {
 		return database.FindingFilter{}, err
@@ -323,6 +330,10 @@ func imageToProto(img v0s.Image) *v0sv1.Image {
 
 func severityToProto(s v0s.Severity) v0sv1.Severity {
 	return v0sv1.Severity(v0sv1.Severity_value["SEVERITY_"+string(s)])
+}
+
+func severityCountsToProto(c database.VulnerabilitySeverityCounts) *v0sv1.VulnerabilitySeverityCounts {
+	return &v0sv1.VulnerabilitySeverityCounts{Critical: c.Critical, High: c.High, Medium: c.Medium, Low: c.Low, Unknown: c.Unknown}
 }
 
 func epssToProto(e *v0s.EPSS) *v0sv1.Epss {

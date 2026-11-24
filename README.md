@@ -83,8 +83,8 @@ alias. An empty list does not filter by vulnerability.
 
 ### Explicit workload selection
 
-`ListWorkloads` (both modes), `ListFindings`, `ListVulnerabilities` and
-`CountFindings` accept the same top-level `workloadSelector`. It wraps a list of
+`ListWorkloads` (both modes), `ListFindings`, `ListVulnerabilities`,
+`CountFindings` and `GetSummary` accept the same top-level `workloadSelector`. It wraps a list of
 existing `WorkloadRef` identities: `environment`, `team`, `name`. It is not part
 of `FindingFilter`, so workload overview requests have just one selector.
 nais/api can compute the list externally from labels or the user's teams; v0s
@@ -119,8 +119,8 @@ grpcurl -plaintext -d '{
 }' localhost:50051 v0s.v1.VulnerabilityService/ListFindings
 ```
 
-Use the same `workloadSelector` at the top level of the other three requests;
-for workload counts also send `"overview": {}` to `ListWorkloads`. SQL applies
+Use the same `workloadSelector` at the top level of the other requests;
+for per-workload counts also send `"overview": {}` to `ListWorkloads`. SQL applies
 selection before grouping, counting, sorting, seek and LIMIT. Finding facets and
 overview totals cover the full intersected selection, not the current page,
 including on an empty continuation page. Workload overview still preserves
@@ -320,6 +320,82 @@ change. Existing scope supports one team or the whole tenant, optional
 environment, or one fully scoped workload. The shared
 [explicit workload selector](#explicit-workload-selection) additionally supports
 externally computed multi-team/multi-environment subsets without label/RBAC logic.
+
+### Summary of findings and coverage
+
+`GetSummary` is one non-paginated operation for both tenant-wide and team-scoped
+summaries. Existing operations and cursors are unchanged. Top-level `team`,
+`environment`, `workload` and `workloadSelector` select workloads, as in the
+workload overview. A `workload` still requires team and environment.
+`findingFilter` narrows findings only; its team/environment/workload fields must
+be empty, even when they repeat the top-level scope (`InvalidArgument`).
+Suppressed findings are excluded by default.
+
+Team example:
+
+```sh
+grpcurl -plaintext -d '{
+  "team": "my-team",
+  "findingFilter": {"packageType": "npm"}
+}' localhost:50051 v0s.v1.VulnerabilityService/GetSummary
+```
+
+Global, externally computed workload selection across teams and environments:
+
+```sh
+grpcurl -plaintext -d '{
+  "workloadSelector": {
+    "workloads": [
+      {"environment": "dev", "team": "team-a", "name": "app"},
+      {"environment": "prod", "team": "team-b", "name": "worker"}
+    ]
+  }
+}' localhost:50051 v0s.v1.VulnerabilityService/GetSummary
+```
+
+Send `{}` for the whole tenant. Omitted selector means no extra restriction;
+`"workloadSelector": {}` means none. Scope and selector intersect. Unknown/deleted
+identities do not match; duplicates/order do not change counts. The existing
+4 MiB protobuf request limit applies, with no separate selector count cap.
+
+The response separates matching-finding facts from workload coverage:
+
+- `findingCount` counts workload/package occurrences after all finding filters.
+  Workloads sharing an image contribute separately.
+- `uniqueVulnerabilityCount` counts distinct canonical IDs across the entire
+  filtered selection, **not** the sum of workload-level unique counts. Alias
+  filters cannot multiply findings or vulnerabilities.
+- `affectedWorkloadCount` counts distinct full workload identities with at least
+  one matching finding.
+- `severityCounts` counts each unique canonical vulnerability once at its
+  highest known severity across matching findings in the entire selection.
+  Filtering happens first. UNKNOWN applies only when all matching findings for
+  that vulnerability are UNKNOWN. The five buckets sum to the unique count.
+  No severity is calculated from CVSS.
+- `uniqueKevVulnerabilityCount` and `kevAffectedWorkloadCount` count distinct
+  canonical IDs and workloads with matching KEV findings, respectively, in
+  **the same filtered finding selection**.
+
+`coverage.totalWorkloadCount` is all selected workloads, including those without
+findings or resolved images. Finding filters, including KEV and assessments, do
+not change this denominator or the coverage categories. Each workload contributes
+to exactly one of `scannedCount`, `pendingCount`, `noSbomCount`, `failedCount` and
+`unresolvedImageCount`; their sum equals the total. These count workloads, not
+unique images. Status follows existing image semantics: missing/failed SBOMs
+remain NO_SBOM/FAILED; a fetched image with a successful scan remains SCANNED
+despite a later rescan error. A fetched image not yet successfully scanned is
+PENDING without an error, FAILED with an error. An unresolved image is a separate
+category. Zero findings or SCANNED is not a guarantee of cleanliness or completeness.
+Only counts are returned; clients may calculate percentages.
+
+With an available KEV catalog, an empty workload selection returns zero for every
+count. As in workload overview reads, an unavailable KEV catalog returns
+`Unavailable` for the whole request, including an empty selection, never
+success-shaped KEV zeroes. The catalog check and all aggregates share one
+read-only repeatable-read database snapshot. SQL computes global distinct counts,
+severity and coverage in one aggregate query after the catalog check, not by
+summing per-workload totals or paging through listings. Later requests use live
+data, not the same snapshot. No label, user or RBAC logic is introduced.
 
 ## Documentation
 

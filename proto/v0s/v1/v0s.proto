@@ -26,6 +26,9 @@ service VulnerabilityService {
   rpc ListVulnerabilities(ListVulnerabilitiesRequest) returns (ListVulnerabilitiesResponse);
   // CountFindings counts findings as ListFindings lists them, grouped by one dimension.
   rpc CountFindings(CountFindingsRequest) returns (CountFindingsResponse);
+  // GetSummary returns global finding aggregates and coverage for one workload
+  // selection. Team-scoped and tenant-wide reads use this same operation.
+  rpc GetSummary(GetSummaryRequest) returns (GetSummaryResponse);
   // GetVulnerability returns the vulnerability record for an ID or alias.
   rpc GetVulnerability(GetVulnerabilityRequest) returns (GetVulnerabilityResponse);
   // SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
@@ -247,6 +250,52 @@ message VulnerabilitySeverityCounts {
   int64 medium = 3;
   int64 low = 4;
   int64 unknown = 5;
+}
+
+message GetSummaryRequest {
+  string team = 1;
+  string environment = 2;
+  // Requires team and environment.
+  string workload = 3;
+  // Intersect with scope. Omitted: no extra restriction; present-empty: none.
+  WorkloadSelector workload_selector = 4;
+  // Filter findings before aggregation, without affecting coverage.
+  // team/environment/workload must be empty; scope comes only from this request.
+  // Suppressed findings are excluded by default.
+  FindingFilter finding_filter = 5;
+}
+
+// All counts use one database snapshot. KEV availability is required even for an
+// empty selection (Unavailable otherwise), as in workload overview reads.
+message GetSummaryResponse {
+  // Matching workload/package occurrences; shared images count per workload.
+  int64 finding_count = 1;
+  // Distinct canonical IDs across the entire filtered selection, not the sum
+  // of per-workload unique counts. Aliases do not multiply counts.
+  int64 unique_vulnerability_count = 2;
+  int64 affected_workload_count = 3;
+  // Each canonical ID contributes once, at its highest known matching severity
+  // across the entire selection. UNKNOWN only if all matching findings are
+  // UNKNOWN. The sum equals unique_vulnerability_count; no CVSS-derived severity.
+  VulnerabilitySeverityCounts severity_counts = 4;
+  int64 unique_kev_vulnerability_count = 5;
+  // Distinct workloads with at least one matching KEV finding.
+  int64 kev_affected_workload_count = 6;
+  // All selected workloads, unaffected by finding_filter.
+  WorkloadCoverage coverage = 7;
+}
+
+// Counts workloads, not images. The five mutually exclusive categories sum to
+// total_workload_count. Zero findings or SCANNED does not prove a clean image.
+message WorkloadCoverage {
+  int64 total_workload_count = 1;
+  // A successful scan remains SCANNED if a later rescan fails.
+  int64 scanned_count = 2;
+  int64 pending_count = 3;
+  int64 no_sbom_count = 4;
+  int64 failed_count = 5;
+  // No resolved image; separate from image/scan failures.
+  int64 unresolved_image_count = 6;
 }
 
 message ListFindingsRequest {

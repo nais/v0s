@@ -117,10 +117,7 @@ func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter
 		return WorkloadOverviewList{}, err
 	}
 	options.Order = order
-	if len(options.FindingFilter.Teams) > 0 || options.FindingFilter.Environment != "" || options.FindingFilter.Workload != "" || options.FindingFilter.Selector != nil {
-		return WorkloadOverviewList{}, fmt.Errorf("finding filter scope must be empty; use workload selection: %w", ErrInvalid)
-	}
-	filter, err := normalizeFindingFilter(options.FindingFilter)
+	filter, err := normalizeUnscopedFindingFilter(options.FindingFilter)
 	if err != nil {
 		return WorkloadOverviewList{}, err
 	}

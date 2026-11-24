@@ -23,6 +23,7 @@ const (
 	VulnerabilityService_ListFindings_FullMethodName        = "/v0s.v1.VulnerabilityService/ListFindings"
 	VulnerabilityService_ListVulnerabilities_FullMethodName = "/v0s.v1.VulnerabilityService/ListVulnerabilities"
 	VulnerabilityService_CountFindings_FullMethodName       = "/v0s.v1.VulnerabilityService/CountFindings"
+	VulnerabilityService_GetSummary_FullMethodName          = "/v0s.v1.VulnerabilityService/GetSummary"
 	VulnerabilityService_GetVulnerability_FullMethodName    = "/v0s.v1.VulnerabilityService/GetVulnerability"
 	VulnerabilityService_SearchComponents_FullMethodName    = "/v0s.v1.VulnerabilityService/SearchComponents"
 )
@@ -46,6 +47,9 @@ type VulnerabilityServiceClient interface {
 	ListVulnerabilities(ctx context.Context, in *ListVulnerabilitiesRequest, opts ...grpc.CallOption) (*ListVulnerabilitiesResponse, error)
 	// CountFindings counts findings as ListFindings lists them, grouped by one dimension.
 	CountFindings(ctx context.Context, in *CountFindingsRequest, opts ...grpc.CallOption) (*CountFindingsResponse, error)
+	// GetSummary returns global finding aggregates and coverage for one workload
+	// selection. Team-scoped and tenant-wide reads use this same operation.
+	GetSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
 	GetVulnerability(ctx context.Context, in *GetVulnerabilityRequest, opts ...grpc.CallOption) (*GetVulnerabilityResponse, error)
 	// SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
@@ -100,6 +104,16 @@ func (c *vulnerabilityServiceClient) CountFindings(ctx context.Context, in *Coun
 	return out, nil
 }
 
+func (c *vulnerabilityServiceClient) GetSummary(ctx context.Context, in *GetSummaryRequest, opts ...grpc.CallOption) (*GetSummaryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSummaryResponse)
+	err := c.cc.Invoke(ctx, VulnerabilityService_GetSummary_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *vulnerabilityServiceClient) GetVulnerability(ctx context.Context, in *GetVulnerabilityRequest, opts ...grpc.CallOption) (*GetVulnerabilityResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetVulnerabilityResponse)
@@ -139,6 +153,9 @@ type VulnerabilityServiceServer interface {
 	ListVulnerabilities(context.Context, *ListVulnerabilitiesRequest) (*ListVulnerabilitiesResponse, error)
 	// CountFindings counts findings as ListFindings lists them, grouped by one dimension.
 	CountFindings(context.Context, *CountFindingsRequest) (*CountFindingsResponse, error)
+	// GetSummary returns global finding aggregates and coverage for one workload
+	// selection. Team-scoped and tenant-wide reads use this same operation.
+	GetSummary(context.Context, *GetSummaryRequest) (*GetSummaryResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
 	GetVulnerability(context.Context, *GetVulnerabilityRequest) (*GetVulnerabilityResponse, error)
 	// SearchComponents finds packages in SBOMs of images in use, whether or not they have findings.
@@ -164,6 +181,9 @@ func (UnimplementedVulnerabilityServiceServer) ListVulnerabilities(context.Conte
 }
 func (UnimplementedVulnerabilityServiceServer) CountFindings(context.Context, *CountFindingsRequest) (*CountFindingsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CountFindings not implemented")
+}
+func (UnimplementedVulnerabilityServiceServer) GetSummary(context.Context, *GetSummaryRequest) (*GetSummaryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetSummary not implemented")
 }
 func (UnimplementedVulnerabilityServiceServer) GetVulnerability(context.Context, *GetVulnerabilityRequest) (*GetVulnerabilityResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetVulnerability not implemented")
@@ -264,6 +284,24 @@ func _VulnerabilityService_CountFindings_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _VulnerabilityService_GetSummary_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSummaryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VulnerabilityServiceServer).GetSummary(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VulnerabilityService_GetSummary_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VulnerabilityServiceServer).GetSummary(ctx, req.(*GetSummaryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _VulnerabilityService_GetVulnerability_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetVulnerabilityRequest)
 	if err := dec(in); err != nil {
@@ -322,6 +360,10 @@ var VulnerabilityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CountFindings",
 			Handler:    _VulnerabilityService_CountFindings_Handler,
+		},
+		{
+			MethodName: "GetSummary",
+			Handler:    _VulnerabilityService_GetSummary_Handler,
 		},
 		{
 			MethodName: "GetVulnerability",

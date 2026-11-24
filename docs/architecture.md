@@ -192,8 +192,8 @@ lookup, but cannot be mixed with legacy cursors. No snapshot spans page calls.
 See the [workload overview example and limitations](../README.md#workload-overview).
 
 The public read contract accepts one team or the whole tenant. A workload name
-requires a team and environment. A shared, optional `WorkloadSelector` on the four
-list/count requests intersects that scope with explicit `WorkloadRef` identities.
+requires a team and environment. A shared, optional `WorkloadSelector` on the
+list/count and summary requests intersects that scope with explicit `WorkloadRef` identities.
 It is request-level rather than part of `FindingFilter`, preventing competing
 selectors in workload overview requests. Omitted means no added restriction;
 present-empty means no workloads. Validation, tuple sorting/deduplication and the
@@ -210,6 +210,29 @@ selector is present. No entry-count cap is introduced: the existing 4 MiB gRPC
 receive limit bounds the whole request and returns `ResourceExhausted`; no
 truncation or unrestricted fallback is allowed. Label/RBAC/user logic remains
 outside v0s. See [selection examples and semantics](../README.md#explicit-workload-selection).
+
+`GetSummary` uses the same top-level workload scope/selector and rejects scope
+fields in its separate `FindingFilter`, sharing that validation with the
+workload overview. SQL aggregates matching workload/package occurrences by
+canonical ID globally, rather than summing per-workload unique counts. Highest
+known matching severity is chosen with the existing semantic rank expression
+after filtering. A second aggregate over those matching occurrences counts
+distinct full workload identities, including the KEV subset.
+
+Coverage is computed independently from all selected workloads left-joined to
+images. Its SQL CASE follows `Image.Status()` precedence, with a separate category
+for no resolved image. Coverage tests compare with the existing status method,
+including rescan errors and fetched-but-unscanned images. The five exclusive
+categories count workloads, not images, and partition the selected denominator;
+finding filters never narrow coverage. A successful scan is not a clean-image
+assertion.
+
+One aggregate SQL statement returns finding counts, global unique counts, severity,
+KEV counts and coverage. It and the required KEV availability check run inside one
+read-only repeatable-read transaction. Missing KEV fails the whole response,
+including for empty selections, just like workload overview reads. There is no
+snapshot across requests. No additional queries scale with workload/vulnerability
+count. See [summary semantics and client examples](../README.md#summary-of-findings-and-coverage).
 
 Advisory details include links to the sources;
 v0s uses the scanner's severity rather than storing a separate score.

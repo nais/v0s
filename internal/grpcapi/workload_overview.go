@@ -9,11 +9,7 @@ import (
 
 func (s *Server) listWorkloadOverview(ctx context.Context, req *v0sv1.ListWorkloadsRequest, selection database.WorkloadFilter) (*v0sv1.ListWorkloadsResponse, error) {
 	overview := req.GetOverview()
-	f := overview.GetFindingFilter()
-	if f.GetTeam() != "" || f.GetEnvironment() != "" || f.GetWorkload() != "" {
-		return nil, invalidArgument("overview.finding_filter scope must be empty; use top-level team/environment/workload")
-	}
-	filter, err := findingFilter(f, nil)
+	filter, err := unscopedFindingFilter(overview.GetFindingFilter(), "overview.finding_filter")
 	if err != nil {
 		return nil, err
 	}
@@ -47,10 +43,7 @@ func (s *Server) listWorkloadOverview(ctx context.Context, req *v0sv1.ListWorklo
 		w.FindingCounts = &v0sv1.WorkloadFindingCounts{
 			FindingCount: c.FindingCount, UniqueVulnerabilityCount: c.UniqueVulnerabilityCount,
 			UniqueKevVulnerabilityCount: c.UniqueKEVVulnerabilityCount,
-			SeverityCounts: &v0sv1.VulnerabilitySeverityCounts{
-				Critical: c.SeverityCounts.Critical, High: c.SeverityCounts.High,
-				Medium: c.SeverityCounts.Medium, Low: c.SeverityCounts.Low, Unknown: c.SeverityCounts.Unknown,
-			},
+			SeverityCounts:              severityCountsToProto(c.SeverityCounts),
 		}
 		resp.Workloads = append(resp.Workloads, w)
 	}
