@@ -89,6 +89,21 @@ type workloadCursor struct {
 	Environment string `json:"e"`
 	Team        string `json:"t"`
 	Name        string `json:"w"`
+	Operation   string `json:"operation,omitempty"`
+}
+
+func (f WorkloadFilter) conditions(args *sqlArgs) []string {
+	var where []string
+	if len(f.Teams) > 0 {
+		where = append(where, "w.team = ANY("+args.add(f.Teams)+")")
+	}
+	if f.Environment != "" {
+		where = append(where, "w.environment = "+args.add(f.Environment))
+	}
+	if f.Workload != "" {
+		where = append(where, "w.name = "+args.add(f.Workload))
+	}
+	return where
 }
 
 // ListWorkloads lists workloads ordered by environment, team and name.
@@ -97,19 +112,11 @@ func (db *DB) ListWorkloads(ctx context.Context, filter WorkloadFilter, page Pag
 	if err := decodePageToken(page.Token, &cursor); err != nil {
 		return nil, "", err
 	}
-	var (
-		args  sqlArgs
-		where []string
-	)
-	if len(filter.Teams) > 0 {
-		where = append(where, "w.team = ANY("+args.add(filter.Teams)+")")
+	if cursor.Operation != "" {
+		return nil, "", fmt.Errorf("incompatible workload cursor; restart pagination without a token: %w", ErrInvalid)
 	}
-	if filter.Environment != "" {
-		where = append(where, "w.environment = "+args.add(filter.Environment))
-	}
-	if filter.Workload != "" {
-		where = append(where, "w.name = "+args.add(filter.Workload))
-	}
+	var args sqlArgs
+	where := filter.conditions(&args)
 	if page.Token != "" {
 		where = append(where, fmt.Sprintf("(w.environment, w.team, w.name) > (%s, %s, %s)",
 			args.add(cursor.Environment), args.add(cursor.Team), args.add(cursor.Name)))
