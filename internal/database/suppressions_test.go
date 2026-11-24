@@ -304,7 +304,7 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 	set(t, db, lodashSuppression("not_affected"))
 
 	// Discovery includes already assessed findings, without restricting the image.
-	filter := database.FindingFilter{Teams: []string{"team-a"}, VulnerabilityID: "GHSA-1", Package: "pkg:npm/lodash", Suppressed: database.SuppressedInclude}
+	filter := database.FindingFilter{Teams: []string{"team-a"}, VulnerabilityIDs: []string{"GHSA-1"}, Package: "pkg:npm/lodash", Suppressed: database.SuppressedInclude}
 	findings, _, err := db.ListFindings(ctx, filter, database.Page{})
 	if err != nil || len(findings) != 2 {
 		t.Fatalf("discover workloads = %v, %v; want app and worker", findings, err)
@@ -351,10 +351,12 @@ func TestMigrateWorkloadSuppressions(t *testing.T) {
 	defer conn.Close(ctx)
 	// Reconstruct the deployed v1 schema, then exercise the migration command's database path.
 	_, err = conn.Exec(ctx, fixture+`
+			ALTER TABLE vulnerabilities ADD COLUMN cvss jsonb NOT NULL DEFAULT '{}';
+			UPDATE vulnerabilities SET cvss = '{"nvd":{"v3_score":7.5}}' WHERE id = 'CVE-1';
 			DROP TABLE suppressions;
 			ALTER TABLE legacy_suppressions RENAME TO suppressions;
 			ALTER INDEX legacy_suppressions_pkey RENAME TO suppressions_pkey;
-			DELETE FROM schema_migrations WHERE version = 2;
+			DELETE FROM schema_migrations WHERE version > 1;
 			INSERT INTO suppressions (team, image_name, package_key, vulnerability_id, state, detail, updated_by, updated_at)
 			VALUES ('team-a', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'original reason', 'original actor', '2026-01-02'),
 			       ('team-a', 'repo/absent', 'pkg:npm/lodash', 'CVE-1', 'not_affected', 'unmatched', 'me', '2026-01-02');
@@ -374,6 +376,13 @@ func TestMigrateWorkloadSuppressions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer migrated.Close()
+	var removed bool
+	if err := conn.QueryRow(ctx, `SELECT NOT EXISTS (
+		SELECT FROM information_schema.columns
+		WHERE table_schema = current_schema() AND table_name = 'vulnerabilities' AND column_name = 'cvss'
+	)`).Scan(&removed); err != nil || !removed {
+		t.Fatalf("legacy score column removed = %t, %v", removed, err)
+	}
 	all := listSuppressions(t, migrated)
 	if len(all) != 3 {
 		t.Fatalf("migrated = %+v, want three current matching workloads", all)

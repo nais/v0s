@@ -68,7 +68,6 @@ func TestScan(t *testing.T) {
 	muslVulnerability := v0s.Vulnerability{
 		ID: "CVE-2025-0001", Title: "musl overflow", Description: "A buffer overflow in musl.",
 		Severities:  map[string]v0s.Severity{"nvd": v0s.SeverityHigh},
-		CVSS:        map[string]v0s.CVSS{"nvd": {V3Vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N", V3Score: 7.5}},
 		References:  []string{"https://example.com/CVE-2025-0001"},
 		PublishedAt: time.Date(2025, 1, 2, 0, 0, 0, 0, time.UTC),
 		ModifiedAt:  time.Date(2025, 1, 3, 0, 0, 0, 0, time.UTC),
@@ -77,12 +76,10 @@ func TestScan(t *testing.T) {
 		{
 			ID: "CVE-2025-0002", Aliases: []string{"GHSA-aaaa-bbbb-cccc"}, Title: "lodash prototype pollution",
 			Severities: map[string]v0s.Severity{"ghsa": v0s.SeverityMedium, "nvd": v0s.SeverityCritical},
-			CVSS:       map[string]v0s.CVSS{"ghsa": {V40Vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:L/VI:L/VA:N/SC:N/SI:N/SA:N", V40Score: 6.9}},
 		},
 		{
 			ID: "GHSA-xxxx-yyyy-zzzz", Title: "lodash ReDoS",
 			Severities: map[string]v0s.Severity{"ghsa": v0s.SeverityLow},
-			CVSS:       map[string]v0s.CVSS{},
 		},
 	}
 	lodashOnly := v0s.ScanResult{

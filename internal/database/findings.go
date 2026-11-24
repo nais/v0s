@@ -141,8 +141,8 @@ type FindingFilter struct {
 	Workload           string
 	ImageName          string
 	ImageDigest        string
-	VulnerabilityID    string // ID or alias
-	Package            string // package key, or purl with version for an exact match
+	VulnerabilityIDs   []string // IDs or aliases
+	Package            string   // package key, or purl with version for an exact match
 	Severities         []v0s.Severity
 	HasFix             bool // only findings with a fixed version
 	OnlyKnownExploited bool // only findings for vulnerabilities in CISA KEV
@@ -167,8 +167,9 @@ func (f FindingFilter) conditions(args *sqlArgs) ([]string, error) {
 	if f.ImageDigest != "" {
 		where = append(where, "i.digest = "+args.add(f.ImageDigest))
 	}
-	if f.VulnerabilityID != "" {
-		where = append(where, vulnerabilityMatch("f.vulnerability_id", f.VulnerabilityID, args))
+	if len(f.VulnerabilityIDs) > 0 {
+		p := args.add(f.VulnerabilityIDs)
+		where = append(where, fmt.Sprintf("(f.vulnerability_id = ANY(%[1]s) OR f.vulnerability_id IN (SELECT vulnerability_id FROM vulnerability_aliases WHERE alias = ANY(%[1]s)))", p))
 	}
 	if f.Package != "" {
 		cond, err := packageMatch("f.purl", "f.package_key", f.Package, args)
@@ -483,11 +484,11 @@ func (db *DB) GetVulnerability(ctx context.Context, idOrAlias string) (Vulnerabi
 		publishedAt, modifiedAt pgtype.Timestamptz
 		epss                    epssScan
 	)
-	dest := []any{&d.ID, &d.Title, &d.Description, &d.Severities, &d.CVSS, &d.References, &publishedAt, &modifiedAt, &d.Aliases}
+	dest := []any{&d.ID, &d.Title, &d.Description, &d.Severities, &d.References, &publishedAt, &modifiedAt, &d.Aliases}
 	dest = append(dest, epss.dest()...)
 	dest = append(dest, &d.KnownExploited)
 	err = db.pool.QueryRow(ctx, `
-		SELECT v.id, v.title, v.description, v.severities, v.cvss, v."references", v.published_at, v.modified_at,
+		SELECT v.id, v.title, v.description, v.severities, v."references", v.published_at, v.modified_at,
 			ARRAY(SELECT alias FROM vulnerability_aliases WHERE vulnerability_id = v.id ORDER BY alias),
 			e.score, e.date, k.cve IS NOT NULL
 		FROM vulnerabilities v

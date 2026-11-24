@@ -38,11 +38,44 @@ mise run check
 
 Database tests need PostgreSQL's `initdb` and `pg_ctl` on `PATH` or in `V0S_PG_BIN`,
 or an existing server via `V0S_TEST_DATABASE_URL`. Without either, they skip.
-Run `mise run generate` after changing protobufs. `mise run build` writes
+The authoritative v0s [protobuf](proto/v0s/v1/v0s.proto) and generated Go
+bindings live in this repository. The client is a separate Go module under
+[`api/`](api/go.mod); the server uses it through a local `replace`.
+Run `mise run generate` after changing either the public contract or the
+vendored Nais API proto. `mise run check` tests and checks both Go modules
+explicitly; `go test ./...` from the root does not cover `api/`.
+`mise run build` builds both modules and writes
 `bin/v0s`; `mise run build:image` builds a local Linux image without pushing.
 Green builds on `main` publish signed images and Helm charts to GAR, then assign
 the chart through Fasit to `ci-nais` management with a wait for success before
 assigning all management environments.
+
+## Go client
+
+Import `github.com/nais/v0s/api/v0s/v1`. The client module requires Go 1.26.11,
+not the server's Go version or its Trivy dependencies.
+
+Client releases use `api/v*` tags on commits in this repository, independently
+of server image/chart releases. For example, after publishing `api/v0.1.0`:
+
+```sh
+go get github.com/nais/v0s/api@v0.1.0
+```
+
+Choose the next version from existing `api/v*` tags using semantic versioning.
+The `api/` prefix belongs to the Git tag, not the version passed to `go get`.
+Versions `api/v1.x.y` keep the same module/import paths; a future v2 needs a
+major-versioned module path. Tags are created and pushed only as an explicitly
+approved release step.
+
+To adopt this client later, nais/api must add the published module dependency,
+switch its client imports to `github.com/nais/v0s/api/v0s/v1`, and remove any
+previous generated v0s client and its generation source. Call sites must stop
+expecting CVSS and use the advisory references instead. The gRPC service/RPC
+names are unchanged. No nais/api changes are part of this change.
+
+Finding filters use only `vulnerability_ids`, including for a single ID or
+alias. An empty list does not filter by vulnerability.
 
 ## Documentation
 

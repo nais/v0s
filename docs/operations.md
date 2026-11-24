@@ -14,6 +14,12 @@ PostgreSQL 18, verifies generated code, and builds PR images without publishing.
 Checks have separate Actions steps; vet, staticcheck and tests run sequentially
 rather than competing for runner resources. `mise run check` uses the same order.
 Tests disable built-in vet because the full vet check runs separately.
+Tests, vet and staticcheck run explicitly in both the root and `api/` Go
+modules. CI also tests the client with Go 1.26.11 and automatic toolchain
+upgrades disabled. `mise run build` builds both modules, and `mise run generate`
+regenerates the public client and the vendored Nais API client; CI requires no
+generated-file changes. Client releases use independent `api/v*` Git tags;
+see [Go client](../README.md#go-client).
 Pushes to `main` publish to
 `europe-north1-docker.pkg.dev/nais-io/nais/images/v0s` through
 `nais/platform-build-push-sign`, including an SBOM attestation and signing.
@@ -142,24 +148,21 @@ implementation of the proposed GraphQL layer in Nais API.
 - A failed feed refresh retains the last catalog. EPSS and KEV refreshes are
   attempted independently, so an EPSS failure does not block the first KEV
   import. Feed age remains an operational concern, not a new client protocol.
-- CVSS is returned only by `GetVulnerability`, as one entry per source/version.
-  Versions are `3.0`, `3.1` and `4.0`; `3.x` means a v3 score without a vector
-  that identifies its minor version. Both `score` and `vector` have protobuf
-  presence. Callers must inspect `Score != nil` before reading it; `GetScore()`
-  alone collapses absence to zero. Trivy and older stored records use zero for
-  missing scores, so zero is exposed only when a valid zero-impact vector
-  confirms it. Missing scores remain absent, including malformed/nonzero-impact
-  vectors without a source score. Existing stored CVSS records remain readable.
-- The public API no longer exposes finding title/raw fix status/aggregate CVSS,
+- The public API no longer exposes finding title, raw fix status,
   source-severity matrices, advisory dates, KEV metadata, EPSS percentile or the
   scanner DB version. Internal source data and scan bookkeeping are retained.
 
-This intentionally breaks generated client/source compatibility. Regenerate
-all v0s consumers and coordinate their rollout with the server; do not rely on
-old clients interpreting the new response fields. Removed protobuf field
-numbers and names are reserved, not reused. Keep rollback builds with matching
-clients available. No database migration or reset is required for this contract
-change; existing workload-scoped assessments and source data are unchanged.
+CVSS is no longer returned or stored by v0s. Use the advisory links to look up
+scores at the source. Clients that used the removed field must update to the
+`github.com/nais/v0s/api` client and stop expecting scores.
+Finding filters use `vulnerability_ids` for both single and multiple IDs or
+aliases; there is no separate singular filter.
+Removed protobuf field numbers and names are reserved, not reused.
+
+Migration 0003 drops the score column. The Deployment already stops the old
+server before running migrations. Do not roll back to a binary that expects the
+old schema after applying it; use a forward fix or restore a pre-migration
+backup. Other advisory data and workload assessments are unchanged.
 
 ## Health and diagnostics
 

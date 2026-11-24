@@ -298,19 +298,10 @@ func record(v types.DetectedVulnerability) *v0s.Vulnerability {
 		Title:       v.Title,
 		Description: v.Description,
 		Severities:  make(map[string]v0s.Severity, len(v.VendorSeverity)),
-		CVSS:        make(map[string]v0s.CVSS, len(v.CVSS)),
 		References:  slices.Clone(v.References),
 	}
 	for source, s := range v.VendorSeverity {
 		rec.Severities[string(source)] = severity(s.String())
-	}
-	for source, c := range v.CVSS {
-		rec.CVSS[string(source)] = v0s.CVSS{
-			V3Vector:  c.V3Vector,
-			V3Score:   c.V3Score,
-			V40Vector: c.V40Vector,
-			V40Score:  c.V40Score,
-		}
 	}
 	if v.PublishedDate != nil {
 		rec.PublishedAt = *v.PublishedDate
