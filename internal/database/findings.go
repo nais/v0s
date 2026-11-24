@@ -317,18 +317,16 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page)
 		fi.EPSS = epss.epss(fi.Finding.VulnerabilityID)
 		if state != nil {
 			fi.Suppression = &Suppression{
-				SuppressionKey: SuppressionKey{
-					Environment:     fi.Workload.Environment,
-					Workload:        fi.Workload.Name,
-					ImageName:       fi.Image.Name,
-					Package:         fi.Finding.PackageKey,
-					VulnerabilityID: fi.Finding.VulnerabilityID,
-				},
-				Team:      fi.Workload.Team,
-				State:     *state,
-				Detail:    *detail,
-				UpdatedBy: *updatedBy,
-				UpdatedAt: updatedAt.Time,
+				Environment:     fi.Workload.Environment,
+				Workload:        fi.Workload.Name,
+				ImageName:       fi.Image.Name,
+				Package:         fi.Finding.PackageKey,
+				VulnerabilityID: fi.Finding.VulnerabilityID,
+				Team:            fi.Workload.Team,
+				State:           *state,
+				Detail:          *detail,
+				UpdatedBy:       *updatedBy,
+				UpdatedAt:       updatedAt.Time,
 			}
 		}
 		return fi, nil
