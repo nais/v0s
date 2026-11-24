@@ -312,8 +312,8 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 	var selected []database.NewSuppression
 	for _, f := range findings {
 		selected = append(selected, database.NewSuppression{
-			SuppressionKey: database.SuppressionKey{Environment: f.Workload.Environment, Workload: f.Workload.Name, ImageName: f.Image.Name, Package: f.Finding.PackageKey, VulnerabilityID: f.Finding.VulnerabilityID},
-			State:          "accepted_risk", Detail: "explicitly selected",
+			Environment: f.Workload.Environment, Workload: f.Workload.Name, ImageName: f.Image.Name, Package: f.Finding.PackageKey, VulnerabilityID: f.Finding.VulnerabilityID,
+			State: "accepted_risk", Detail: "explicitly selected",
 		})
 	}
 	set(t, db, selected...)
