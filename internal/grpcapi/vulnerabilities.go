@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) ListVulnerabilities(ctx context.Context, req *v0sv1.ListVulnerabilitiesRequest) (*v0sv1.ListVulnerabilitiesResponse, error) {
-	filter, err := findingFilter(req.GetFilter())
+	filter, err := findingFilter(req.GetFilter(), req.GetWorkloadSelector())
 	if err != nil {
 		return nil, err
 	}

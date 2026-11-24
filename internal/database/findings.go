@@ -149,20 +149,12 @@ type FindingFilter struct {
 	HasFix             bool // only findings with a fixed version
 	OnlyKnownExploited bool // only findings for vulnerabilities in CISA KEV
 	Suppressed         SuppressedFilter
+	Selector           *WorkloadSelector `json:",omitempty"`
 }
 
 // conditions returns WHERE conditions on findingsFrom.
 func (f FindingFilter) conditions(args *sqlArgs) ([]string, error) {
-	var where []string
-	if len(f.Teams) > 0 {
-		where = append(where, "w.team = ANY("+args.add(f.Teams)+")")
-	}
-	if f.Environment != "" {
-		where = append(where, "w.environment = "+args.add(f.Environment))
-	}
-	if f.Workload != "" {
-		where = append(where, "w.name = "+args.add(f.Workload))
-	}
+	where := (WorkloadFilter{Teams: f.Teams, Environment: f.Environment, Workload: f.Workload, Selector: f.Selector}).conditions(args)
 	if f.ImageName != "" {
 		where = append(where, "i.name = "+args.add(f.ImageName))
 	}
@@ -430,6 +422,11 @@ func (db *DB) CountFindings(ctx context.Context, filter FindingFilter, groupBy G
 	if groupBy.key() == "" {
 		return nil, fmt.Errorf("group by is required: %w", ErrInvalid)
 	}
+	selector, err := filter.Selector.normalized()
+	if err != nil {
+		return nil, err
+	}
+	filter.Selector = selector
 	var args sqlArgs
 	where, err := filter.conditions(&args)
 	if err != nil {

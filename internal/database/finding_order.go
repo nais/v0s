@@ -50,6 +50,11 @@ func normalizedSet[S ~[]E, E ~string](values S) S {
 }
 
 func normalizeFindingFilter(f FindingFilter) (FindingFilter, error) {
+	var err error
+	f.Selector, err = f.Selector.normalized()
+	if err != nil {
+		return FindingFilter{}, err
+	}
 	f.Teams = normalizedSet(f.Teams)
 	f.VulnerabilityIDs = normalizedSet(f.VulnerabilityIDs)
 	f.Severities = normalizedSet(f.Severities)

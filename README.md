@@ -81,6 +81,70 @@ names are unchanged. No nais/api changes are part of this change.
 Finding filters use only `vulnerability_ids`, including for a single ID or
 alias. An empty list does not filter by vulnerability.
 
+### Explicit workload selection
+
+`ListWorkloads` (both modes), `ListFindings`, `ListVulnerabilities` and
+`CountFindings` accept the same top-level `workloadSelector`. It wraps a list of
+existing `WorkloadRef` identities: `environment`, `team`, `name`. It is not part
+of `FindingFilter`, so workload overview requests have just one selector.
+nais/api can compute the list externally from labels or the user's teams; v0s
+does not interpret labels, users or permissions.
+
+- Omitted `workloadSelector`: no additional restriction, preserving existing
+  behavior.
+- `"workloadSelector": {}` or `{"workloads": []}`: match **no workloads**, never
+  all workloads.
+- All three identity fields must be nonblank; invalid entries are
+  `InvalidArgument`. Identities are matched exactly. Ordering and duplicate
+  identities are normalized without changing the caller's input.
+- The selector **intersects** existing team/environment/workload scope and
+  finding filters. It never overrides them. Existing requirements for a fully
+  scoped `workload` filter still apply.
+- Unknown/deleted workloads match nothing. Workloads sharing an image remain
+  separate; selecting one does not select the others.
+
+For example, after computing a selection outside v0s:
+
+```sh
+grpcurl -plaintext -d '{
+  "workloadSelector": {
+    "workloads": [
+      {"environment": "dev", "team": "team-a", "name": "app"},
+      {"environment": "prod", "team": "team-b", "name": "worker"}
+    ]
+  },
+  "filter": {"packageType": "npm"},
+  "orderBy": {"field": "FIELD_SEVERITY", "direction": "DIRECTION_DESC"},
+  "pageSize": 2
+}' localhost:50051 v0s.v1.VulnerabilityService/ListFindings
+```
+
+Use the same `workloadSelector` at the top level of the other three requests;
+for workload counts also send `"overview": {}` to `ListWorkloads`. SQL applies
+selection before grouping, counting, sorting, seek and LIMIT. Finding facets and
+overview totals cover the full intersected selection, not the current page,
+including on an empty continuation page. Workload overview still preserves
+zero-count/coverage-gap rows unless `affectedOnly` is true. Existing KEV
+availability errors still apply, including for empty selections.
+
+Continue with the same scope/filter/order/selector and the returned token.
+Reordering or duplicating references is equivalent; changing the identity set,
+including adding/removing an unknown reference, returns `InvalidArgument`.
+Restart without a token after an actual selection change. No selector means
+existing cursor bytes and compatibility are preserved. Plain `ListWorkloads`
+with a selector uses a separate versioned, scope/selection-bound cursor; it
+cannot be mixed with unselected legacy cursors or overview cursors. Deleting a
+boundary workload does not invalidate continuation with the same selector.
+Pagination remains live, not a snapshot across requests.
+
+There is **no separate entry-count limit**. Selection uses three parameterized
+SQL arrays, not one query or three bind parameters per workload, so it avoids
+PostgreSQL's bind-parameter limit for large tenant selections. The existing
+**4 MiB encoded protobuf request limit** applies to the whole request; oversized
+messages fail with `ResourceExhausted`. Lists are never truncated and there is no
+fallback to all workloads. Tests exercise 25,000 unknown identities plus matching
+workloads after them, as well as transport-level rejection over 4 MiB.
+
 ### Finding ordering and pagination
 
 Without `order_by`, `ListFindings` retains its existing order: environment,
@@ -189,12 +253,13 @@ Existing `ListFindings` behavior is unchanged.
 
 `ListWorkloads` is extended additively: send `overview: {}` to opt in to
 per-workload finding counts, per-row cursors and `totalCount`. Without `overview`,
-the existing response, identity ordering and legacy cursor format are unchanged;
-counts/total are absent and no KEV catalog is required. There is no separate
-workload overview RPC.
+the existing response and identity ordering are unchanged; counts/total are
+absent and no KEV catalog is required. The legacy cursor format is unchanged
+when `workloadSelector` is also omitted. There is no separate workload overview RPC.
 
 Workload **selection** uses the existing top-level `team`, `environment` and
-`workload` fields. `overview.findingFilter` reuses `FindingFilter` for matching
+`workload` fields, intersected with `workloadSelector` when present.
+`overview.findingFilter` reuses `FindingFilter` for matching
 findings, including severity, KEV, fix availability, assessments and package
 type. Its `team`, `environment` and `workload` must be empty; competing scope
 fields are rejected with `InvalidArgument`, even if they repeat the selection.
@@ -251,9 +316,10 @@ not interchangeable; invalid/incompatible cursors or changed parameters return
 
 Page and total share a database snapshot within the request, but requests are
 not a snapshot across pages. Changing finding counts can move rows; totals may
-change. Selection still supports one team or the whole tenant, optional
-environment, or one fully scoped workload. Arbitrary multi-team subsets and
-explicit workload lists are not introduced here; there is no label/RBAC logic.
+change. Existing scope supports one team or the whole tenant, optional
+environment, or one fully scoped workload. The shared
+[explicit workload selector](#explicit-workload-selection) additionally supports
+externally computed multi-team/multi-environment subsets without label/RBAC logic.
 
 ## Documentation
 

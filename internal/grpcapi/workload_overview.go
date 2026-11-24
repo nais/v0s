@@ -13,7 +13,7 @@ func (s *Server) listWorkloadOverview(ctx context.Context, req *v0sv1.ListWorklo
 	if f.GetTeam() != "" || f.GetEnvironment() != "" || f.GetWorkload() != "" {
 		return nil, invalidArgument("overview.finding_filter scope must be empty; use top-level team/environment/workload")
 	}
-	filter, err := findingFilter(f)
+	filter, err := findingFilter(f, nil)
 	if err != nil {
 		return nil, err
 	}
