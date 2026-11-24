@@ -81,6 +81,52 @@ names are unchanged. No nais/api changes are part of this change.
 Finding filters use only `vulnerability_ids`, including for a single ID or
 alias. An empty list does not filter by vulnerability.
 
+### Finding ordering and pagination
+
+Without `order_by`, `ListFindings` retains its existing order: environment,
+team, workload name, vulnerability ID and purl, all ascending. Explicit ordering
+supports severity or vulnerability ID in either direction, in SQL before LIMIT.
+Severity DESC is CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN; ASC is LOW, MEDIUM,
+HIGH, CRITICAL, UNKNOWN. UNKNOWN is always last. Severity ties use vulnerability
+ID ascending. Remaining ties, including for ID ordering, use environment, team,
+workload name and purl ascending.
+
+For example, against a local plaintext endpoint with reflection:
+
+```sh
+grpcurl -plaintext -d '{
+  "filter": {"team": "my-team"},
+  "orderBy": {"field": "FIELD_SEVERITY", "direction": "DIRECTION_DESC"},
+  "pageSize": 2
+}' localhost:50051 v0s.v1.VulnerabilityService/ListFindings
+```
+
+For the next page, repeat the filter and order and copy `nextPageToken` from
+the response into `pageToken`:
+
+```sh
+grpcurl -plaintext -d '{
+  "filter": {"team": "my-team"},
+  "orderBy": {"field": "FIELD_SEVERITY", "direction": "DIRECTION_DESC"},
+  "pageSize": 2,
+  "pageToken": "<nextPageToken from the previous response>"
+}' localhost:50051 v0s.v1.VulnerabilityService/ListFindings
+```
+
+An empty `nextPageToken` means there is no next page. Each entry in `cursors`
+can also be used to continue after its corresponding finding, even if that
+finding has since been deleted. Cursors are opaque and versioned, bound to the
+normalized filter and ordering, but not page size. Equivalent list permutations,
+duplicates, package-type case, purl spellings and omitted/default filter values
+are normalized. Replacing an alias with its canonical vulnerability ID is still
+a filter change. Changed filters/orders and legacy or incompatible cursors return
+`InvalidArgument`; restart without a token. When `orderBy` is present, both field
+and direction must be valid and specified.
+
+Each request reads live data; there is no snapshot across requests. Changes to
+sort values can move findings between pages. Package-type facets always cover
+the entire filtered selection, unaffected by ordering, cursor or page size.
+
 ## Documentation
 
 [Documentation index](docs/README.md) ·

@@ -3,16 +3,260 @@ package database_test
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/database/databasetest"
 	"github.com/nais/v0s/internal/v0s"
 )
+
+func newOrderingFixture(t *testing.T) *database.DB {
+	t.Helper()
+	db := databasetest.New(t)
+	exec(t, db, `
+		INSERT INTO images (id, name, digest) OVERRIDING SYSTEM VALUE VALUES
+			(1, 'repo/app', 'a'), (2, 'repo/app', 'b');
+		INSERT INTO workloads (environment, team, name, image_reference, image_id) VALUES
+			('e1', 'a', 'app', 'repo/app:1', 1),
+			('e1', 'a', 'worker', 'repo/app:1', 1),
+			('e1', 'b', 'app', 'repo/app:2', 2),
+			('e2', 'a', 'app', 'repo/app:2', 2);
+		INSERT INTO vulnerabilities (id, db_version)
+		SELECT id, now() FROM unnest(ARRAY['A','B','C','D','E','F']) id;
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		SELECT i.id, v.id, v.purl, split_part(v.purl, '@', 1), '1', 'affected', v.severity
+		FROM images i CROSS JOIN (VALUES
+			('A', 'pkg:maven/a@1', 'UNKNOWN'),
+			('B', 'pkg:npm/b@1', 'CRITICAL'),
+			('C', 'pkg:npm/c@1', 'LOW'),
+			('D', 'pkg:npm/d@1', 'HIGH'),
+			('D', 'pkg:npm/z@1', 'HIGH'),
+			('E', 'pkg:npm/e@1', 'MEDIUM'),
+			('F', 'pkg:npm/f@1', 'HIGH')) v(id, purl, severity);
+		INSERT INTO kev (cve, date_added, known_ransomware_campaign) VALUES ('B', '2026-01-02', false);
+	`)
+	return db
+}
+
+func orderedFindingKeys(findings []database.WorkloadFinding) []string {
+	keys := findingKeys(findings)
+	for i, f := range findings {
+		keys[i] = f.Workload.Environment + "/" + keys[i]
+	}
+	return keys
+}
+
+func findingOrderCases() []struct {
+	name  string
+	order database.FindingOrder
+	ids   string
+} {
+	return []struct {
+		name  string
+		order database.FindingOrder
+		ids   string
+	}{
+		{"default", database.FindingOrder{}, "ABCDEF"},
+		{"severity ASC", database.FindingOrder{Field: database.FindingOrderSeverity, Direction: database.FindingOrderASC}, "CEDFBA"},
+		{"severity DESC", database.FindingOrder{Field: database.FindingOrderSeverity, Direction: database.FindingOrderDESC}, "BDFECA"},
+		{"identifier ASC", database.FindingOrder{Field: database.FindingOrderVulnerabilityID, Direction: database.FindingOrderASC}, "ABCDEF"},
+		{"identifier DESC", database.FindingOrder{Field: database.FindingOrderVulnerabilityID, Direction: database.FindingOrderDESC}, "FEDCBA"},
+	}
+}
+
+func TestFindingOrdering(t *testing.T) {
+	db := newOrderingFixture(t)
+	workloads := []string{"e1/a/app", "e1/a/worker", "e1/b/app", "e2/a/app"}
+	packages := map[rune][]string{
+		'A': {"pkg:maven/a@1"}, 'B': {"pkg:npm/b@1"}, 'C': {"pkg:npm/c@1"},
+		'D': {"pkg:npm/d@1", "pkg:npm/z@1"}, 'E': {"pkg:npm/e@1"}, 'F': {"pkg:npm/f@1"},
+	}
+	counts := []database.FindingCount{{Key: "maven", Count: 4}, {Key: "npm", Count: 24}}
+	for _, tt := range findingOrderCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			var want []string
+			appendID := func(workload string, id rune) {
+				for _, pkg := range packages[id] {
+					want = append(want, workload+" "+string(id)+" "+pkg)
+				}
+			}
+			if tt.order.Field == database.FindingOrderDefault {
+				for _, w := range workloads {
+					for _, id := range tt.ids {
+						appendID(w, id)
+					}
+				}
+			} else {
+				for _, id := range tt.ids {
+					for _, w := range workloads {
+						appendID(w, id)
+					}
+				}
+			}
+			all, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{}, tt.order)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := orderedFindingKeys(all.Findings); !slices.Equal(got, want) {
+				t.Fatalf("order = %v, want %v", got, want)
+			}
+			for _, size := range []int{1, 2, 5} {
+				var got []database.WorkloadFinding
+				page := database.Page{Size: size}
+				for range len(want) + 1 {
+					list, err := db.ListFindings(t.Context(), database.FindingFilter{}, page, tt.order)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !slices.Equal(list.PackageTypeCounts, counts) || len(list.Cursors) != len(list.Findings) {
+						t.Fatalf("counts/cursors = %v / %d", list.PackageTypeCounts, len(list.Cursors))
+					}
+					got = append(got, list.Findings...)
+					if list.NextPageToken == "" {
+						break
+					}
+					if list.NextPageToken != list.Cursors[len(list.Cursors)-1] || list.NextPageToken == page.Token {
+						t.Fatal("invalid next cursor")
+					}
+					page.Token = list.NextPageToken
+				}
+				if !slices.Equal(orderedFindingKeys(got), want) {
+					t.Fatalf("size %d: unexpected traversal %v", size, orderedFindingKeys(got))
+				}
+			}
+			for i, cursor := range all.Cursors {
+				resumed, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: cursor}, tt.order)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !slices.Equal(orderedFindingKeys(resumed.Findings), want[i+1:]) || !slices.Equal(resumed.PackageTypeCounts, counts) {
+					t.Fatalf("element %d: incorrect continuation or facets", i)
+				}
+			}
+		})
+	}
+}
+
+func TestFindingOrderingCursorDeletion(t *testing.T) {
+	for _, tt := range findingOrderCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newOrderingFixture(t)
+			all, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{}, tt.order)
+			if err != nil {
+				t.Fatal(err)
+			}
+			boundary := all.Findings[0]
+			_, err = db.Pool().Exec(t.Context(), `DELETE FROM findings WHERE image_id=$1 AND vulnerability_id=$2 AND purl=$3`,
+				boundary.Image.ID, boundary.Finding.VulnerabilityID, boundary.Finding.PURL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var want []database.WorkloadFinding
+			for _, f := range all.Findings[1:] {
+				if f.Image.ID == boundary.Image.ID && f.Finding.VulnerabilityID == boundary.Finding.VulnerabilityID && f.Finding.PURL == boundary.Finding.PURL {
+					continue
+				}
+				want = append(want, f)
+			}
+			resumed, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: all.Cursors[0]}, tt.order)
+			if err != nil || !slices.Equal(orderedFindingKeys(resumed.Findings), orderedFindingKeys(want)) {
+				t.Fatalf("continuation after deletion = %v, %v; want %v", orderedFindingKeys(resumed.Findings), err, orderedFindingKeys(want))
+			}
+		})
+	}
+}
+
+func TestFindingCursorBinding(t *testing.T) {
+	db, _ := newFixture(t)
+	all, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{}, database.FindingOrder{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := database.Page{Token: all.Cursors[0]}
+	filters := []database.FindingFilter{
+		{Teams: []string{"team-a"}}, {Environment: "c1"}, {Workload: "app"},
+		{ImageName: "repo/app"}, {ImageDigest: "sha256:a"}, {VulnerabilityIDs: []string{"CVE-1"}},
+		{Package: "pkg:npm/lodash"}, {PackageType: "npm"}, {Severities: []v0s.Severity{v0s.SeverityHigh}},
+		{HasFix: true}, {OnlyKnownExploited: true}, {Suppressed: database.SuppressedInclude},
+	}
+	for _, filter := range filters {
+		if _, err := db.ListFindings(t.Context(), filter, page, database.FindingOrder{}); !errors.Is(err, database.ErrInvalid) {
+			t.Errorf("changed filter %+v: %v", filter, err)
+		}
+	}
+	for _, tt := range findingOrderCases()[1:] {
+		ordered, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{}, tt.order)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, other := range findingOrderCases() {
+			if other.order == tt.order {
+				continue
+			}
+			if _, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: ordered.Cursors[0]}, other.order); !errors.Is(err, database.ErrInvalid) {
+				t.Errorf("changed order %s to %s: %v", tt.name, other.name, err)
+			}
+		}
+	}
+	for _, raw := range []string{
+		`{"e":"c1","t":"team-a","w":"app","v":"CVE-1","p":"pkg:npm/lodash@4.17.20"}`,
+		`{"version":99}`, `{}`, `null`, `[]`, `{`,
+	} {
+		token := base64.RawURLEncoding.EncodeToString([]byte(raw))
+		if _, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: token}, database.FindingOrder{}); !errors.Is(err, database.ErrInvalid) {
+			t.Errorf("incompatible/malformed %s: %v", raw, err)
+		}
+	}
+	data, err := base64.RawURLEncoding.DecodeString(page.Token)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cursor map[string]any
+	if err := json.Unmarshal(data, &cursor); err != nil {
+		t.Fatal(err)
+	}
+	delete(cursor, "p")
+	data, err = json.Marshal(cursor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: base64.RawURLEncoding.EncodeToString(data)}, database.FindingOrder{}); !errors.Is(err, database.ErrInvalid) {
+		t.Errorf("incomplete boundary: %v", err)
+	}
+}
+
+func TestFindingCursorNormalizedFilters(t *testing.T) {
+	db, _ := newFixture(t)
+	filter := database.FindingFilter{
+		Teams: []string{"team-b", "team-a", "team-a"}, VulnerabilityIDs: []string{"CVE-2", "CVE-1", "CVE-1"},
+		Severities:  []v0s.Severity{v0s.SeverityHigh, v0s.SeverityLow, v0s.SeverityHigh},
+		PackageType: "NPM", Package: "pkg:NPM/%6Codash?arch=x",
+	}
+	order := database.FindingOrder{Field: database.FindingOrderSeverity, Direction: database.FindingOrderDESC}
+	all, err := db.ListFindings(t.Context(), filter, database.Page{}, order)
+	if err != nil || len(all.Cursors) < 2 {
+		t.Fatalf("initial page: %+v, %v", all, err)
+	}
+	filter.Teams = []string{"team-a", "team-b"}
+	filter.VulnerabilityIDs = []string{"CVE-1", "CVE-2"}
+	filter.Severities = []v0s.Severity{v0s.SeverityLow, v0s.SeverityHigh}
+	filter.PackageType = "npm"
+	filter.Package = "pkg:npm/lodash"
+	next, err := db.ListFindings(t.Context(), filter, database.Page{Size: 1, Token: all.Cursors[0]}, order)
+	if err != nil || len(next.Findings) != 1 || !reflect.DeepEqual(next.Findings[0], all.Findings[1]) {
+		t.Fatalf("normalized continuation: %+v, %v", next, err)
+	}
+	filter.VulnerabilityIDs = []string{"GHSA-1", "CVE-2"}
+	if _, err := db.ListFindings(t.Context(), filter, database.Page{Token: all.Cursors[0]}, order); !errors.Is(err, database.ErrInvalid) || !strings.Contains(err.Error(), "filter or order") {
+		t.Errorf("alias substitution: %v", err)
+	}
+}
 
 // fixture is the data seedFixture writes:
 //
@@ -124,7 +368,7 @@ func TestListFindingsFilters(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			list, err := db.ListFindings(ctx, tt.filter, database.Page{})
+			list, err := db.ListFindings(ctx, tt.filter, database.Page{}, database.FindingOrder{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -138,7 +382,7 @@ func TestListFindingsFilters(t *testing.T) {
 	}
 
 	t.Run("facts", func(t *testing.T) {
-		list, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityIDs: []string{"CVE-1"}, Workload: "app"}, database.Page{})
+		list, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityIDs: []string{"CVE-1"}, Workload: "app"}, database.Page{}, database.FindingOrder{})
 		if err != nil || len(list.Findings) != 1 {
 			t.Fatalf("ListFindings = %d findings, %v; want 1", len(list.Findings), err)
 		}
@@ -150,7 +394,7 @@ func TestListFindingsFilters(t *testing.T) {
 	})
 
 	t.Run("not a purl", func(t *testing.T) {
-		_, err := db.ListFindings(ctx, database.FindingFilter{Package: "lodash"}, database.Page{})
+		_, err := db.ListFindings(ctx, database.FindingFilter{Package: "lodash"}, database.Page{}, database.FindingOrder{})
 		if !errors.Is(err, database.ErrInvalid) {
 			t.Errorf("err = %v, want ErrInvalid", err)
 		}
@@ -197,7 +441,7 @@ func TestListFindingsPackageTypes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			list, err := db.ListFindings(ctx, tt.filter, database.Page{})
+			list, err := db.ListFindings(ctx, tt.filter, database.Page{}, database.FindingOrder{})
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
@@ -273,17 +517,33 @@ func TestListFindingsPackageTypeCounts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			list, err := db.ListFindings(ctx, tt.filter, database.Page{Size: 1})
+			list, err := db.ListFindings(ctx, tt.filter, database.Page{Size: 1}, database.FindingOrder{})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if !slices.Equal(list.PackageTypeCounts, tt.want) {
 				t.Errorf("package type counts = %v, want %v", list.PackageTypeCounts, tt.want)
 			}
+			for _, ordering := range findingOrderCases() {
+				page := database.Page{Size: 2}
+				for range 20 {
+					sorted, err := db.ListFindings(ctx, tt.filter, page, ordering.order)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !slices.Equal(sorted.PackageTypeCounts, tt.want) {
+						t.Fatalf("%s: facets = %v, want %v", ordering.name, sorted.PackageTypeCounts, tt.want)
+					}
+					if sorted.NextPageToken == "" {
+						break
+					}
+					page.Token = sorted.NextPageToken
+				}
+			}
 			for _, count := range list.PackageTypeCounts {
 				filter := tt.filter
 				filter.PackageType = count.Key
-				typed, err := db.ListFindings(ctx, filter, database.Page{})
+				typed, err := db.ListFindings(ctx, filter, database.Page{}, database.FindingOrder{})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -303,7 +563,7 @@ func TestListFindingsPackageTypeCountsByteOrder(t *testing.T) {
 		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
 		VALUES (2, 'CVE-3', 'pkg:npmjs/helper@1', 'pkg:npmjs/helper', '1', 'affected', 'HIGH');
 	`)
-	list, err := db.ListFindings(context.Background(), database.FindingFilter{Teams: []string{"team-b"}}, database.Page{})
+	list, err := db.ListFindings(context.Background(), database.FindingFilter{Teams: []string{"team-b"}}, database.Page{}, database.FindingOrder{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +582,7 @@ func TestListFindingsPackageTypePagination(t *testing.T) {
 		page = database.Page{Size: 2}
 	)
 	for range len(want) + 1 {
-		list, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
+		list, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page, database.FindingOrder{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -342,8 +602,12 @@ func TestListFindingsPackageTypePagination(t *testing.T) {
 		t.Errorf("paged findings = %q, want %q", findingKeys(got), want)
 	}
 
-	page.Token = base64.RawURLEncoding.EncodeToString([]byte(`{"e":"c1","t":"team-b","w":"other","v":"CVE-1","p":"pkg:npm/lodash@4.17.19"}`))
-	list, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page)
+	all, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, database.Page{}, database.FindingOrder{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page.Token = all.Cursors[len(all.Cursors)-1]
+	list, err := db.ListFindings(ctx, database.FindingFilter{PackageType: "npm"}, page, database.FindingOrder{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +620,7 @@ func TestListFindingsPagination(t *testing.T) {
 	db, _ := newFixture(t)
 	ctx := context.Background()
 
-	all, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{})
+	all, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{}, database.FindingOrder{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +629,7 @@ func TestListFindingsPagination(t *testing.T) {
 		page = database.Page{Size: 1}
 	)
 	for range 10 {
-		list, err := db.ListFindings(ctx, database.FindingFilter{}, page)
+		list, err := db.ListFindings(ctx, database.FindingFilter{}, page, database.FindingOrder{})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -379,7 +643,7 @@ func TestListFindingsPagination(t *testing.T) {
 		t.Errorf("paged findings = %q, want %q", findingKeys(got), findingKeys(all.Findings))
 	}
 
-	if _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{Token: "garbage!"}); !errors.Is(err, database.ErrInvalid) {
+	if _, err := db.ListFindings(ctx, database.FindingFilter{}, database.Page{Token: "garbage!"}, database.FindingOrder{}); !errors.Is(err, database.ErrInvalid) {
 		t.Errorf("malformed token: err = %v, want ErrInvalid", err)
 	}
 }
@@ -422,7 +686,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 			if filter.Environment == "" {
 				filter.Environment = "c2"
 			}
-			reference, err := db.ListFindings(ctx, filter, database.Page{Size: 1000})
+			reference, err := db.ListFindings(ctx, filter, database.Page{Size: 1000}, database.FindingOrder{})
 			if err != nil || reference.NextPageToken != "" {
 				t.Fatalf("reference page: next=%q, err=%v", reference.NextPageToken, err)
 			}
@@ -431,7 +695,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 				var got []database.WorkloadFinding
 				page := database.Page{Size: size}
 				for range len(want) + 1 {
-					list, err := db.ListFindings(ctx, filter, page)
+					list, err := db.ListFindings(ctx, filter, page, database.FindingOrder{})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -471,7 +735,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 	var got []string
 	page := database.Page{Size: 127}
 	for range 20 {
-		list, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedInclude}, page)
+		list, err := db.ListFindings(ctx, database.FindingFilter{Suppressed: database.SuppressedInclude}, page, database.FindingOrder{})
 		if err != nil {
 			t.Fatal(err)
 		}

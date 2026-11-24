@@ -127,6 +127,23 @@ come from the same database snapshot. Per-finding `cursors` remain available
 alongside the counts; resuming from a cursor does not narrow the counts to the
 remaining findings.
 
+Finding ordering and its keyset boundary are applied in SQL before LIMIT.
+Omitting `order_by` preserves environment/team/workload/vulnerability-ID/purl
+ascending order. Explicit severity ordering always places UNKNOWN last, with
+vulnerability ID ascending within a severity. Explicit vulnerability-ID ordering
+supports both directions. Both explicit modes use environment/team/workload/purl
+ascending to break remaining ties.
+
+Finding cursors contain a version, a normalized filter/order fingerprint and
+the boundary's ordering values. They require no lookup of the boundary finding,
+so deletion does not prevent continuation. They are generated once per returned
+finding, including on the last page. Legacy/incompatible versions and changed
+filters/orders are `InvalidArgument`, requiring a restart without a token.
+Page size is not bound. Filters normalize set-valued lists, package type and
+purl spelling; alias-to-ID substitutions remain filter changes. There is no
+cross-request snapshot: concurrent changes to sort values can move findings.
+See the [gRPC continuation example](../README.md#finding-ordering-and-pagination).
+
 The public read contract accepts one team or the whole tenant. A workload name
 requires a team and environment. Advisory details include links to the sources;
 v0s uses the scanner's severity rather than storing a separate score.
