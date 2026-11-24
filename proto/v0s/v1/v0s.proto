@@ -97,15 +97,13 @@ message Workload {
 // FindingFilter narrows findings. Empty fields do not filter. Severities match any value.
 // A workload name requires both team and environment.
 message FindingFilter {
-  reserved 1;
-  reserved "teams", "kev";
+  reserved 1, 6;
+  reserved "teams", "kev", "vulnerability_id";
   string team = 12;
   string environment = 2;
   string workload = 3;
   string image_name = 4;
   string image_digest = 5;
-  // Vulnerability ID or alias. Combined with vulnerability_ids if both are set.
-  string vulnerability_id = 6;
   // Package key or full purl. A full purl matches only that version.
   string package = 7;
   repeated Severity severities = 8;

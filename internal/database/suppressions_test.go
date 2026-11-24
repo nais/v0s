@@ -304,7 +304,7 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 	set(t, db, lodashSuppression("not_affected"))
 
 	// Discovery includes already assessed findings, without restricting the image.
-	filter := database.FindingFilter{Teams: []string{"team-a"}, VulnerabilityID: "GHSA-1", Package: "pkg:npm/lodash", Suppressed: database.SuppressedInclude}
+	filter := database.FindingFilter{Teams: []string{"team-a"}, VulnerabilityIDs: []string{"GHSA-1"}, Package: "pkg:npm/lodash", Suppressed: database.SuppressedInclude}
 	findings, _, err := db.ListFindings(ctx, filter, database.Page{})
 	if err != nil || len(findings) != 2 {
 		t.Fatalf("discover workloads = %v, %v; want app and worker", findings, err)

@@ -48,6 +48,55 @@ func newServer(t *testing.T, statements ...string) *grpcapi.Server {
 	return grpcapi.New(db, slog.New(slog.DiscardHandler))
 }
 
+func TestFindingVulnerabilityIDs(t *testing.T) {
+	s := newServer(t, `
+		INSERT INTO vulnerabilities (id, title, db_version) VALUES ('CVE-2', 'other bug', now());
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+		SELECT id, 'CVE-2', 'pkg:npm/express@4.0.0', 'pkg:npm/express', '4.0.0', 'affected', 'HIGH' FROM images;`)
+	tests := []struct {
+		name      string
+		ids       []string
+		want      int
+		wantError codes.Code
+	}{
+		{name: "no filter", want: 8},
+		{name: "one ID", ids: []string{"CVE-1"}, want: 4},
+		{name: "multiple IDs and overlapping aliases", ids: []string{"CVE-1", "GHSA-1", "CVE-2", "CVE-404"}, want: 8},
+		{name: "alias", ids: []string{"GHSA-1"}, want: 4},
+		{name: "unknown ID", ids: []string{"CVE-404"}},
+		{name: "empty ID", ids: []string{""}, wantError: codes.InvalidArgument},
+		{name: "blank ID", ids: []string{"CVE-1", " "}, wantError: codes.InvalidArgument},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			filter := &v0sv1.FindingFilter{VulnerabilityIds: tt.ids}
+			findings, err := s.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{Filter: filter})
+			if status.Code(err) != tt.wantError {
+				t.Fatalf("list: %v, want %v", err, tt.wantError)
+			}
+			counts, err := s.CountFindings(t.Context(), &v0sv1.CountFindingsRequest{
+				Filter: filter, GroupBy: v0sv1.CountFindingsRequest_GROUP_BY_SEVERITY,
+			})
+			if status.Code(err) != tt.wantError {
+				t.Fatalf("count: %v, want %v", err, tt.wantError)
+			}
+			if tt.wantError != codes.OK {
+				return
+			}
+			if len(findings.GetFindings()) != tt.want {
+				t.Errorf("findings = %d, want %d", len(findings.GetFindings()), tt.want)
+			}
+			var total int64
+			for _, bucket := range counts.GetBuckets() {
+				total += bucket.GetCount()
+			}
+			if total != int64(tt.want) {
+				t.Errorf("count = %d, want %d", total, tt.want)
+			}
+		})
+	}
+}
+
 func TestSuppressions(t *testing.T) {
 	s := newServer(t)
 	ctx := context.Background()
@@ -166,7 +215,7 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	ctx := context.Background()
 	req := &v0sv1.ListFindingsRequest{
 		Filter: &v0sv1.FindingFilter{
-			Team: "team", VulnerabilityId: "GHSA-1",
+			Team: "team", VulnerabilityIds: []string{"GHSA-1"},
 			Suppressed: v0sv1.SuppressedFilter_SUPPRESSED_FILTER_INCLUDE,
 		},
 		PageSize: 1,
@@ -200,7 +249,7 @@ func TestDiscoverAndBatchSuppressWorkloads(t *testing.T) {
 	if _, err := s.SetSuppressions(ctx, &v0sv1.SetSuppressionsRequest{Team: "team", Actor: "me", Suppressions: selected}); err != nil {
 		t.Fatal(err)
 	}
-	active, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Team: "team", VulnerabilityId: "CVE-1"}})
+	active, err := s.ListFindings(ctx, &v0sv1.ListFindingsRequest{Filter: &v0sv1.FindingFilter{Team: "team", VulnerabilityIds: []string{"CVE-1"}}})
 	if err != nil || len(active.GetFindings()) != 2 {
 		t.Fatalf("active findings = %v, %v; want both dev workloads", active, err)
 	}

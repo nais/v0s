@@ -154,8 +154,10 @@ implementation of the proposed GraphQL layer in Nais API.
 
 CVSS is no longer returned or stored by v0s. Use the advisory links to look up
 scores at the source. Clients that used the removed field must update to the
-`github.com/nais/v0s/api` client and stop expecting scores; other RPC fields remain wire
-compatible. Removed protobuf field numbers and names are reserved, not reused.
+`github.com/nais/v0s/api` client and stop expecting scores.
+Finding filters use `vulnerability_ids` for both single and multiple IDs or
+aliases; there is no separate singular filter.
+Removed protobuf field numbers and names are reserved, not reused.
 
 Migration 0003 drops the score column. The Deployment already stops the old
 server before running migrations. Do not roll back to a binary that expects the

@@ -74,6 +74,9 @@ previous generated v0s client and its generation source. Call sites must stop
 expecting CVSS and use the advisory references instead. The gRPC service/RPC
 names are unchanged. No nais/api changes are part of this change.
 
+Finding filters use only `vulnerability_ids`, including for a single ID or
+alias. An empty list does not filter by vulnerability.
+
 ## Documentation
 
 [Visual team pitch](docs/pitch.html) ·

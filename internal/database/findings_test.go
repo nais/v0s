@@ -84,10 +84,10 @@ func TestListFindingsFilters(t *testing.T) {
 	}{
 		// sha256:a runs in two workloads, so its findings are listed for each.
 		{name: "every workload's findings", want: []string{appLodash, appExpress, workerLodash, workerExpress, otherLodash}},
-		{name: "vulnerability ID", filter: database.FindingFilter{VulnerabilityID: "CVE-1"}, want: []string{appLodash, workerLodash, otherLodash}},
-		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityID: "GHSA-1"}, want: []string{appLodash, workerLodash, otherLodash}},
+		{name: "vulnerability ID", filter: database.FindingFilter{VulnerabilityIDs: []string{"CVE-1"}}, want: []string{appLodash, workerLodash, otherLodash}},
+		{name: "vulnerability alias", filter: database.FindingFilter{VulnerabilityIDs: []string{"GHSA-1"}}, want: []string{appLodash, workerLodash, otherLodash}},
 		{name: "IDs and overlapping aliases", filter: database.FindingFilter{
-			VulnerabilityID: "CVE-2", VulnerabilityIDs: []string{"GHSA-1", "CVE-1", "CVE-404"},
+			VulnerabilityIDs: []string{"CVE-2", "GHSA-1", "CVE-1", "CVE-404"},
 		}, want: []string{appLodash, appExpress, workerLodash, workerExpress, otherLodash}},
 		{name: "package key", filter: database.FindingFilter{Package: "pkg:npm/lodash"}, want: []string{appLodash, workerLodash, otherLodash}},
 		{name: "purl without version matches key", filter: database.FindingFilter{Package: "pkg:npm/lodash?arch=x"}, want: []string{appLodash, workerLodash, otherLodash}},
@@ -116,7 +116,7 @@ func TestListFindingsFilters(t *testing.T) {
 	}
 
 	t.Run("facts", func(t *testing.T) {
-		findings, _, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityID: "CVE-1", Workload: "app"}, database.Page{})
+		findings, _, err := db.ListFindings(ctx, database.FindingFilter{VulnerabilityIDs: []string{"CVE-1"}, Workload: "app"}, database.Page{})
 		if err != nil || len(findings) != 1 {
 			t.Fatalf("ListFindings = %d findings, %v; want 1", len(findings), err)
 		}
@@ -192,7 +192,7 @@ func TestListFindingsCursorBoundaries(t *testing.T) {
 		{Environment: "c2", Teams: []string{"team-1", "team-2"}},
 		{Workload: "app-020"},
 		{ImageName: "repo/app", ImageDigest: "sha256:a"},
-		{VulnerabilityID: "GHSA-1"},
+		{VulnerabilityIDs: []string{"GHSA-1"}},
 		{Package: "pkg:npm/lodash@4.17.20"},
 		{HasFix: true},
 		{OnlyKnownExploited: true},

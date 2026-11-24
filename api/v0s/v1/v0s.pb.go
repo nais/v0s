@@ -477,8 +477,6 @@ type FindingFilter struct {
 	Workload    string                 `protobuf:"bytes,3,opt,name=workload,proto3" json:"workload,omitempty"`
 	ImageName   string                 `protobuf:"bytes,4,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
 	ImageDigest string                 `protobuf:"bytes,5,opt,name=image_digest,json=imageDigest,proto3" json:"image_digest,omitempty"`
-	// Vulnerability ID or alias. Combined with vulnerability_ids if both are set.
-	VulnerabilityId string `protobuf:"bytes,6,opt,name=vulnerability_id,json=vulnerabilityId,proto3" json:"vulnerability_id,omitempty"`
 	// Package key or full purl. A full purl matches only that version.
 	Package    string     `protobuf:"bytes,7,opt,name=package,proto3" json:"package,omitempty"`
 	Severities []Severity `protobuf:"varint,8,rep,packed,name=severities,proto3,enum=v0s.v1.Severity" json:"severities,omitempty"`
@@ -554,13 +552,6 @@ func (x *FindingFilter) GetImageName() string {
 func (x *FindingFilter) GetImageDigest() string {
 	if x != nil {
 		return x.ImageDigest
-	}
-	return ""
-}
-
-func (x *FindingFilter) GetVulnerabilityId() string {
-	if x != nil {
-		return x.VulnerabilityId
 	}
 	return ""
 }
@@ -2285,15 +2276,14 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12'\n" +
 	"\x0fimage_reference\x18\x05 \x01(\tR\x0eimageReference\x12#\n" +
 	"\x05image\x18\x04 \x01(\v2\r.v0s.v1.ImageR\x05image\x12#\n" +
-	"\rresolve_error\x18\x06 \x01(\tR\fresolveError\"\xde\x03\n" +
+	"\rresolve_error\x18\x06 \x01(\tR\fresolveError\"\xcb\x03\n" +
 	"\rFindingFilter\x12\x12\n" +
 	"\x04team\x18\f \x01(\tR\x04team\x12 \n" +
 	"\venvironment\x18\x02 \x01(\tR\venvironment\x12\x1a\n" +
 	"\bworkload\x18\x03 \x01(\tR\bworkload\x12\x1d\n" +
 	"\n" +
 	"image_name\x18\x04 \x01(\tR\timageName\x12!\n" +
-	"\fimage_digest\x18\x05 \x01(\tR\vimageDigest\x12)\n" +
-	"\x10vulnerability_id\x18\x06 \x01(\tR\x0fvulnerabilityId\x12\x18\n" +
+	"\fimage_digest\x18\x05 \x01(\tR\vimageDigest\x12\x18\n" +
 	"\apackage\x18\a \x01(\tR\apackage\x120\n" +
 	"\n" +
 	"severities\x18\b \x03(\x0e2\x10.v0s.v1.SeverityR\n" +
@@ -2304,7 +2294,7 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\n" +
 	"suppressed\x18\v \x01(\x0e2\x18.v0s.v1.SuppressedFilterR\n" +
 	"suppressed\x12+\n" +
-	"\x11vulnerability_ids\x18\r \x03(\tR\x10vulnerabilityIdsJ\x04\b\x01\x10\x02R\x05teamsR\x03kev\"\xc3\x04\n" +
+	"\x11vulnerability_ids\x18\r \x03(\tR\x10vulnerabilityIdsJ\x04\b\x01\x10\x02J\x04\b\x06\x10\aR\x05teamsR\x03kevR\x10vulnerability_id\"\xc3\x04\n" +
 	"\aFinding\x12/\n" +
 	"\bworkload\x18\x01 \x01(\v2\x13.v0s.v1.WorkloadRefR\bworkload\x12#\n" +
 	"\x05image\x18\x02 \x01(\v2\r.v0s.v1.ImageR\x05image\x12)\n" +
