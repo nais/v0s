@@ -68,12 +68,6 @@ values:
     config:
       type: string_array
 
-  v13sForwarding.enabled:
-    displayName: Accept suppressions from v13s
-    description: Defaults to false. Enable before v13s forwards suppressions, and only until cutover.
-    config:
-      type: bool
-
   networkPolicy.httpsHosts:
     displayName: Allowed HTTPS hosts
     description: Registries, redirects, Sigstore trust roots and vulnerability data sources used by v0s.

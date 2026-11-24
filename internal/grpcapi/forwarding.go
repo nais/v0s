@@ -5,14 +5,9 @@ import (
 
 	v0sv1 "github.com/nais/v0s/api/v0s/v1"
 	"github.com/nais/v0s/internal/database"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 func (s *Server) ForwardV13SSuppression(ctx context.Context, req *v0sv1.ForwardV13SSuppressionRequest) (*v0sv1.ForwardV13SSuppressionResponse, error) {
-	if !s.v13sForwarding {
-		return nil, status.Error(codes.FailedPrecondition, "forwarding from v13s is not enabled")
-	}
 	suppression := database.V13sSuppression{
 		ImageName:        req.GetImageName(),
 		Package:          req.GetPackage(),

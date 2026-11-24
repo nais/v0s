@@ -77,7 +77,7 @@ func TestProbeHandlerServesMetrics(t *testing.T) {
 
 func TestReflectionListsServices(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
-	srv := newGRPCServer(nil, false, prometheus.NewRegistry(), log)
+	srv := newGRPCServer(nil, prometheus.NewRegistry(), log)
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)

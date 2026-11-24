@@ -69,10 +69,6 @@ spec:
               value: /var/cache/v0s/home
             - name: TRIVY_DB_DIR
               value: /var/cache/v0s/trivy-db
-            {{- if .Values.v13sForwarding.enabled }}
-            - name: V13S_FORWARDING_ENABLED
-              value: "true"
-            {{- end }}
           ports:
             - name: grpc
               containerPort: 50051

@@ -43,7 +43,6 @@ type config struct {
 	githubOrgs     []string
 	trivyDBDir     string
 	trivyDBRepos   []string
-	v13sForwarding bool
 }
 
 func loadConfig() (config, error) {
@@ -55,7 +54,6 @@ func loadConfig() (config, error) {
 		githubOrgs:     list(env("GITHUB_ORGANIZATIONS", "")),
 		trivyDBDir:     env("TRIVY_DB_DIR", "/var/cache/v0s/trivy-db"),
 		trivyDBRepos:   list(env("TRIVY_DB_REPOSITORIES", "mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2")),
-		v13sForwarding: env("V13S_FORWARDING_ENABLED", "") == "true",
 	}
 	var missing []string
 	for name, v := range map[string]bool{
@@ -155,7 +153,7 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(collectors.NewGoCollector(), collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
-	srv := newGRPCServer(db, cfg.v13sForwarding, reg, log)
+	srv := newGRPCServer(db, reg, log)
 	probes := &http.Server{Addr: cfg.probeAddr, Handler: newProbeHandler(db, reg, log), ReadHeaderTimeout: 5 * time.Second}
 
 	r := &reconcile.Reconciler{
@@ -196,7 +194,7 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 
 // newGRPCServer returns the API server, with reflection, recording request durations in reg. It
 // has no authentication: NetworkPolicy limits who reaches it.
-func newGRPCServer(db *database.DB, v13sForwarding bool, reg prometheus.Registerer, log *slog.Logger) *grpc.Server {
+func newGRPCServer(db *database.DB, reg prometheus.Registerer, log *slog.Logger) *grpc.Server {
 	duration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "v0s_grpc_request_duration_seconds",
 		Help:    "Duration of unary gRPC requests by method and status code.",
@@ -208,7 +206,7 @@ func newGRPCServer(db *database.DB, v13sForwarding bool, reg prometheus.Register
 			grpcapi.RecoveryInterceptor(log),
 		),
 	)
-	grpcapi.New(db, log, v13sForwarding).Register(srv)
+	grpcapi.New(db, log).Register(srv)
 	reflection.Register(srv)
 	return srv
 }

@@ -47,17 +47,9 @@ func forwardRequest() *v0sv1.ForwardV13SSuppressionRequest {
 	}
 }
 
-func TestForwardV13sSuppressionDisabled(t *testing.T) {
-	client := serve(t, newServer(t))
-	_, err := client.ForwardV13SSuppression(context.Background(), forwardRequest())
-	if status.Code(err) != codes.FailedPrecondition {
-		t.Errorf("err = %v, want FailedPrecondition while disabled", err)
-	}
-}
-
 func TestForwardV13sSuppression(t *testing.T) {
 	ctx := context.Background()
-	client := serve(t, newServerWithV13sForwarding(t, true))
+	client := serve(t, newServer(t))
 
 	resp, err := client.ForwardV13SSuppression(ctx, forwardRequest())
 	if err != nil {

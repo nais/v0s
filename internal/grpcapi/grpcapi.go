@@ -23,14 +23,13 @@ type Server struct {
 	v0sv1.UnimplementedVulnerabilityServiceServer
 	v0sv1.UnimplementedSuppressionServiceServer
 
-	db             *database.DB
-	log            *slog.Logger
-	v13sForwarding bool
+	db  *database.DB
+	log *slog.Logger
 }
 
 // New returns a Server reading from and writing to db.
-func New(db *database.DB, log *slog.Logger, v13sForwarding bool) *Server {
-	return &Server{db: db, log: log, v13sForwarding: v13sForwarding}
+func New(db *database.DB, log *slog.Logger) *Server {
+	return &Server{db: db, log: log}
 }
 
 // Register registers both services on r.
