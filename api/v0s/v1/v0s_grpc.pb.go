@@ -295,9 +295,10 @@ var VulnerabilityService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	SuppressionService_SetSuppressions_FullMethodName    = "/v0s.v1.SuppressionService/SetSuppressions"
-	SuppressionService_DeleteSuppressions_FullMethodName = "/v0s.v1.SuppressionService/DeleteSuppressions"
-	SuppressionService_ListSuppressions_FullMethodName   = "/v0s.v1.SuppressionService/ListSuppressions"
+	SuppressionService_SetSuppressions_FullMethodName        = "/v0s.v1.SuppressionService/SetSuppressions"
+	SuppressionService_DeleteSuppressions_FullMethodName     = "/v0s.v1.SuppressionService/DeleteSuppressions"
+	SuppressionService_ListSuppressions_FullMethodName       = "/v0s.v1.SuppressionService/ListSuppressions"
+	SuppressionService_ForwardV13SSuppression_FullMethodName = "/v0s.v1.SuppressionService/ForwardV13sSuppression"
 )
 
 // SuppressionServiceClient is the client API for SuppressionService service.
@@ -314,6 +315,7 @@ type SuppressionServiceClient interface {
 	DeleteSuppressions(ctx context.Context, in *DeleteSuppressionsRequest, opts ...grpc.CallOption) (*DeleteSuppressionsResponse, error)
 	// ListSuppressions lists suppressions.
 	ListSuppressions(ctx context.Context, in *ListSuppressionsRequest, opts ...grpc.CallOption) (*ListSuppressionsResponse, error)
+	ForwardV13SSuppression(ctx context.Context, in *ForwardV13SSuppressionRequest, opts ...grpc.CallOption) (*ForwardV13SSuppressionResponse, error)
 }
 
 type suppressionServiceClient struct {
@@ -354,6 +356,16 @@ func (c *suppressionServiceClient) ListSuppressions(ctx context.Context, in *Lis
 	return out, nil
 }
 
+func (c *suppressionServiceClient) ForwardV13SSuppression(ctx context.Context, in *ForwardV13SSuppressionRequest, opts ...grpc.CallOption) (*ForwardV13SSuppressionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ForwardV13SSuppressionResponse)
+	err := c.cc.Invoke(ctx, SuppressionService_ForwardV13SSuppression_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SuppressionServiceServer is the server API for SuppressionService service.
 // All implementations must embed UnimplementedSuppressionServiceServer
 // for forward compatibility.
@@ -368,6 +380,7 @@ type SuppressionServiceServer interface {
 	DeleteSuppressions(context.Context, *DeleteSuppressionsRequest) (*DeleteSuppressionsResponse, error)
 	// ListSuppressions lists suppressions.
 	ListSuppressions(context.Context, *ListSuppressionsRequest) (*ListSuppressionsResponse, error)
+	ForwardV13SSuppression(context.Context, *ForwardV13SSuppressionRequest) (*ForwardV13SSuppressionResponse, error)
 	mustEmbedUnimplementedSuppressionServiceServer()
 }
 
@@ -386,6 +399,9 @@ func (UnimplementedSuppressionServiceServer) DeleteSuppressions(context.Context,
 }
 func (UnimplementedSuppressionServiceServer) ListSuppressions(context.Context, *ListSuppressionsRequest) (*ListSuppressionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSuppressions not implemented")
+}
+func (UnimplementedSuppressionServiceServer) ForwardV13SSuppression(context.Context, *ForwardV13SSuppressionRequest) (*ForwardV13SSuppressionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ForwardV13SSuppression not implemented")
 }
 func (UnimplementedSuppressionServiceServer) mustEmbedUnimplementedSuppressionServiceServer() {}
 func (UnimplementedSuppressionServiceServer) testEmbeddedByValue()                            {}
@@ -462,6 +478,24 @@ func _SuppressionService_ListSuppressions_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SuppressionService_ForwardV13SSuppression_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ForwardV13SSuppressionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SuppressionServiceServer).ForwardV13SSuppression(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SuppressionService_ForwardV13SSuppression_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SuppressionServiceServer).ForwardV13SSuppression(ctx, req.(*ForwardV13SSuppressionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SuppressionService_ServiceDesc is the grpc.ServiceDesc for SuppressionService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -480,6 +514,10 @@ var SuppressionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSuppressions",
 			Handler:    _SuppressionService_ListSuppressions_Handler,
+		},
+		{
+			MethodName: "ForwardV13sSuppression",
+			Handler:    _SuppressionService_ForwardV13SSuppression_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
