@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	v0sv1 "github.com/nais/v0s/api/v0s/v1"
+	"github.com/nais/v0s/internal/grpcapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -36,6 +37,11 @@ func workloadSelectorClient(t *testing.T) v0sv1.VulnerabilityServiceClient {
 		INSERT INTO suppressions (team, environment, workload, image_name, package_key, vulnerability_id, state, detail, updated_by)
 		VALUES ('team', 'dev', 'app', 'repo/app', 'pkg:npm/lodash', 'CVE-1', 'accepted_risk', 'assessed', 'user');
 	`)
+	return serveVulnerabilities(t, s)
+}
+
+func serveVulnerabilities(t *testing.T, s *grpcapi.Server) v0sv1.VulnerabilityServiceClient {
+	t.Helper()
 	srv := grpc.NewServer()
 	s.Register(srv)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

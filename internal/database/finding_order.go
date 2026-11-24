@@ -88,6 +88,13 @@ func normalizeFindingFilter(f FindingFilter) (FindingFilter, error) {
 	return f, nil
 }
 
+func normalizeUnscopedFindingFilter(f FindingFilter) (FindingFilter, error) {
+	if len(f.Teams) > 0 || f.Environment != "" || f.Workload != "" || f.Selector != nil {
+		return FindingFilter{}, fmt.Errorf("finding filter scope must be empty; use workload selection: %w", ErrInvalid)
+	}
+	return normalizeFindingFilter(f)
+}
+
 func findingBinding(filter FindingFilter, order FindingOrder) (string, error) {
 	return queryBinding(filter, order)
 }
