@@ -37,10 +37,12 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', 'api/go.mod', 'api/go.sum') }}
           restore-keys: go-${{ runner.os }}-
       - name: Check Go formatting
         run: mise run check:fmt
+      - name: Lint protobufs
+        run: mise run check:proto
       - name: Lint Helm chart
         run: mise run check:helm
       - name: Go vet
@@ -49,10 +51,16 @@ jobs:
         run: mise run check:staticcheck
       - name: Race tests
         run: mise run test
+      - name: Check client with minimum Go version
+        env:
+          GOTOOLCHAIN: local
+          GOWORK: "off"
+        run: mise exec go@1.26.11 -- go -C api test -mod=readonly ./...
       - name: Check generated code
         run: |
           mise run generate
           git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard api internal/naisapi/protoapi)"
 
   build:
     name: Build image without publishing

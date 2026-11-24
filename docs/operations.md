@@ -14,6 +14,12 @@ PostgreSQL 18, verifies generated code, and builds PR images without publishing.
 Checks have separate Actions steps; vet, staticcheck and tests run sequentially
 rather than competing for runner resources. `mise run check` uses the same order.
 Tests disable built-in vet because the full vet check runs separately.
+Tests, vet and staticcheck run explicitly in both the root and `api/` Go
+modules. CI also tests the client with Go 1.26.11 and automatic toolchain
+upgrades disabled. `mise run build` builds both modules, and `mise run generate`
+regenerates the public client and the vendored Nais API client; CI requires no
+generated-file changes. Client releases use independent `api/v*` Git tags;
+see [Go client](../README.md#go-client).
 Pushes to `main` publish to
 `europe-north1-docker.pkg.dev/nais-io/nais/images/v0s` through
 `nais/platform-build-push-sign`, including an SBOM attestation and signing.
@@ -124,7 +130,7 @@ KEV. A blocked attestation lookup is an error, not evidence that no SBOM exists.
 ## Simplified public contract
 
 The 2026-11-17 source change simplifies the
-[gRPC contract](https://github.com/nais/v0s-api/blob/main/proto/v0s/v1/v0s.proto). It is not a deployment or an
+[gRPC contract](../proto/v0s/v1/v0s.proto). It is not a deployment or an
 implementation of the proposed GraphQL layer in Nais API.
 
 - Read filters take one `team`, or no team for tenant-wide reads. A `workload`
@@ -147,8 +153,8 @@ implementation of the proposed GraphQL layer in Nais API.
   scanner DB version. Internal source data and scan bookkeeping are retained.
 
 CVSS is no longer returned or stored by v0s. Use the advisory links to look up
-scores at the source. Clients that used the removed field must update to
-`nais/v0s-api` v0.2.0 and stop expecting scores; other RPC fields remain wire
+scores at the source. Clients that used the removed field must update to the
+`github.com/nais/v0s/api` client and stop expecting scores; other RPC fields remain wire
 compatible. Removed protobuf field numbers and names are reserved, not reused.
 
 Migration 0003 drops the score column. The Deployment already stops the old

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	v0sv1 "github.com/nais/v0s-api/v0s/v1"
+	v0sv1 "github.com/nais/v0s/api/v0s/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"

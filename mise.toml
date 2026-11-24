@@ -7,7 +7,10 @@ helm = "4.1.0"
 
 [tasks.build]
 description = "Build the v0s binary"
-run = "go build -trimpath -o bin/v0s ./cmd/v0s"
+run = [
+  "go build -trimpath -o bin/v0s ./cmd/v0s",
+  "go -C api build ./...",
+]
 
 [tasks."build:image"]
 description = "Build the Linux image locally without pushing"
@@ -23,22 +26,29 @@ description = "Fetch pinned Helm dependencies from Chart.lock"
 run = "helm dependency build charts --skip-refresh"
 
 [tasks.generate]
-description = "Generate the vendored Nais API client"
-run = "buf generate third_party/naisapi --template buf.gen.naisapi.yaml"
+description = "Generate the public API and vendored Nais API client"
+run = [
+  "buf generate",
+  "buf generate third_party/naisapi --template buf.gen.naisapi.yaml",
+]
 
 [tasks.fmt]
 description = "Format Go code"
-run = "gofmt -w cmd internal"
+run = "gofmt -w cmd internal api"
 
 [tasks.test]
-description = "Run race tests (vet is a separate check)"
+description = "Run race tests in both Go modules (vet is a separate check)"
 depends = ["charts:dependencies"]
-run = "go test -race -vet=off -count=1 ./..."
+run = [
+  "go test -race -vet=off -count=1 ./...",
+  "go -C api test -race -vet=off -count=1 ./...",
+]
 
 [tasks.check]
-description = "Check formatting, Helm, Go code and tests sequentially"
+description = "Check formatting, protobufs, Helm and both Go modules sequentially"
 run = [
   "mise run check:fmt",
+  "mise run check:proto",
   "mise run check:helm",
   "mise run check:vet",
   "mise run check:staticcheck",
@@ -48,12 +58,16 @@ run = [
 [tasks."check:fmt"]
 description = "Check Go formatting without changing files"
 run = '''
-files=$(gofmt -l cmd internal) || exit 1
+files=$(gofmt -l cmd internal api) || exit 1
 if [ -n "$files" ]; then
   printf '%s\n' "$files"
   exit 1
 fi
 '''
+
+[tasks."check:proto"]
+description = "Lint protobufs"
+run = "buf lint"
 
 [tasks."check:helm"]
 description = "Lint the Helm chart with rendering fixtures"
@@ -64,9 +78,17 @@ run = [
 ]
 
 [tasks."check:vet"]
-description = "Run go vet"
-run = "go vet ./..."
+description = "Run go vet in both Go modules"
+run = [
+  "go vet ./...",
+  "go -C api vet ./...",
+]
 
 [tasks."check:staticcheck"]
-description = "Run staticcheck"
-run = "go tool staticcheck ./..."
+description = "Run staticcheck in both Go modules"
+run = '''
+go tool staticcheck ./... || exit 1
+staticcheck=$(go tool -n staticcheck) || exit 1
+cd api
+"$staticcheck" ./...
+'''

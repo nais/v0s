@@ -5,7 +5,7 @@ inventory. It reports source facts and teams' assessments; it does not decide
 which findings to prioritize. It is separately deployable, not independent of
 Nais API.
 See [CONTEXT.md](../CONTEXT.md) for identities and counting semantics, and the
-[protobuf contract](https://github.com/nais/v0s-api/blob/main/proto/v0s/v1/v0s.proto) for the API.
+[protobuf contract](../proto/v0s/v1/v0s.proto) for the API.
 
 ## Required Nais API dependency
 
@@ -86,7 +86,12 @@ when they arise. Retry and failure behaviour is described in [Operations](operat
 
 `cmd/v0s` wires the service together. Private Go packages, including the shared
 domain types in `internal/v0s`, live under `internal/`; the generated public
-gRPC client stays in `api/v0s/v1`. There is one Go module.
+gRPC client stays in `api/v0s/v1`. There are two Go modules: the server at the
+root and the lightweight `github.com/nais/v0s/api` client under `api/`.
+The server uses `replace github.com/nais/v0s/api => ./api`, so both server and
+external clients use code generated from the same authoritative protobuf.
+The client has no server or Trivy dependency. See the
+[client release instructions](../README.md#go-client).
 
 `internal/database` owns hand-written SQL and embedded, numbered migrations
 applied by `v0s migrate` under an advisory lock using the database owner. The
