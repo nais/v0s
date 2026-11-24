@@ -52,7 +52,7 @@ func TestSummaryGlobalCountsAndFilters(t *testing.T) {
 			}
 		})
 	}
-	overview, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.WorkloadOverviewOptions{})
+	overview, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.FindingFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}

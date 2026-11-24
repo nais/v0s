@@ -45,26 +45,9 @@ func workloadOverviewKeys(rows []database.WorkloadOverview) []string {
 	return keys
 }
 
-func workloadOverviewOrders() []struct {
-	name  string
-	order database.WorkloadOrder
-	want  []string
-} {
-	zero := []string{"e1/a/clean", "e1/a/failed", "e1/a/missing", "e1/a/pending", "e1/a/rescan-failed", "e1/a/scan-failed", "e1/a/unresolved"}
-	return []struct {
-		name  string
-		order database.WorkloadOrder
-		want  []string
-	}{
-		{"default", database.WorkloadOrder{}, []string{"e1/a/app", "e1/a/clean", "e1/a/failed", "e1/a/missing", "e1/a/pending", "e1/a/rescan-failed", "e1/a/scan-failed", "e1/a/unresolved", "e1/a/worker", "e1/b/app", "e2/a/app"}},
-		{"findings ASC", database.WorkloadOrder{Field: database.WorkloadOrderFindingCount, Direction: database.FindingOrderASC}, append(slices.Clone(zero), "e1/b/app", "e2/a/app", "e1/a/app", "e1/a/worker")},
-		{"findings DESC", database.WorkloadOrder{Field: database.WorkloadOrderFindingCount, Direction: database.FindingOrderDESC}, append([]string{"e1/a/worker", "e1/a/app", "e1/b/app", "e2/a/app"}, zero...)},
-	}
-}
-
 func TestWorkloadOverviewCountsAndCoverage(t *testing.T) {
 	db := newWorkloadOverviewFixture(t)
-	list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.WorkloadOverviewOptions{})
+	list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.FindingFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +122,7 @@ func TestWorkloadOverviewFilters(t *testing.T) {
 		{"no matches", database.FindingFilter{VulnerabilityIDs: []string{"missing"}}, database.WorkloadFindingCounts{}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.WorkloadOverviewOptions{FindingFilter: tt.filter})
+			list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, tt.filter)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -150,107 +133,56 @@ func TestWorkloadOverviewFilters(t *testing.T) {
 	}
 	for _, tt := range []struct {
 		selection database.WorkloadFilter
-		options   database.WorkloadOverviewOptions
 		total     int64
 	}{
-		{total: 11},
-		{options: database.WorkloadOverviewOptions{AffectedOnly: true}, total: 4},
-		{options: database.WorkloadOverviewOptions{FindingFilter: database.FindingFilter{PackageType: "missing"}}, total: 11},
-		{options: database.WorkloadOverviewOptions{AffectedOnly: true, FindingFilter: database.FindingFilter{PackageType: "missing"}}, total: 0},
-		{options: database.WorkloadOverviewOptions{AffectedOnly: true, FindingFilter: database.FindingFilter{Suppressed: database.SuppressedOnly}}, total: 1},
 		{selection: database.WorkloadFilter{Teams: []string{"a"}}, total: 10},
 		{selection: database.WorkloadFilter{Teams: []string{"a", "b", "a"}}, total: 11},
 		{selection: database.WorkloadFilter{Teams: []string{"b"}}, total: 1},
 		{selection: database.WorkloadFilter{Environment: "e1"}, total: 10},
 		{selection: database.WorkloadFilter{Teams: []string{"a"}, Environment: "e1", Workload: "app"}, total: 1},
 	} {
-		list, err := db.ListWorkloadOverview(t.Context(), tt.selection, database.Page{}, tt.options)
+		list, err := db.ListWorkloadOverview(t.Context(), tt.selection, database.Page{}, database.FindingFilter{})
 		if err != nil || list.TotalCount != tt.total || int64(len(list.Workloads)) != tt.total {
-			t.Fatalf("selection %+v / %+v: %+v, %v", tt.selection, tt.options, list, err)
+			t.Fatalf("selection %+v: %+v, %v", tt.selection, list, err)
 		}
 	}
-	img2, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{Environment: "e2"}, database.Page{}, database.WorkloadOverviewOptions{FindingFilter: database.FindingFilter{Severities: []v0s.Severity{v0s.SeverityUnknown}}})
+	img2, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{Environment: "e2"}, database.Page{}, database.FindingFilter{Severities: []v0s.Severity{v0s.SeverityUnknown}})
 	if err != nil || len(img2.Workloads) != 1 || img2.Workloads[0].Counts.SeverityCounts.Unknown != 2 || img2.Workloads[0].Counts.UniqueKEVVulnerabilityCount != 1 {
 		t.Fatalf("UNKNOWN filter before per-workload aggregation: %+v, %v", img2, err)
 	}
 }
 
 func TestWorkloadOverviewPaginationAndDeletion(t *testing.T) {
-	for _, tt := range workloadOverviewOrders() {
-		t.Run(tt.name, func(t *testing.T) {
-			db := newWorkloadOverviewFixture(t)
-			options := database.WorkloadOverviewOptions{Order: tt.order}
-			for _, affected := range []bool{false, true} {
-				options.AffectedOnly = affected
-				want := slices.Clone(tt.want)
-				if affected {
-					want = slices.DeleteFunc(want, func(s string) bool {
-						return s != "e1/a/app" && s != "e1/a/worker" && s != "e1/b/app" && s != "e2/a/app"
-					})
-				}
-				for _, size := range []int{1, 2, 4} {
-					page := database.Page{Size: size}
-					var got []string
-					for range 12 {
-						list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, options)
-						if err != nil {
-							t.Fatal(err)
-						}
-						if list.TotalCount != int64(len(want)) || len(list.Cursors) != len(list.Workloads) || len(list.Workloads) > size {
-							t.Fatalf("page: %+v", list)
-						}
-						got = append(got, workloadOverviewKeys(list.Workloads)...)
-						if list.NextPageToken == "" {
-							break
-						}
-						if list.NextPageToken == page.Token || list.NextPageToken != list.Cursors[len(list.Cursors)-1] {
-							t.Fatal("invalid next token")
-						}
-						page.Token = list.NextPageToken
-					}
-					if !slices.Equal(got, want) {
-						t.Fatalf("size %d: %v, want %v", size, got, want)
-					}
-				}
-				all, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, options)
-				if err != nil {
-					t.Fatal(err)
-				}
-				for i, token := range all.Cursors {
-					list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Token: token}, options)
-					if err != nil || !slices.Equal(workloadOverviewKeys(list.Workloads), want[i+1:]) || list.TotalCount != int64(len(want)) {
-						t.Fatalf("row cursor %d: %+v, %v", i, list, err)
-					}
-				}
-			}
-			options.AffectedOnly = false
-			all, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, options)
-			if err != nil {
-				t.Fatal(err)
-			}
-			boundary := all.Workloads[1].Workload
-			if _, err := db.Pool().Exec(t.Context(), `DELETE FROM workloads WHERE environment=$1 AND team=$2 AND name=$3`, boundary.Environment, boundary.Team, boundary.Name); err != nil {
-				t.Fatal(err)
-			}
-			resumed, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Token: all.Cursors[1]}, options)
-			if err != nil || resumed.TotalCount != 10 || !slices.Equal(workloadOverviewKeys(resumed.Workloads), tt.want[2:]) {
-				t.Fatalf("deleted boundary: %+v, %v", resumed, err)
-			}
-		})
+	db := newWorkloadOverviewFixture(t)
+	want := []string{"e1/a/app", "e1/a/clean", "e1/a/failed", "e1/a/missing", "e1/a/pending", "e1/a/rescan-failed", "e1/a/scan-failed", "e1/a/unresolved", "e1/a/worker", "e1/b/app", "e2/a/app"}
+	first, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Size: 2}, database.FindingFilter{})
+	if err != nil || first.TotalCount != int64(len(want)) || first.NextPageToken == "" || !slices.Equal(workloadOverviewKeys(first.Workloads), want[:2]) {
+		t.Fatalf("first page: %+v, %v", first, err)
+	}
+	exec(t, db, `DELETE FROM workloads WHERE environment='e1' AND team='a' AND name='clean'`)
+	page := database.Page{Token: first.NextPageToken}
+	resumed, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.FindingFilter{})
+	if err != nil || resumed.TotalCount != 10 || resumed.NextPageToken != "" || !slices.Equal(workloadOverviewKeys(resumed.Workloads), want[2:]) {
+		t.Fatalf("deleted boundary: %+v, %v", resumed, err)
+	}
+	exec(t, db, `DELETE FROM workloads WHERE NOT (environment='e1' AND team='a' AND name='app')`)
+	empty, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.FindingFilter{})
+	if err != nil || empty.TotalCount != 1 || len(empty.Workloads) != 0 || empty.NextPageToken != "" {
+		t.Fatalf("empty continuation: %+v, %v", empty, err)
 	}
 }
 
 func TestWorkloadOverviewCursorBinding(t *testing.T) {
 	db := newWorkloadOverviewFixture(t)
-	all, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.WorkloadOverviewOptions{})
-	if err != nil {
-		t.Fatal(err)
+	all, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Size: 1}, database.FindingFilter{})
+	if err != nil || all.NextPageToken == "" {
+		t.Fatalf("initial page: %+v, %v", all, err)
 	}
-	page := database.Page{Token: all.Cursors[0]}
+	page := database.Page{Token: all.NextPageToken}
 	for _, selection := range []database.WorkloadFilter{
 		{Teams: []string{"a"}}, {Environment: "e1"}, {Workload: "app"},
 	} {
-		if _, err := db.ListWorkloadOverview(t.Context(), selection, page, database.WorkloadOverviewOptions{}); !errors.Is(err, database.ErrInvalid) || !strings.Contains(err.Error(), "parameters changed") {
+		if _, err := db.ListWorkloadOverview(t.Context(), selection, page, database.FindingFilter{}); !errors.Is(err, database.ErrInvalid) || !strings.Contains(err.Error(), "restart pagination") {
 			t.Errorf("changed selection %+v: %v", selection, err)
 		}
 	}
@@ -259,54 +191,32 @@ func TestWorkloadOverviewCursorBinding(t *testing.T) {
 		{VulnerabilityIDs: []string{"D"}}, {Severities: []v0s.Severity{v0s.SeverityHigh}},
 		{HasFix: true}, {OnlyKnownExploited: true}, {Suppressed: database.SuppressedInclude},
 	} {
-		if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.WorkloadOverviewOptions{FindingFilter: filter}); !errors.Is(err, database.ErrInvalid) {
+		if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, filter); !errors.Is(err, database.ErrInvalid) {
 			t.Errorf("changed finding filter %+v: %v", filter, err)
 		}
 	}
-	if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.WorkloadOverviewOptions{AffectedOnly: true}); !errors.Is(err, database.ErrInvalid) {
-		t.Errorf("changed affected_only: %v", err)
+	data, err := base64.RawURLEncoding.DecodeString(page.Token)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, source := range workloadOverviewOrders() {
-		list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.WorkloadOverviewOptions{Order: source.order})
-		if err != nil {
-			t.Fatal(err)
+	var cursor map[string]any
+	if err := json.Unmarshal(data, &cursor); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"version", "operation", "binding", "e", "t", "w"} {
+		value := cursor[key]
+		delete(cursor, key)
+		if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Token: encodeCursor(t, cursor)}, database.FindingFilter{}); !errors.Is(err, database.ErrInvalid) {
+			t.Errorf("missing cursor %s: %v", key, err)
 		}
-		for _, other := range workloadOverviewOrders() {
-			if source.name == other.name {
-				continue
-			}
-			if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Token: list.Cursors[0]}, database.WorkloadOverviewOptions{Order: other.order}); !errors.Is(err, database.ErrInvalid) {
-				t.Errorf("changed sort %s to %s: %v", source.name, other.name, err)
-			}
-		}
-		data, err := base64.RawURLEncoding.DecodeString(list.Cursors[0])
-		if err != nil {
-			t.Fatal(err)
-		}
-		var cursor map[string]any
-		if err := json.Unmarshal(data, &cursor); err != nil {
-			t.Fatal(err)
-		}
-		for _, key := range []string{"version", "operation", "binding", "environment", "team", "name", "finding_count"} {
-			if _, ok := cursor[key]; !ok {
-				continue
-			}
-			altered := make(map[string]any)
-			for k, value := range cursor {
-				altered[k] = value
-			}
-			delete(altered, key)
-			if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Token: encodeCursor(t, altered)}, database.WorkloadOverviewOptions{Order: source.order}); !errors.Is(err, database.ErrInvalid) {
-				t.Errorf("missing cursor %s: %v", key, err)
-			}
-		}
+		cursor[key] = value
 	}
 	legacy, next, err := db.ListWorkloads(t.Context(), database.WorkloadFilter{}, database.Page{Size: 1})
 	if err != nil || len(legacy) != 1 {
 		t.Fatalf("legacy page: %+v, %v", legacy, err)
 	}
 	for _, token := range []string{next, "garbage!", encodeCursor(t, map[string]any{"version": 99}), base64.RawURLEncoding.EncodeToString([]byte(`null`))} {
-		if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Token: token}, database.WorkloadOverviewOptions{}); !errors.Is(err, database.ErrInvalid) {
+		if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{Token: token}, database.FindingFilter{}); !errors.Is(err, database.ErrInvalid) {
 			t.Errorf("invalid overview token %q: %v", token, err)
 		}
 	}
@@ -314,7 +224,7 @@ func TestWorkloadOverviewCursorBinding(t *testing.T) {
 		t.Errorf("overview token in legacy listing: %v", err)
 	}
 	for _, f := range []database.FindingFilter{{Teams: []string{"a"}}, {Environment: "e1"}, {Workload: "app"}} {
-		if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.WorkloadOverviewOptions{FindingFilter: f}); !errors.Is(err, database.ErrInvalid) {
+		if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, f); !errors.Is(err, database.ErrInvalid) {
 			t.Errorf("competing scope: %v", err)
 		}
 	}
@@ -323,25 +233,24 @@ func TestWorkloadOverviewCursorBinding(t *testing.T) {
 func TestWorkloadOverviewNormalizedCursor(t *testing.T) {
 	db := newWorkloadOverviewFixture(t)
 	selection := database.WorkloadFilter{Teams: []string{"b", "a", "a"}}
-	options := database.WorkloadOverviewOptions{FindingFilter: database.FindingFilter{
+	filter := database.FindingFilter{
 		PackageType: "NPM", Package: "pkg:NPM/%64?arch=x", VulnerabilityIDs: []string{"D", "D"},
 		Severities: []v0s.Severity{v0s.SeverityHigh, v0s.SeverityLow, v0s.SeverityHigh},
-	}}
-	all, err := db.ListWorkloadOverview(t.Context(), selection, database.Page{}, options)
-	if err != nil || len(all.Cursors) < 2 {
-		t.Fatalf("initial page: %+v, %v", all, err)
+	}
+	first, err := db.ListWorkloadOverview(t.Context(), selection, database.Page{Size: 1}, filter)
+	if err != nil || first.NextPageToken == "" {
+		t.Fatalf("initial page: %+v, %v", first, err)
 	}
 	selection.Teams = []string{"a", "b"}
-	options.FindingFilter.PackageType, options.FindingFilter.Package = "npm", "pkg:npm/d"
-	options.FindingFilter.VulnerabilityIDs = []string{"D"}
-	options.FindingFilter.Severities = []v0s.Severity{v0s.SeverityLow, v0s.SeverityHigh}
-	options.Order = database.WorkloadOrder{Field: database.WorkloadOrderIdentity, Direction: database.FindingOrderASC}
-	next, err := db.ListWorkloadOverview(t.Context(), selection, database.Page{Size: 1, Token: all.Cursors[0]}, options)
-	if err != nil || len(next.Workloads) != 1 || !reflect.DeepEqual(next.Workloads[0], all.Workloads[1]) {
+	filter.PackageType, filter.Package = "npm", "pkg:npm/d"
+	filter.VulnerabilityIDs = []string{"D"}
+	filter.Severities = []v0s.Severity{v0s.SeverityLow, v0s.SeverityHigh}
+	next, err := db.ListWorkloadOverview(t.Context(), selection, database.Page{Size: 2, Token: first.NextPageToken}, filter)
+	if err != nil || !slices.Equal(workloadOverviewKeys(next.Workloads), []string{"e1/a/clean", "e1/a/failed"}) {
 		t.Fatalf("normalized continuation: %+v, %v", next, err)
 	}
-	options.FindingFilter.VulnerabilityIDs = []string{"GHSA-D"}
-	if _, err := db.ListWorkloadOverview(t.Context(), selection, database.Page{Token: all.Cursors[0]}, options); !errors.Is(err, database.ErrInvalid) {
+	filter.VulnerabilityIDs = []string{"GHSA-D"}
+	if _, err := db.ListWorkloadOverview(t.Context(), selection, database.Page{Token: first.NextPageToken}, filter); !errors.Is(err, database.ErrInvalid) {
 		t.Errorf("alias substitution: %v", err)
 	}
 }
@@ -349,7 +258,7 @@ func TestWorkloadOverviewNormalizedCursor(t *testing.T) {
 func TestWorkloadOverviewKEVAndLegacyCursors(t *testing.T) {
 	db := newWorkloadOverviewFixture(t)
 	exec(t, db, `DELETE FROM kev`)
-	if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.WorkloadOverviewOptions{}); !errors.Is(err, database.ErrUnavailable) {
+	if _, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, database.Page{}, database.FindingFilter{}); !errors.Is(err, database.ErrUnavailable) {
 		t.Errorf("missing KEV catalog: %v", err)
 	}
 	all, _, err := db.ListWorkloads(t.Context(), database.WorkloadFilter{}, database.Page{})

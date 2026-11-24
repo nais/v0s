@@ -304,23 +304,15 @@ type WorkloadOrderBy_Field int32
 
 const (
 	WorkloadOrderBy_FIELD_UNSPECIFIED WorkloadOrderBy_Field = 0
-	// ASC only.
-	WorkloadOrderBy_FIELD_WORKLOAD WorkloadOrderBy_Field = 1
-	// Ties use environment, team, workload ASC.
-	WorkloadOrderBy_FIELD_FINDING_COUNT WorkloadOrderBy_Field = 2
 )
 
 // Enum value maps for WorkloadOrderBy_Field.
 var (
 	WorkloadOrderBy_Field_name = map[int32]string{
 		0: "FIELD_UNSPECIFIED",
-		1: "FIELD_WORKLOAD",
-		2: "FIELD_FINDING_COUNT",
 	}
 	WorkloadOrderBy_Field_value = map[string]int32{
-		"FIELD_UNSPECIFIED":   0,
-		"FIELD_WORKLOAD":      1,
-		"FIELD_FINDING_COUNT": 2,
+		"FIELD_UNSPECIFIED": 0,
 	}
 )
 
@@ -355,21 +347,15 @@ type WorkloadOrderBy_Direction int32
 
 const (
 	WorkloadOrderBy_DIRECTION_UNSPECIFIED WorkloadOrderBy_Direction = 0
-	WorkloadOrderBy_DIRECTION_ASC         WorkloadOrderBy_Direction = 1
-	WorkloadOrderBy_DIRECTION_DESC        WorkloadOrderBy_Direction = 2
 )
 
 // Enum value maps for WorkloadOrderBy_Direction.
 var (
 	WorkloadOrderBy_Direction_name = map[int32]string{
 		0: "DIRECTION_UNSPECIFIED",
-		1: "DIRECTION_ASC",
-		2: "DIRECTION_DESC",
 	}
 	WorkloadOrderBy_Direction_value = map[string]int32{
 		"DIRECTION_UNSPECIFIED": 0,
-		"DIRECTION_ASC":         1,
-		"DIRECTION_DESC":        2,
 	}
 )
 
@@ -1185,7 +1171,7 @@ type ListWorkloadsRequest struct {
 	Workload  string `protobuf:"bytes,6,opt,name=workload,proto3" json:"workload,omitempty"`
 	PageSize  int32  `protobuf:"varint,3,opt,name=page_size,json=pageSize,proto3" json:"page_size,omitempty"`
 	PageToken string `protobuf:"bytes,4,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
-	// Opt in to counts, full total and versioned per-row cursors. Without this,
+	// Opt in to per-workload finding counts. Without this,
 	// the response is unchanged, with no KEV dependency. Legacy cursors remain
 	// unchanged when workload_selector is also omitted.
 	Overview *WorkloadOverviewOptions `protobuf:"bytes,7,opt,name=overview,proto3" json:"overview,omitempty"`
@@ -1275,18 +1261,14 @@ func (x *ListWorkloadsRequest) GetWorkloadSelector() *WorkloadSelector {
 }
 
 type ListWorkloadsResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Workloads     []*Workload            `protobuf:"bytes,1,rep,name=workloads,proto3" json:"workloads,omitempty"`
-	NextPageToken string                 `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	// Overview mode only: one versioned cursor per row, including the last page.
-	// Bound to selection, finding filter, affected_only and effective ordering,
-	// not page size. Invalid/incompatible tokens or changed parameters return
-	// InvalidArgument. Legacy and overview cursors are not interchangeable.
-	// Continuation works after deletion of the boundary workload.
-	Cursors []string `protobuf:"bytes,3,rep,name=cursors,proto3" json:"cursors,omitempty"`
-	// Overview mode only: workload selection after affected_only, before seek/LIMIT,
-	// even on empty pages. Page and total share a snapshot within a request,
-	// but there is no snapshot between requests.
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Workloads []*Workload            `protobuf:"bytes,1,rep,name=workloads,proto3" json:"workloads,omitempty"`
+	// Overview tokens bind the scope, workload selection and finding filter,
+	// not page size. Invalid or incompatible tokens return InvalidArgument;
+	// restart without a token. Plain workload tokens are not interchangeable.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// Overview mode only: size of the full workload selection, even on empty
+	// pages. Retained because nais/api checks field presence for overview support.
 	TotalCount    *int64 `protobuf:"varint,4,opt,name=total_count,json=totalCount,proto3,oneof" json:"total_count,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1336,13 +1318,6 @@ func (x *ListWorkloadsResponse) GetNextPageToken() string {
 	return ""
 }
 
-func (x *ListWorkloadsResponse) GetCursors() []string {
-	if x != nil {
-		return x.Cursors
-	}
-	return nil
-}
-
 func (x *ListWorkloadsResponse) GetTotalCount() int64 {
 	if x != nil && x.TotalCount != nil {
 		return *x.TotalCount
@@ -1356,10 +1331,6 @@ type WorkloadOverviewOptions struct {
 	// Scope comes only from ListWorkloadsRequest scope and workload_selector:
 	// team/environment/workload in this filter must be empty (InvalidArgument).
 	FindingFilter *FindingFilter `protobuf:"bytes,1,opt,name=finding_filter,json=findingFilter,proto3" json:"finding_filter,omitempty"`
-	// Only workloads with at least one matching finding. Defaults to false.
-	AffectedOnly bool `protobuf:"varint,2,opt,name=affected_only,json=affectedOnly,proto3" json:"affected_only,omitempty"`
-	// Defaults to environment, team, workload ASC.
-	OrderBy       *WorkloadOrderBy `protobuf:"bytes,3,opt,name=order_by,json=orderBy,proto3" json:"order_by,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1401,24 +1372,9 @@ func (x *WorkloadOverviewOptions) GetFindingFilter() *FindingFilter {
 	return nil
 }
 
-func (x *WorkloadOverviewOptions) GetAffectedOnly() bool {
-	if x != nil {
-		return x.AffectedOnly
-	}
-	return false
-}
-
-func (x *WorkloadOverviewOptions) GetOrderBy() *WorkloadOrderBy {
-	if x != nil {
-		return x.OrderBy
-	}
-	return nil
-}
-
+// Deprecated: Marked as deprecated in v0s/v1/v0s.proto.
 type WorkloadOrderBy struct {
-	state         protoimpl.MessageState    `protogen:"open.v1"`
-	Field         WorkloadOrderBy_Field     `protobuf:"varint,1,opt,name=field,proto3,enum=v0s.v1.WorkloadOrderBy_Field" json:"field,omitempty"`
-	Direction     WorkloadOrderBy_Direction `protobuf:"varint,2,opt,name=direction,proto3,enum=v0s.v1.WorkloadOrderBy_Direction" json:"direction,omitempty"`
+	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1451,20 +1407,6 @@ func (x *WorkloadOrderBy) ProtoReflect() protoreflect.Message {
 // Deprecated: Use WorkloadOrderBy.ProtoReflect.Descriptor instead.
 func (*WorkloadOrderBy) Descriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{8}
-}
-
-func (x *WorkloadOrderBy) GetField() WorkloadOrderBy_Field {
-	if x != nil {
-		return x.Field
-	}
-	return WorkloadOrderBy_FIELD_UNSPECIFIED
-}
-
-func (x *WorkloadOrderBy) GetDirection() WorkloadOrderBy_Direction {
-	if x != nil {
-		return x.Direction
-	}
-	return WorkloadOrderBy_DIRECTION_UNSPECIFIED
 }
 
 type WorkloadFindingCounts struct {
@@ -3955,29 +3897,20 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\n" +
 	"page_token\x18\x04 \x01(\tR\tpageToken\x12;\n" +
 	"\boverview\x18\a \x01(\v2\x1f.v0s.v1.WorkloadOverviewOptionsR\boverview\x12E\n" +
-	"\x11workload_selector\x18\b \x01(\v2\x18.v0s.v1.WorkloadSelectorR\x10workloadSelectorJ\x04\b\x01\x10\x02R\x05teams\"\xbf\x01\n" +
+	"\x11workload_selector\x18\b \x01(\v2\x18.v0s.v1.WorkloadSelectorR\x10workloadSelectorJ\x04\b\x01\x10\x02R\x05teams\"\xb4\x01\n" +
 	"\x15ListWorkloadsResponse\x12.\n" +
 	"\tworkloads\x18\x01 \x03(\v2\x10.v0s.v1.WorkloadR\tworkloads\x12&\n" +
-	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x18\n" +
-	"\acursors\x18\x03 \x03(\tR\acursors\x12$\n" +
+	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12$\n" +
 	"\vtotal_count\x18\x04 \x01(\x03H\x00R\n" +
 	"totalCount\x88\x01\x01B\x0e\n" +
-	"\f_total_count\"\xb0\x01\n" +
+	"\f_total_countJ\x04\b\x03\x10\x04R\acursors\"|\n" +
 	"\x17WorkloadOverviewOptions\x12<\n" +
-	"\x0efinding_filter\x18\x01 \x01(\v2\x15.v0s.v1.FindingFilterR\rfindingFilter\x12#\n" +
-	"\raffected_only\x18\x02 \x01(\bR\faffectedOnly\x122\n" +
-	"\border_by\x18\x03 \x01(\v2\x17.v0s.v1.WorkloadOrderByR\aorderBy\"\xa3\x02\n" +
-	"\x0fWorkloadOrderBy\x123\n" +
-	"\x05field\x18\x01 \x01(\x0e2\x1d.v0s.v1.WorkloadOrderBy.FieldR\x05field\x12?\n" +
-	"\tdirection\x18\x02 \x01(\x0e2!.v0s.v1.WorkloadOrderBy.DirectionR\tdirection\"K\n" +
+	"\x0efinding_filter\x18\x01 \x01(\v2\x15.v0s.v1.FindingFilterR\rfindingFilterJ\x04\b\x02\x10\x03J\x04\b\x03\x10\x04R\raffected_onlyR\border_by\"\xd7\x01\n" +
+	"\x0fWorkloadOrderBy\"O\n" +
 	"\x05Field\x12\x15\n" +
-	"\x11FIELD_UNSPECIFIED\x10\x00\x12\x12\n" +
-	"\x0eFIELD_WORKLOAD\x10\x01\x12\x17\n" +
-	"\x13FIELD_FINDING_COUNT\x10\x02\"M\n" +
+	"\x11FIELD_UNSPECIFIED\x10\x00\"\x04\b\x01\x10\x01\"\x04\b\x02\x10\x02*\x0eFIELD_WORKLOAD*\x13FIELD_FINDING_COUNT\"Q\n" +
 	"\tDirection\x12\x19\n" +
-	"\x15DIRECTION_UNSPECIFIED\x10\x00\x12\x11\n" +
-	"\rDIRECTION_ASC\x10\x01\x12\x12\n" +
-	"\x0eDIRECTION_DESC\x10\x02\"\x8d\x02\n" +
+	"\x15DIRECTION_UNSPECIFIED\x10\x00\"\x04\b\x01\x10\x01\"\x04\b\x02\x10\x02*\rDIRECTION_ASC*\x0eDIRECTION_DESC:\x02\x18\x01J\x04\b\x01\x10\x02J\x04\b\x02\x10\x03R\x05fieldR\tdirection\"\x8d\x02\n" +
 	"\x15WorkloadFindingCounts\x12#\n" +
 	"\rfinding_count\x18\x01 \x01(\x03R\ffindingCount\x12<\n" +
 	"\x1aunique_vulnerability_count\x18\x02 \x01(\x03R\x18uniqueVulnerabilityCount\x12L\n" +
@@ -4326,78 +4259,75 @@ var file_v0s_v1_v0s_proto_depIdxs = []int32{
 	43, // 12: v0s.v1.ListWorkloadsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
 	13, // 13: v0s.v1.ListWorkloadsResponse.workloads:type_name -> v0s.v1.Workload
 	14, // 14: v0s.v1.WorkloadOverviewOptions.finding_filter:type_name -> v0s.v1.FindingFilter
-	20, // 15: v0s.v1.WorkloadOverviewOptions.order_by:type_name -> v0s.v1.WorkloadOrderBy
-	5,  // 16: v0s.v1.WorkloadOrderBy.field:type_name -> v0s.v1.WorkloadOrderBy.Field
-	6,  // 17: v0s.v1.WorkloadOrderBy.direction:type_name -> v0s.v1.WorkloadOrderBy.Direction
-	22, // 18: v0s.v1.WorkloadFindingCounts.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
-	43, // 19: v0s.v1.GetSummaryRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	14, // 20: v0s.v1.GetSummaryRequest.finding_filter:type_name -> v0s.v1.FindingFilter
-	22, // 21: v0s.v1.GetSummaryResponse.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
-	25, // 22: v0s.v1.GetSummaryResponse.coverage:type_name -> v0s.v1.WorkloadCoverage
-	14, // 23: v0s.v1.ListFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
-	27, // 24: v0s.v1.ListFindingsRequest.order_by:type_name -> v0s.v1.FindingOrderBy
-	43, // 25: v0s.v1.ListFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	7,  // 26: v0s.v1.FindingOrderBy.field:type_name -> v0s.v1.FindingOrderBy.Field
-	8,  // 27: v0s.v1.FindingOrderBy.direction:type_name -> v0s.v1.FindingOrderBy.Direction
-	15, // 28: v0s.v1.ListFindingsResponse.findings:type_name -> v0s.v1.Finding
-	29, // 29: v0s.v1.ListFindingsResponse.package_type_counts:type_name -> v0s.v1.PackageTypeCount
-	14, // 30: v0s.v1.ListVulnerabilitiesRequest.filter:type_name -> v0s.v1.FindingFilter
-	31, // 31: v0s.v1.ListVulnerabilitiesRequest.order_by:type_name -> v0s.v1.VulnerabilityOrderBy
-	43, // 32: v0s.v1.ListVulnerabilitiesRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	9,  // 33: v0s.v1.VulnerabilityOrderBy.field:type_name -> v0s.v1.VulnerabilityOrderBy.Field
-	10, // 34: v0s.v1.VulnerabilityOrderBy.direction:type_name -> v0s.v1.VulnerabilityOrderBy.Direction
-	0,  // 35: v0s.v1.VulnerabilitySummary.severity:type_name -> v0s.v1.Severity
-	32, // 36: v0s.v1.ListVulnerabilitiesResponse.vulnerabilities:type_name -> v0s.v1.VulnerabilitySummary
-	14, // 37: v0s.v1.CountFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
-	11, // 38: v0s.v1.CountFindingsRequest.group_by:type_name -> v0s.v1.CountFindingsRequest.GroupBy
-	43, // 39: v0s.v1.CountFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	56, // 40: v0s.v1.CountFindingsResponse.buckets:type_name -> v0s.v1.CountFindingsResponse.Bucket
-	38, // 41: v0s.v1.GetVulnerabilityResponse.vulnerability:type_name -> v0s.v1.Vulnerability
-	16, // 42: v0s.v1.Vulnerability.epss:type_name -> v0s.v1.Epss
-	41, // 43: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
-	12, // 44: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
-	42, // 45: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
-	42, // 46: v0s.v1.WorkloadSelector.workloads:type_name -> v0s.v1.WorkloadRef
-	2,  // 47: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
-	57, // 48: v0s.v1.Suppression.updated_at:type_name -> google.protobuf.Timestamp
-	44, // 49: v0s.v1.NewSuppression.key:type_name -> v0s.v1.SuppressionKey
-	2,  // 50: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
-	46, // 51: v0s.v1.SetSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
-	45, // 52: v0s.v1.SetSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
-	44, // 53: v0s.v1.DeleteSuppressionsRequest.keys:type_name -> v0s.v1.SuppressionKey
-	45, // 54: v0s.v1.DeleteSuppressionsResponse.deleted:type_name -> v0s.v1.Suppression
-	45, // 55: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
-	54, // 56: v0s.v1.ForwardV13sSuppressionRequest.assessment:type_name -> v0s.v1.V13sAssessment
-	2,  // 57: v0s.v1.V13sAssessment.state:type_name -> v0s.v1.SuppressionState
-	57, // 58: v0s.v1.V13sAssessment.updated_at:type_name -> google.protobuf.Timestamp
-	4,  // 59: v0s.v1.ForwardV13sSuppressionResponse.outcome:type_name -> v0s.v1.ForwardOutcome
-	17, // 60: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
-	26, // 61: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
-	30, // 62: v0s.v1.VulnerabilityService.ListVulnerabilities:input_type -> v0s.v1.ListVulnerabilitiesRequest
-	34, // 63: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
-	23, // 64: v0s.v1.VulnerabilityService.GetSummary:input_type -> v0s.v1.GetSummaryRequest
-	36, // 65: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
-	39, // 66: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
-	47, // 67: v0s.v1.SuppressionService.SetSuppressions:input_type -> v0s.v1.SetSuppressionsRequest
-	49, // 68: v0s.v1.SuppressionService.DeleteSuppressions:input_type -> v0s.v1.DeleteSuppressionsRequest
-	51, // 69: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
-	53, // 70: v0s.v1.SuppressionService.ForwardV13sSuppression:input_type -> v0s.v1.ForwardV13sSuppressionRequest
-	18, // 71: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
-	28, // 72: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
-	33, // 73: v0s.v1.VulnerabilityService.ListVulnerabilities:output_type -> v0s.v1.ListVulnerabilitiesResponse
-	35, // 74: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
-	24, // 75: v0s.v1.VulnerabilityService.GetSummary:output_type -> v0s.v1.GetSummaryResponse
-	37, // 76: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
-	40, // 77: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
-	48, // 78: v0s.v1.SuppressionService.SetSuppressions:output_type -> v0s.v1.SetSuppressionsResponse
-	50, // 79: v0s.v1.SuppressionService.DeleteSuppressions:output_type -> v0s.v1.DeleteSuppressionsResponse
-	52, // 80: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
-	55, // 81: v0s.v1.SuppressionService.ForwardV13sSuppression:output_type -> v0s.v1.ForwardV13sSuppressionResponse
-	71, // [71:82] is the sub-list for method output_type
-	60, // [60:71] is the sub-list for method input_type
-	60, // [60:60] is the sub-list for extension type_name
-	60, // [60:60] is the sub-list for extension extendee
-	0,  // [0:60] is the sub-list for field type_name
+	22, // 15: v0s.v1.WorkloadFindingCounts.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
+	43, // 16: v0s.v1.GetSummaryRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	14, // 17: v0s.v1.GetSummaryRequest.finding_filter:type_name -> v0s.v1.FindingFilter
+	22, // 18: v0s.v1.GetSummaryResponse.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
+	25, // 19: v0s.v1.GetSummaryResponse.coverage:type_name -> v0s.v1.WorkloadCoverage
+	14, // 20: v0s.v1.ListFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
+	27, // 21: v0s.v1.ListFindingsRequest.order_by:type_name -> v0s.v1.FindingOrderBy
+	43, // 22: v0s.v1.ListFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	7,  // 23: v0s.v1.FindingOrderBy.field:type_name -> v0s.v1.FindingOrderBy.Field
+	8,  // 24: v0s.v1.FindingOrderBy.direction:type_name -> v0s.v1.FindingOrderBy.Direction
+	15, // 25: v0s.v1.ListFindingsResponse.findings:type_name -> v0s.v1.Finding
+	29, // 26: v0s.v1.ListFindingsResponse.package_type_counts:type_name -> v0s.v1.PackageTypeCount
+	14, // 27: v0s.v1.ListVulnerabilitiesRequest.filter:type_name -> v0s.v1.FindingFilter
+	31, // 28: v0s.v1.ListVulnerabilitiesRequest.order_by:type_name -> v0s.v1.VulnerabilityOrderBy
+	43, // 29: v0s.v1.ListVulnerabilitiesRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	9,  // 30: v0s.v1.VulnerabilityOrderBy.field:type_name -> v0s.v1.VulnerabilityOrderBy.Field
+	10, // 31: v0s.v1.VulnerabilityOrderBy.direction:type_name -> v0s.v1.VulnerabilityOrderBy.Direction
+	0,  // 32: v0s.v1.VulnerabilitySummary.severity:type_name -> v0s.v1.Severity
+	32, // 33: v0s.v1.ListVulnerabilitiesResponse.vulnerabilities:type_name -> v0s.v1.VulnerabilitySummary
+	14, // 34: v0s.v1.CountFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
+	11, // 35: v0s.v1.CountFindingsRequest.group_by:type_name -> v0s.v1.CountFindingsRequest.GroupBy
+	43, // 36: v0s.v1.CountFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	56, // 37: v0s.v1.CountFindingsResponse.buckets:type_name -> v0s.v1.CountFindingsResponse.Bucket
+	38, // 38: v0s.v1.GetVulnerabilityResponse.vulnerability:type_name -> v0s.v1.Vulnerability
+	16, // 39: v0s.v1.Vulnerability.epss:type_name -> v0s.v1.Epss
+	41, // 40: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
+	12, // 41: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
+	42, // 42: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
+	42, // 43: v0s.v1.WorkloadSelector.workloads:type_name -> v0s.v1.WorkloadRef
+	2,  // 44: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
+	57, // 45: v0s.v1.Suppression.updated_at:type_name -> google.protobuf.Timestamp
+	44, // 46: v0s.v1.NewSuppression.key:type_name -> v0s.v1.SuppressionKey
+	2,  // 47: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
+	46, // 48: v0s.v1.SetSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
+	45, // 49: v0s.v1.SetSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	44, // 50: v0s.v1.DeleteSuppressionsRequest.keys:type_name -> v0s.v1.SuppressionKey
+	45, // 51: v0s.v1.DeleteSuppressionsResponse.deleted:type_name -> v0s.v1.Suppression
+	45, // 52: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	54, // 53: v0s.v1.ForwardV13sSuppressionRequest.assessment:type_name -> v0s.v1.V13sAssessment
+	2,  // 54: v0s.v1.V13sAssessment.state:type_name -> v0s.v1.SuppressionState
+	57, // 55: v0s.v1.V13sAssessment.updated_at:type_name -> google.protobuf.Timestamp
+	4,  // 56: v0s.v1.ForwardV13sSuppressionResponse.outcome:type_name -> v0s.v1.ForwardOutcome
+	17, // 57: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
+	26, // 58: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
+	30, // 59: v0s.v1.VulnerabilityService.ListVulnerabilities:input_type -> v0s.v1.ListVulnerabilitiesRequest
+	34, // 60: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
+	23, // 61: v0s.v1.VulnerabilityService.GetSummary:input_type -> v0s.v1.GetSummaryRequest
+	36, // 62: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
+	39, // 63: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
+	47, // 64: v0s.v1.SuppressionService.SetSuppressions:input_type -> v0s.v1.SetSuppressionsRequest
+	49, // 65: v0s.v1.SuppressionService.DeleteSuppressions:input_type -> v0s.v1.DeleteSuppressionsRequest
+	51, // 66: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
+	53, // 67: v0s.v1.SuppressionService.ForwardV13sSuppression:input_type -> v0s.v1.ForwardV13sSuppressionRequest
+	18, // 68: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
+	28, // 69: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
+	33, // 70: v0s.v1.VulnerabilityService.ListVulnerabilities:output_type -> v0s.v1.ListVulnerabilitiesResponse
+	35, // 71: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
+	24, // 72: v0s.v1.VulnerabilityService.GetSummary:output_type -> v0s.v1.GetSummaryResponse
+	37, // 73: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
+	40, // 74: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
+	48, // 75: v0s.v1.SuppressionService.SetSuppressions:output_type -> v0s.v1.SetSuppressionsResponse
+	50, // 76: v0s.v1.SuppressionService.DeleteSuppressions:output_type -> v0s.v1.DeleteSuppressionsResponse
+	52, // 77: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
+	55, // 78: v0s.v1.SuppressionService.ForwardV13sSuppression:output_type -> v0s.v1.ForwardV13sSuppressionResponse
+	68, // [68:79] is the sub-list for method output_type
+	57, // [57:68] is the sub-list for method input_type
+	57, // [57:57] is the sub-list for extension type_name
+	57, // [57:57] is the sub-list for extension extendee
+	0,  // [0:57] is the sub-list for field type_name
 }
 
 func init() { file_v0s_v1_v0s_proto_init() }

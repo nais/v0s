@@ -173,22 +173,22 @@ RPC. Without it, the response has no KEV dependency and the legacy read path
 and cursor bytes remain unchanged when no workload selector is supplied.
 With it, existing top-level scope selects workloads;
 scope fields in the nested finding filter are rejected. Finding filters narrow
-counts, not rows, unless `affected_only` explicitly requests positive counts.
+counts, not rows. Nais API uses this to enrich its own workload lists in batches.
 
 The overview SQL groups matching occurrences by workload and canonical ID,
 chooses the highest known matching severity using existing semantic CASE ranks,
 and then aggregates counts per workload. A left join onto the full selection
 preserves zero-count workloads and all existing image/coverage fields. Severity
 buckets count unique vulnerabilities, not packages; their sum equals the unique
-vulnerability count. KEV counts are distinct canonical IDs. Catalog availability,
-page and full-selection total use the same read-only repeatable-read transaction;
+vulnerability count. KEV counts are distinct canonical IDs. The compatibility
+total counts workloads directly without aggregating findings again. Catalog
+availability, page and total use the same read-only repeatable-read transaction;
 unavailable KEV fails the overview rather than supplying false zeroes.
 
-SQL performs seek/order/LIMIT after aggregation. Identity ASC is the default;
-finding-count ASC/DESC uses full identity ASC for ties. Overview cursors have a
-separate operation/version, bind selection/filter/affected-only/effective-order,
-and store the identity plus count when needed. They resume without a boundary
-lookup, but cannot be mixed with legacy cursors. No snapshot spans page calls.
+SQL returns workloads in ascending identity order. The single continuation
+token binds scope, workload selection and finding filter and stores the identity
+of the boundary workload. It resumes without a boundary lookup and cannot be
+mixed with plain workload tokens. No snapshot spans page calls.
 See the [workload overview example and limitations](../README.md#workload-overview).
 
 The public read contract accepts one team or the whole tenant. A workload name
@@ -201,7 +201,7 @@ SQL EXISTS predicate are shared across operations. The predicate uses three
 parameterized arrays through `unnest`, before any aggregation/seek/LIMIT, without
 per-workload queries or image-based selection. Unknown/deleted identities simply
 do not match. Workload overview applies it both to the selected rows and their
-finding aggregates, preserving zero-count rows and affected-only semantics.
+finding aggregates, preserving zero-count rows.
 
 Normalized selectors participate in existing query bindings; omitted selectors
 are excluded from binding JSON to preserve existing cursor bytes. Plain

@@ -92,7 +92,7 @@ func TestWorkloadSelectorOverGRPC(t *testing.T) {
 				for _, w := range resp.GetWorkloads() {
 					workloads = append(workloads, w.Environment+"/"+w.Team+"/"+w.Name)
 				}
-				if resp.TotalCount != nil || len(resp.GetCursors()) != 0 {
+				if resp.TotalCount != nil {
 					t.Fatal("selector implicitly enabled overview mode")
 				}
 				if resp.GetNextPageToken() == "" {
@@ -170,32 +170,26 @@ func TestWorkloadSelectorOverGRPC(t *testing.T) {
 			if total != int64(tt.findings) {
 				t.Fatalf("counts: %v", counts)
 			}
-			for _, affected := range []bool{false, true} {
-				req := &v0sv1.ListWorkloadsRequest{WorkloadSelector: tt.selector, PageSize: 1, Overview: &v0sv1.WorkloadOverviewOptions{AffectedOnly: affected}}
-				want := tt.workloads
-				if affected && want > 0 {
-					want -= 2
+			req := &v0sv1.ListWorkloadsRequest{WorkloadSelector: tt.selector, PageSize: 1, Overview: &v0sv1.WorkloadOverviewOptions{}}
+			var got int
+			for range 10 {
+				resp, err := client.ListWorkloads(t.Context(), req)
+				if err != nil || resp.TotalCount == nil || resp.GetTotalCount() != int64(tt.workloads) {
+					t.Fatalf("overview: %v, %v", resp, err)
 				}
-				var got int
-				for range 10 {
-					resp, err := client.ListWorkloads(t.Context(), req)
-					if err != nil || resp.TotalCount == nil || resp.GetTotalCount() != int64(want) {
-						t.Fatalf("overview: %v, %v", resp, err)
+				got += len(resp.GetWorkloads())
+				for _, w := range resp.GetWorkloads() {
+					if (w.Name == "clean" || w.Name == "unresolved") && w.GetFindingCounts().GetFindingCount() != 0 {
+						t.Fatalf("zero-count workload: %v", w)
 					}
-					got += len(resp.GetWorkloads())
-					for _, w := range resp.GetWorkloads() {
-						if (w.Name == "clean" || w.Name == "unresolved") && w.GetFindingCounts().GetFindingCount() != 0 {
-							t.Fatalf("zero-count workload: %v", w)
-						}
-					}
-					if len(resp.GetCursors()) == 0 {
-						break
-					}
-					req.PageToken = resp.GetCursors()[len(resp.GetCursors())-1]
 				}
-				if got != want {
-					t.Fatalf("overview rows %d, want %d", got, want)
+				req.PageToken = resp.GetNextPageToken()
+				if req.PageToken == "" {
+					break
 				}
+			}
+			if got != tt.workloads || req.PageToken != "" {
+				t.Fatalf("overview rows %d, want %d", got, tt.workloads)
 			}
 		})
 	}
@@ -230,15 +224,9 @@ func TestWorkloadSelectorGRPCIntersections(t *testing.T) {
 			t.Fatalf("count intersection: %v", counts)
 		}
 	}
-	for _, affected := range []bool{false, true} {
-		resp, err := client.ListWorkloads(t.Context(), &v0sv1.ListWorkloadsRequest{Team: "team", WorkloadSelector: selector, Overview: &v0sv1.WorkloadOverviewOptions{AffectedOnly: affected, FindingFilter: &v0sv1.FindingFilter{PackageType: "missing"}}})
-		want := int64(4)
-		if affected {
-			want = 0
-		}
-		if err != nil || resp.GetTotalCount() != want || int64(len(resp.GetWorkloads())) != want {
-			t.Fatalf("scope/zero-count intersection: %v, %v", resp, err)
-		}
+	resp, err := client.ListWorkloads(t.Context(), &v0sv1.ListWorkloadsRequest{Team: "team", WorkloadSelector: selector, Overview: &v0sv1.WorkloadOverviewOptions{FindingFilter: &v0sv1.FindingFilter{PackageType: "missing"}}})
+	if err != nil || resp.GetTotalCount() != 4 || len(resp.GetWorkloads()) != 4 {
+		t.Fatalf("scope/zero-count intersection: %v, %v", resp, err)
 	}
 }
 
