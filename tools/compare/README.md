@@ -10,6 +10,5 @@ by image digest with canonical vulnerability IDs. Check registry-name normalizat
 as well; tag identity and raw row counts give misleading differences.
 
 The acceptance criteria are in [Verification](../../docs/verification.md).
-`compare-out/` is generated and ignored by git. The
-[first pilot's deployment notes and results](../../docs/archive/dev-nais-comparison-2026-10-30.md)
-are historical, not instructions for the current service.
+`compare-out/` is generated and ignored by git. Keep detailed comparison output
+and workload snapshots in access-controlled storage, not in Git.

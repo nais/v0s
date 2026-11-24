@@ -79,13 +79,13 @@ alias. An empty list does not filter by vulnerability.
 
 ## Documentation
 
-[Visual team pitch](docs/pitch.html) ·
+[Documentation index](docs/README.md) ·
 [Developer contract proposal](docs/utviklerkontrakt.md) ·
-[Collected work and evidence (2026-11-10)](docs/status-2026-11-10.md) ·
-[Documentation and session-source index](docs/README.md)
+[API, CLI and Console proposal](docs/api-cli-console-forslag.html)
 
 [Domain language](CONTEXT.md) · [Architecture](docs/architecture.md) ·
 [Operations](docs/operations.md) · [Verification](docs/verification.md) ·
 [Helm chart](charts/README.md)
 
-Historical proposals, measurements and session notes are in the [archive](docs/archive/README.md).
+The developer contract and client proposal are design material, not implemented
+client features or evidence of a completed cutover.

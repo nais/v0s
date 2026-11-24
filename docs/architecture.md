@@ -58,6 +58,13 @@ in-process against a local vulnerability DB; no images are pulled. Only
 `internal/scan` imports Trivy. This avoids a separate scanner service, at the cost
 of Trivy's large module graph and unstable internal APIs.
 
+The choice reuses the existing attested CycloneDX input rather than introducing
+another image-scanning pipeline. Matching quality still depends on both that
+input and Trivy's source catalog. Differences from Dependency-Track are not all
+false positives or all missed vulnerabilities; they require source-level review.
+See the [verification method](verification.md#findings-and-coverage) and
+[source-contract considerations](utviklerkontrakt.md#kildeavgrensninger).
+
 ## Reconciliation, not a queue
 
 Loops compare stored state with work still to do. PostgreSQL advisory locks
@@ -93,7 +100,8 @@ external clients use code generated from the same authoritative protobuf.
 The client has no server or Trivy dependency. See the
 [client release instructions](../README.md#go-client).
 
-`internal/database` owns hand-written SQL and embedded, numbered migrations
+`internal/database` owns hand-written SQL so optional read filters remain
+explicit alongside the code that uses them. Embedded, numbered migrations are
 applied by `v0s migrate` under an advisory lock using the database owner. The
 service uses a separate read/write role, checks the schema version on startup
 and does not perform DDL. The chart stops old replicas before the migration
@@ -139,7 +147,7 @@ operator feature. Existing databases can remain independently managed with
 `postgresqlEnabled=false`. Managed Clusters are retained on Helm uninstall by
 default, but that is not independent release ownership or backup protection.
 The shared subchart does not configure backups. See [Operations](operations.md)
-for the existing dev-nais database boundary and rollout requirements.
+for database ownership boundaries and rollout requirements.
 
 ## Trust and current-state contract
 

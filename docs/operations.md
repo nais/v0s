@@ -261,26 +261,7 @@ Postgres is not disposable in production. Inventory, SBOMs and scan results can
 be rebuilt from external sources; suppressions cannot. Back up the database and
 verify recovery of the assessments. A caller's activity log is not a substitute.
 
-## Pilot and remaining validation
-
-The [archived manual manifest](archive/dev-nais-manual-manifest.yaml) records
-the historical manual pilot, not the current app installation. It uses
-`v13s-sa`, one PostgreSQL 18 instance and no backups; do not bulk-delete it,
-because it also defines the database. The [manual deployment verification](archive/dev-nais-deploy-2026-11-06.md)
-is a historical snapshot.
-
-On 2026-11-06, Fasit took over the dev-nais app with the dedicated `v0s`
-runtime identity, initially retaining the independent pilot database.
-Session verification on 2026-11-09 subsequently observed chart-managed CNPG
-provisioning and working read APIs in both dev-nais and NAV at
-`2026-11-09-115640-d881a93`. Dev-nais also exercised a temporary suppression
-write/read/delete. The database provisioning and later network-policy rollout
-are therefore no longer untested; backup/restore and failure recovery remain
-unverified. See the [dated consolidated evidence](status-2026-11-10.md).
-
-The 2026-11-10 NAV comparison still observed `d881a93`, without the later
-pagination and fetch/credential fixes. Local tests of those fixes are not
-live validation. These are dated observations, not a fresh deployment check.
+## Workload-suppression upgrade
 
 Schema changes now use forward migrations; do not reset a database to upgrade it.
 `0002_workload_suppressions.sql` preserves old team/image assessments in
@@ -303,10 +284,13 @@ requests missing them are rejected, and old suppression page tokens must be
 discarded. Rolling back requires a coordinated schema/data recovery; old binaries
 must not be pointed at the new schema.
 
-The comparison tool still targets the old API; see
-[`tools/compare`](../tools/compare/README.md). Live multi-replica failures, recovery
-and tenant-scale performance remain to be verified using the
-[verification checklist](verification.md).
+## Validation and integration
+
+Use the [verification checklist](verification.md) to record evidence for the
+actual deployed build: finding discrepancies, multi-replica failures, recovery
+and tenant-scale performance. Historical pilot results and local tests do not
+establish that a current deployment has passed those checks. The comparison tool
+still targets the old API; see [`tools/compare`](../tools/compare/README.md).
 
 Known integration/security follow-ups:
 
@@ -316,5 +300,3 @@ Known integration/security follow-ups:
 - Console assessment states still need mapping to v0s's three suppression states.
 - Missing packages in source SBOMs limit coverage; a successful scan is not proof
   that every package or runtime binary was represented.
-- An earlier pilot session printed a v13s database password in terminal output.
-  Confirm that it has been rotated; the archived handover records the incident.
