@@ -144,6 +144,30 @@ purl spelling; alias-to-ID substitutions remain filter changes. There is no
 cross-request snapshot: concurrent changes to sort values can move findings.
 See the [gRPC continuation example](../README.md#finding-ordering-and-pagination).
 
+`ListVulnerabilities` reuses the same finding joins, normalized filters and cursor
+helpers. SQL filters occurrences before grouping by canonical vulnerability ID.
+Each group has COUNT(*) findings, COUNT(DISTINCT (environment, team, workload
+name)) affected workloads, and the highest known matching severity using semantic
+CASE ranks, not CVSS or lexical severity order. Aliases filter canonical IDs
+without multiplying occurrences. No advisory data is copied into summaries;
+`GetVulnerability` remains the detail endpoint.
+
+SQL applies keyset seek, sorting and LIMIT after aggregation. The default is
+severity DESC, with UNKNOWN last in either direction. Additional sorts are
+canonical ID and affected workload count, ASC/DESC; severity/count ties use ID
+ASC. Identifier ordering and seek use bytewise, case-sensitive `COLLATE "C"`,
+not natural numeric order. A separate count of the filtered groups, in the same
+read-only repeatable-read transaction, supplies the total even on empty pages.
+
+Overview cursors have a separate operation/version and store the boundary ID
+and sort-specific aggregate values. They bind the effective order and normalized
+filter, not page size, and do not look up the boundary row. Omitted order equals
+explicit severity DESC. Invalid or incompatible tokens return `InvalidArgument`.
+There is no snapshot across requests: group severity/count changes can move rows
+and totals may change. KEV availability is checked only when the KEV filter is
+active, since summaries do not expose KEV membership. See the
+[overview contract and example](../README.md#vulnerability-overview).
+
 The public read contract accepts one team or the whole tenant. A workload name
 requires a team and environment. Advisory details include links to the sources;
 v0s uses the scanner's severity rather than storing a separate score.

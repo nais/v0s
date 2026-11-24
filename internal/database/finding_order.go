@@ -84,9 +84,13 @@ func normalizeFindingFilter(f FindingFilter) (FindingFilter, error) {
 }
 
 func findingBinding(filter FindingFilter, order FindingOrder) (string, error) {
+	return queryBinding(filter, order)
+}
+
+func queryBinding(filter FindingFilter, order any) (string, error) {
 	b, err := json.Marshal(struct {
 		Filter FindingFilter
-		Order  FindingOrder
+		Order  any
 	}{filter, order})
 	if err != nil {
 		return "", fmt.Errorf("encoding finding query: %w", err)
