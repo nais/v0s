@@ -168,6 +168,28 @@ and totals may change. KEV availability is checked only when the KEV filter is
 active, since summaries do not expose KEV membership. See the
 [overview contract and example](../README.md#vulnerability-overview).
 
+`ListWorkloads` has an additive, opt-in `overview` message rather than a parallel
+RPC. Without it, the legacy read path, response and cursor bytes remain unchanged
+and have no KEV dependency. With it, existing top-level scope selects workloads;
+scope fields in the nested finding filter are rejected. Finding filters narrow
+counts, not rows, unless `affected_only` explicitly requests positive counts.
+
+The overview SQL groups matching occurrences by workload and canonical ID,
+chooses the highest known matching severity using existing semantic CASE ranks,
+and then aggregates counts per workload. A left join onto the full selection
+preserves zero-count workloads and all existing image/coverage fields. Severity
+buckets count unique vulnerabilities, not packages; their sum equals the unique
+vulnerability count. KEV counts are distinct canonical IDs. Catalog availability,
+page and full-selection total use the same read-only repeatable-read transaction;
+unavailable KEV fails the overview rather than supplying false zeroes.
+
+SQL performs seek/order/LIMIT after aggregation. Identity ASC is the default;
+finding-count ASC/DESC uses full identity ASC for ties. Overview cursors have a
+separate operation/version, bind selection/filter/affected-only/effective-order,
+and store the identity plus count when needed. They resume without a boundary
+lookup, but cannot be mixed with legacy cursors. No snapshot spans page calls.
+See the [workload overview example and limitations](../README.md#workload-overview).
+
 The public read contract accepts one team or the whole tenant. A workload name
 requires a team and environment. Advisory details include links to the sources;
 v0s uses the scanner's severity rather than storing a separate score.

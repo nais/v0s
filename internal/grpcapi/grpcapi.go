@@ -89,19 +89,26 @@ func (s *Server) ListWorkloads(ctx context.Context, req *v0sv1.ListWorkloadsRequ
 		return nil, err
 	}
 	filter := database.WorkloadFilter{Teams: teamFilter(req.GetTeam()), Environment: req.GetEnvironment(), Workload: req.GetWorkload()}
+	if req.GetOverview() != nil {
+		return s.listWorkloadOverview(ctx, req, filter)
+	}
 	workloads, next, err := s.db.ListWorkloads(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
 	resp := &v0sv1.ListWorkloadsResponse{Workloads: make([]*v0sv1.Workload, 0, len(workloads)), NextPageToken: next}
 	for _, w := range workloads {
-		pw := &v0sv1.Workload{Environment: w.Environment, Team: w.Team, Name: w.Name, ImageReference: w.ImageReference, ResolveError: w.ResolveError}
-		if w.Image != nil {
-			pw.Image = imageToProto(*w.Image)
-		}
-		resp.Workloads = append(resp.Workloads, pw)
+		resp.Workloads = append(resp.Workloads, workloadToProto(w))
 	}
 	return resp, nil
+}
+
+func workloadToProto(w database.Workload) *v0sv1.Workload {
+	pw := &v0sv1.Workload{Environment: w.Environment, Team: w.Team, Name: w.Name, ImageReference: w.ImageReference, ResolveError: w.ResolveError}
+	if w.Image != nil {
+		pw.Image = imageToProto(*w.Image)
+	}
+	return pw
 }
 
 // ListFindings implements VulnerabilityService.

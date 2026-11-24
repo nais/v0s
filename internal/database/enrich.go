@@ -40,8 +40,14 @@ func (db *DB) ReplaceKEV(ctx context.Context, entries []v0s.KEV) error {
 // A valid catalog is nonempty and replaced atomically. No rows means it has never
 // been loaded, not that none of the vulnerabilities are in KEV.
 func (db *DB) requireKEVCatalog(ctx context.Context) error {
+	return requireKEVCatalog(ctx, db.pool)
+}
+
+func requireKEVCatalog(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}) error {
 	var loaded bool
-	if err := db.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM kev)`).Scan(&loaded); err != nil {
+	if err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM kev)`).Scan(&loaded); err != nil {
 		return fmt.Errorf("checking KEV catalog: %w", err)
 	}
 	if !loaded {

@@ -185,6 +185,76 @@ workload counts can move rows, and totals can change. A loaded KEV catalog is
 required only when filtering on KEV; otherwise this overview has no KEV dependency.
 Existing `ListFindings` behavior is unchanged.
 
+### Workload overview
+
+`ListWorkloads` is extended additively: send `overview: {}` to opt in to
+per-workload finding counts, per-row cursors and `totalCount`. Without `overview`,
+the existing response, identity ordering and legacy cursor format are unchanged;
+counts/total are absent and no KEV catalog is required. There is no separate
+workload overview RPC.
+
+Workload **selection** uses the existing top-level `team`, `environment` and
+`workload` fields. `overview.findingFilter` reuses `FindingFilter` for matching
+findings, including severity, KEV, fix availability, assessments and package
+type. Its `team`, `environment` and `workload` must be empty; competing scope
+fields are rejected with `InvalidArgument`, even if they repeat the selection.
+Suppressed findings are excluded by default.
+
+All selected workloads remain present by default, including scanned workloads
+with no findings, pending/failed scans, missing SBOMs and unresolved images.
+Finding filters affect counts, not selection. Set `overview.affectedOnly: true`
+to keep only workloads with at least one matching finding.
+
+Each existing workload row keeps its identity, image reference, image status
+and errors, and adds `findingCounts`:
+
+- `findingCount`: matching workload/package occurrences.
+- `uniqueVulnerabilityCount`: distinct canonical vulnerability IDs. Aliases do
+  not multiply counts, and workloads sharing an image remain separate rows.
+- `severityCounts`: unique vulnerabilities by highest known severity across
+  their matching packages **within that workload**. UNKNOWN is used only when
+  all matching findings are UNKNOWN. The five buckets sum to
+  `uniqueVulnerabilityCount`; there is no CVSS-derived severity.
+- `uniqueKevVulnerabilityCount`: distinct matching canonical IDs in CISA KEV.
+  Overview mode always requires a loaded KEV catalog and fails with `Unavailable`
+  if it is missing, rather than returning misleading zero counts.
+
+Zero counts do not prove a successful scan or a complete/clean image: always
+inspect image status, image errors and `resolveError`.
+
+```sh
+grpcurl -plaintext -d '{
+  "team": "my-team",
+  "overview": {
+    "findingFilter": {"packageType": "npm"},
+    "affectedOnly": false,
+    "orderBy": {"field": "FIELD_FINDING_COUNT", "direction": "DIRECTION_DESC"}
+  },
+  "pageSize": 2
+}' localhost:50051 v0s.v1.VulnerabilityService/ListWorkloads
+```
+
+Default ordering is environment, team, workload ASC, matching legacy mode.
+Explicit `FIELD_WORKLOAD` accepts only `DIRECTION_ASC`; `FIELD_FINDING_COUNT`
+accepts ASC and DESC with the full identity ASC as tie-breaker. SQL performs
+filtering, aggregation, sorting, seek and LIMIT. `totalCount` covers the selection
+after `affectedOnly` but before the cursor/LIMIT, including on an empty final page.
+
+Continue with the same selection and overview options plus
+`"pageToken": "<nextPageToken from the response>"`. Stop at an empty next token.
+Each `cursors` entry also continues after its row, even if the boundary workload
+has been deleted. Overview cursors are versioned and bound to normalized
+selection, finding filter, `affectedOnly` and effective order, not page size.
+Omitted ordering equals explicit workload ASC. Legacy and overview cursors are
+not interchangeable; invalid/incompatible cursors or changed parameters return
+`InvalidArgument` and require restarting without a token.
+
+Page and total share a database snapshot within the request, but requests are
+not a snapshot across pages. Changing finding counts can move rows; totals may
+change. Selection still supports one team or the whole tenant, optional
+environment, or one fully scoped workload. Arbitrary multi-team subsets and
+explicit workload lists are not introduced here; there is no label/RBAC logic.
+
 ## Documentation
 
 [Documentation index](docs/README.md) ·

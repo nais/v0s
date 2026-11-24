@@ -96,6 +96,8 @@ message Workload {
   // The image image_reference resolved to. Unset if it could not be resolved; see resolve_error.
   Image image = 4;
   string resolve_error = 6;
+  // Present only when ListWorkloadsRequest.overview is supplied.
+  WorkloadFindingCounts finding_counts = 7;
 }
 
 // FindingFilter narrows findings. Empty fields do not filter. Severities match any value.
@@ -172,11 +174,76 @@ message ListWorkloadsRequest {
   string workload = 6;
   int32 page_size = 3;
   string page_token = 4;
+  // Opt in to counts, full total and versioned per-row cursors. Without this,
+  // existing behavior and legacy cursors are unchanged, with no KEV dependency.
+  WorkloadOverviewOptions overview = 7;
 }
 
 message ListWorkloadsResponse {
   repeated Workload workloads = 1;
   string next_page_token = 2;
+  // Overview mode only: one versioned cursor per row, including the last page.
+  // Bound to selection, finding filter, affected_only and effective ordering,
+  // not page size. Invalid/incompatible tokens or changed parameters return
+  // InvalidArgument. Legacy and overview cursors are not interchangeable.
+  // Continuation works after deletion of the boundary workload.
+  repeated string cursors = 3;
+  // Overview mode only: workload selection after affected_only, before seek/LIMIT,
+  // even on empty pages. Page and total share a snapshot within a request,
+  // but there is no snapshot between requests.
+  optional int64 total_count = 4;
+}
+
+message WorkloadOverviewOptions {
+  // Counts matching findings without removing workloads with zero matches.
+  // Scope comes only from ListWorkloadsRequest.team/environment/workload:
+  // team/environment/workload in this filter must be empty (InvalidArgument).
+  FindingFilter finding_filter = 1;
+  // Only workloads with at least one matching finding. Defaults to false.
+  bool affected_only = 2;
+  // Defaults to environment, team, workload ASC.
+  WorkloadOrderBy order_by = 3;
+}
+
+message WorkloadOrderBy {
+  Field field = 1;
+  Direction direction = 2;
+
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    // ASC only.
+    FIELD_WORKLOAD = 1;
+    // Ties use environment, team, workload ASC.
+    FIELD_FINDING_COUNT = 2;
+  }
+
+  enum Direction {
+    DIRECTION_UNSPECIFIED = 0;
+    DIRECTION_ASC = 1;
+    DIRECTION_DESC = 2;
+  }
+}
+
+message WorkloadFindingCounts {
+  // Workload/package occurrences after applying the finding filter.
+  int64 finding_count = 1;
+  int64 unique_vulnerability_count = 2;
+  // Each canonical vulnerability contributes once at its highest known matching
+  // severity. UNKNOWN only if all matching findings are UNKNOWN. No CVSS.
+  // The sum equals unique_vulnerability_count.
+  VulnerabilitySeverityCounts severity_counts = 3;
+  // Distinct matching canonical vulnerabilities in CISA KEV.
+  // Overview requests fail with Unavailable until a KEV catalog is loaded;
+  // missing catalog data must never be represented as zero.
+  int64 unique_kev_vulnerability_count = 4;
+}
+
+message VulnerabilitySeverityCounts {
+  int64 critical = 1;
+  int64 high = 2;
+  int64 medium = 3;
+  int64 low = 4;
+  int64 unknown = 5;
 }
 
 message ListFindingsRequest {
