@@ -21,6 +21,9 @@ service VulnerabilityService {
   // workloads is listed once for each of them. Filter by vulnerability and include
   // suppressed findings to discover other affected workloads before an explicit batch assessment.
   rpc ListFindings(ListFindingsRequest) returns (ListFindingsResponse);
+  // ListVulnerabilities groups current workload findings after applying FindingFilter.
+  // Advisory details remain available through GetVulnerability.
+  rpc ListVulnerabilities(ListVulnerabilitiesRequest) returns (ListVulnerabilitiesResponse);
   // CountFindings counts findings as ListFindings lists them, grouped by one dimension.
   rpc CountFindings(CountFindingsRequest) returns (CountFindingsResponse);
   // GetVulnerability returns the vulnerability record for an ID or alias.
@@ -223,6 +226,59 @@ message ListFindingsResponse {
 message PackageTypeCount {
   string value = 1;
   int64 count = 2;
+}
+
+message ListVulnerabilitiesRequest {
+  FindingFilter filter = 1;
+  // Defaults to 100, capped at 1000.
+  int32 page_size = 2;
+  string page_token = 3;
+  // Omitted means severity DESC. When present, both fields are required.
+  VulnerabilityOrderBy order_by = 4;
+}
+
+message VulnerabilityOrderBy {
+  Field field = 1;
+  Direction direction = 2;
+
+  enum Field {
+    FIELD_UNSPECIFIED = 0;
+    // DESC: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN.
+    // ASC: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN.
+    FIELD_SEVERITY = 1;
+    // Bytewise, case-sensitive PostgreSQL COLLATE "C", not natural/numeric ordering.
+    FIELD_VULNERABILITY_ID = 2;
+    FIELD_AFFECTED_WORKLOAD_COUNT = 3;
+  }
+
+  enum Direction {
+    DIRECTION_UNSPECIFIED = 0;
+    DIRECTION_ASC = 1;
+    DIRECTION_DESC = 2;
+  }
+}
+
+message VulnerabilitySummary {
+  string vulnerability_id = 1;
+  // Highest known severity among matching findings; UNKNOWN if all are UNKNOWN.
+  Severity severity = 2;
+  // Matching workload/package occurrences, including each workload sharing an image.
+  int64 finding_count = 3;
+  // Distinct (environment, team, workload name) tuples among matching findings.
+  int64 affected_workload_count = 4;
+}
+
+message ListVulnerabilitiesResponse {
+  // Severity/count ties use canonical ID ASC with COLLATE "C".
+  repeated VulnerabilitySummary vulnerabilities = 1;
+  string next_page_token = 2;
+  // One opaque, versioned cursor per row, including the last page. Bound to the
+  // effective filter/order, not page size; works after the boundary row disappears.
+  // Invalid/incompatible tokens or changed filter/order give InvalidArgument:
+  // restart without a token. Pages are live data, not a snapshot between calls.
+  repeated string cursors = 3;
+  // All unique canonical IDs after filtering, before cursor/LIMIT, even on empty pages.
+  int64 total_count = 4;
 }
 
 message CountFindingsRequest {

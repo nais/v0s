@@ -127,6 +127,64 @@ Each request reads live data; there is no snapshot across requests. Changes to
 sort values can move findings between pages. Package-type facets always cover
 the entire filtered selection, unaffected by ordering, cursor or page size.
 
+### Vulnerability overview
+
+`ListVulnerabilities` returns one `VulnerabilitySummary` per canonical
+`vulnerabilityId` in current workload findings, without copying advisory data.
+Use `GetVulnerability` for details.
+
+The request reuses `FindingFilter`: filters apply **before** grouping, including
+severity, package type, available fix, KEV and suppression/assessment state
+(suppressed findings are excluded by default). Overlapping IDs and aliases do
+not multiply rows or counts.
+
+Each summary contains:
+
+- `severity`: highest known severity among matching findings; UNKNOWN only when
+  all matching findings are UNKNOWN. No CVSS calculation.
+- `findingCount`: all matching workload/package occurrences. Multiple workloads
+  sharing an image each contribute their findings.
+- `affectedWorkloadCount`: distinct `(environment, team, workload name)` tuples,
+  regardless of how many packages are affected in a workload.
+
+Sorting, grouping, counts and pagination happen in SQL. `VulnerabilityOrderBy`
+supports `FIELD_SEVERITY`, `FIELD_VULNERABILITY_ID` and
+`FIELD_AFFECTED_WORKLOAD_COUNT`, each with `DIRECTION_ASC` or `DIRECTION_DESC`.
+Omitting `orderBy` defaults to severity DESC. Severity orders are the same as
+above, with UNKNOWN always last. Severity/count ties use canonical ID ASC.
+All identifier ordering and seek comparisons use PostgreSQL `COLLATE "C"`:
+bytewise, case-sensitive lexical order, **not** natural/numeric CVE order
+(`CVE-10` sorts before `CVE-2` in ASC).
+
+```sh
+grpcurl -plaintext -d '{
+  "filter": {"team": "my-team", "packageType": "npm"},
+  "orderBy": {"field": "FIELD_SEVERITY", "direction": "DIRECTION_DESC"},
+  "pageSize": 2
+}' localhost:50051 v0s.v1.VulnerabilityService/ListVulnerabilities
+```
+
+The response contains `vulnerabilities`, `nextPageToken`, one entry in `cursors`
+per row, and `totalCount` for all unique canonical IDs in the filtered selection.
+The total is independent of cursor, order and page size, including an empty page
+after the last result; a selection with no matches has total zero. Each page and
+its total use the same database snapshot.
+
+To continue, repeat the filter and order and add
+`"pageToken": "<nextPageToken from the response>"`. Stop when `nextPageToken`
+is empty. Any per-row cursor also resumes after its row, even if that row has
+disappeared. Page size defaults to 100 and is capped at 1000.
+
+Overview cursors have their own operation/version and bind the normalized filter
+and effective order, not page size. Omitted order and explicit severity DESC are
+equivalent. The filter normalization and alias-substitution rules above apply.
+Malformed/incompatible cursors or changed filters/orders return `InvalidArgument`;
+restart without a token. Finding cursors and overview cursors are not interchangeable.
+Requests use live data, not a snapshot between calls: updates to severity or
+workload counts can move rows, and totals can change. A loaded KEV catalog is
+required only when filtering on KEV; otherwise this overview has no KEV dependency.
+Existing `ListFindings` behavior is unchanged.
+
 ## Documentation
 
 [Documentation index](docs/README.md) ·

@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	VulnerabilityService_ListWorkloads_FullMethodName    = "/v0s.v1.VulnerabilityService/ListWorkloads"
-	VulnerabilityService_ListFindings_FullMethodName     = "/v0s.v1.VulnerabilityService/ListFindings"
-	VulnerabilityService_CountFindings_FullMethodName    = "/v0s.v1.VulnerabilityService/CountFindings"
-	VulnerabilityService_GetVulnerability_FullMethodName = "/v0s.v1.VulnerabilityService/GetVulnerability"
-	VulnerabilityService_SearchComponents_FullMethodName = "/v0s.v1.VulnerabilityService/SearchComponents"
+	VulnerabilityService_ListWorkloads_FullMethodName       = "/v0s.v1.VulnerabilityService/ListWorkloads"
+	VulnerabilityService_ListFindings_FullMethodName        = "/v0s.v1.VulnerabilityService/ListFindings"
+	VulnerabilityService_ListVulnerabilities_FullMethodName = "/v0s.v1.VulnerabilityService/ListVulnerabilities"
+	VulnerabilityService_CountFindings_FullMethodName       = "/v0s.v1.VulnerabilityService/CountFindings"
+	VulnerabilityService_GetVulnerability_FullMethodName    = "/v0s.v1.VulnerabilityService/GetVulnerability"
+	VulnerabilityService_SearchComponents_FullMethodName    = "/v0s.v1.VulnerabilityService/SearchComponents"
 )
 
 // VulnerabilityServiceClient is the client API for VulnerabilityService service.
@@ -40,6 +41,9 @@ type VulnerabilityServiceClient interface {
 	// workloads is listed once for each of them. Filter by vulnerability and include
 	// suppressed findings to discover other affected workloads before an explicit batch assessment.
 	ListFindings(ctx context.Context, in *ListFindingsRequest, opts ...grpc.CallOption) (*ListFindingsResponse, error)
+	// ListVulnerabilities groups current workload findings after applying FindingFilter.
+	// Advisory details remain available through GetVulnerability.
+	ListVulnerabilities(ctx context.Context, in *ListVulnerabilitiesRequest, opts ...grpc.CallOption) (*ListVulnerabilitiesResponse, error)
 	// CountFindings counts findings as ListFindings lists them, grouped by one dimension.
 	CountFindings(ctx context.Context, in *CountFindingsRequest, opts ...grpc.CallOption) (*CountFindingsResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
@@ -70,6 +74,16 @@ func (c *vulnerabilityServiceClient) ListFindings(ctx context.Context, in *ListF
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListFindingsResponse)
 	err := c.cc.Invoke(ctx, VulnerabilityService_ListFindings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *vulnerabilityServiceClient) ListVulnerabilities(ctx context.Context, in *ListVulnerabilitiesRequest, opts ...grpc.CallOption) (*ListVulnerabilitiesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListVulnerabilitiesResponse)
+	err := c.cc.Invoke(ctx, VulnerabilityService_ListVulnerabilities_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +134,9 @@ type VulnerabilityServiceServer interface {
 	// workloads is listed once for each of them. Filter by vulnerability and include
 	// suppressed findings to discover other affected workloads before an explicit batch assessment.
 	ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error)
+	// ListVulnerabilities groups current workload findings after applying FindingFilter.
+	// Advisory details remain available through GetVulnerability.
+	ListVulnerabilities(context.Context, *ListVulnerabilitiesRequest) (*ListVulnerabilitiesResponse, error)
 	// CountFindings counts findings as ListFindings lists them, grouped by one dimension.
 	CountFindings(context.Context, *CountFindingsRequest) (*CountFindingsResponse, error)
 	// GetVulnerability returns the vulnerability record for an ID or alias.
@@ -141,6 +158,9 @@ func (UnimplementedVulnerabilityServiceServer) ListWorkloads(context.Context, *L
 }
 func (UnimplementedVulnerabilityServiceServer) ListFindings(context.Context, *ListFindingsRequest) (*ListFindingsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListFindings not implemented")
+}
+func (UnimplementedVulnerabilityServiceServer) ListVulnerabilities(context.Context, *ListVulnerabilitiesRequest) (*ListVulnerabilitiesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListVulnerabilities not implemented")
 }
 func (UnimplementedVulnerabilityServiceServer) CountFindings(context.Context, *CountFindingsRequest) (*CountFindingsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CountFindings not implemented")
@@ -204,6 +224,24 @@ func _VulnerabilityService_ListFindings_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(VulnerabilityServiceServer).ListFindings(ctx, req.(*ListFindingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _VulnerabilityService_ListVulnerabilities_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVulnerabilitiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(VulnerabilityServiceServer).ListVulnerabilities(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: VulnerabilityService_ListVulnerabilities_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(VulnerabilityServiceServer).ListVulnerabilities(ctx, req.(*ListVulnerabilitiesRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -276,6 +314,10 @@ var VulnerabilityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListFindings",
 			Handler:    _VulnerabilityService_ListFindings_Handler,
+		},
+		{
+			MethodName: "ListVulnerabilities",
+			Handler:    _VulnerabilityService_ListVulnerabilities_Handler,
 		},
 		{
 			MethodName: "CountFindings",
