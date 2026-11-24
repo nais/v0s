@@ -25,7 +25,7 @@ func TestWorkloadSelectorLegacyCursors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	overview, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.WorkloadOverviewOptions{})
+	overview, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.FindingFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestWorkloadSelectorLegacyCursors(t *testing.T) {
 		t.Fatalf("existing vulnerability cursor continuation: %v, %v", rows, err)
 	}
 	page.Token = overview.NextPageToken
-	if rows, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.WorkloadOverviewOptions{}); err != nil || rows.TotalCount != 11 || len(rows.Workloads) != 1 {
+	if rows, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{}, page, database.FindingFilter{}); err != nil || rows.TotalCount != 11 || len(rows.Workloads) != 1 {
 		t.Fatalf("existing overview cursor continuation: %v, %v", rows, err)
 	}
 }
@@ -119,28 +119,16 @@ func TestWorkloadSelectorSelection(t *testing.T) {
 			if occurrences != total || (tt.findings == 0 && vulns.TotalCount != 0) || (tt.findings != 0 && vulns.TotalCount != 6) {
 				t.Fatalf("vulnerabilities: %+v", vulns)
 			}
-			for _, affected := range []bool{false, true} {
-				overview, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{Selector: tt.selector}, database.Page{}, database.WorkloadOverviewOptions{AffectedOnly: affected})
-				if err != nil {
-					t.Fatal(err)
-				}
-				want := tt.workloads
-				if affected && want > 0 {
-					want = 4
-					if tt.selector != nil {
-						want = 3
-					}
-				}
-				if len(overview.Workloads) != want || overview.TotalCount != int64(want) {
-					t.Fatalf("overview affected %v: %+v", affected, overview)
-				}
-				var findings int64
-				for _, w := range overview.Workloads {
-					findings += w.Counts.FindingCount
-				}
-				if findings != total {
-					t.Fatalf("overview counts: %d, want %d", findings, total)
-				}
+			overview, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{Selector: tt.selector}, database.Page{}, database.FindingFilter{})
+			if err != nil || len(overview.Workloads) != tt.workloads || overview.TotalCount != int64(tt.workloads) {
+				t.Fatalf("overview: %+v, %v", overview, err)
+			}
+			var findingsTotal int64
+			for _, w := range overview.Workloads {
+				findingsTotal += w.Counts.FindingCount
+			}
+			if findingsTotal != total {
+				t.Fatalf("overview counts: %d, want %d", findingsTotal, total)
 			}
 		})
 	}
@@ -226,40 +214,25 @@ func TestWorkloadSelectorIntersectionsAndPages(t *testing.T) {
 			}
 		}
 	}
-	for _, order := range []database.WorkloadOrder{{}, {Field: database.WorkloadOrderFindingCount, Direction: database.FindingOrderASC}, {Field: database.WorkloadOrderFindingCount, Direction: database.FindingOrderDESC}} {
-		for _, affected := range []bool{false, true} {
-			for _, noMatches := range []bool{false, true} {
-				opts := database.WorkloadOverviewOptions{Order: order, AffectedOnly: affected}
-				if noMatches {
-					opts.FindingFilter.PackageType = "missing"
-				}
-				page := database.Page{Size: 1}
-				var got []string
-				want := 5
-				if affected {
-					want = 3
-					if noMatches {
-						want = 0
-					}
-				}
-				for range 7 {
-					list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{Selector: selector}, page, opts)
-					if err != nil || list.TotalCount != int64(want) {
-						t.Fatalf("overview total: %+v, %v", list, err)
-					}
-					got = append(got, workloadOverviewKeys(list.Workloads)...)
-					if len(list.Cursors) == 0 {
-						break
-					}
-					if noMatches && list.Workloads[0].Counts.FindingCount != 0 {
-						t.Fatal("filter with zero matches did not clear counts")
-					}
-					page.Token = list.Cursors[0]
-				}
-				if len(got) != want || len(slices.Compact(slices.Sorted(slices.Values(got)))) != want {
-					t.Fatalf("overview traversal: %v", got)
-				}
+	for _, packageType := range []string{"", "missing"} {
+		page := database.Page{Size: 1}
+		var got []string
+		for range 6 {
+			list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{Selector: selector}, page, database.FindingFilter{PackageType: packageType})
+			if err != nil || list.TotalCount != 5 || len(list.Workloads) != 1 {
+				t.Fatalf("overview page: %+v, %v", list, err)
 			}
+			got = append(got, workloadOverviewKeys(list.Workloads)...)
+			if packageType == "missing" && list.Workloads[0].Counts.FindingCount != 0 {
+				t.Fatal("filter with zero matches did not clear counts")
+			}
+			page.Token = list.NextPageToken
+			if page.Token == "" {
+				break
+			}
+		}
+		if len(got) != 5 || len(slices.Compact(slices.Sorted(slices.Values(got)))) != 5 || page.Token != "" {
+			t.Fatalf("overview traversal: %v", got)
 		}
 	}
 	ws, _, err := db.ListWorkloads(t.Context(), database.WorkloadFilter{Teams: []string{"a"}, Environment: "e1", Selector: selector}, database.Page{})
@@ -287,7 +260,7 @@ func TestWorkloadSelectorCursorsAndValidation(t *testing.T) {
 			return list.NextPageToken, err
 		}},
 		{"overview", func(s *database.WorkloadSelector, token string) (string, error) {
-			list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{Selector: s}, database.Page{Size: 1, Token: token}, database.WorkloadOverviewOptions{})
+			list, err := db.ListWorkloadOverview(t.Context(), database.WorkloadFilter{Selector: s}, database.Page{Size: 1, Token: token}, database.FindingFilter{})
 			return list.NextPageToken, err
 		}},
 	} {

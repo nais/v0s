@@ -7,35 +7,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-type WorkloadOrderField int
-
-const (
-	WorkloadOrderIdentity WorkloadOrderField = iota + 1
-	WorkloadOrderFindingCount
-)
-
-type WorkloadOrder struct {
-	Field     WorkloadOrderField
-	Direction FindingOrderDirection
-}
-
-func (o WorkloadOrder) effective() (WorkloadOrder, error) {
-	if o == (WorkloadOrder{}) {
-		return WorkloadOrder{Field: WorkloadOrderIdentity, Direction: FindingOrderASC}, nil
-	}
-	if (o.Field == WorkloadOrderIdentity && o.Direction == FindingOrderASC) ||
-		(o.Field == WorkloadOrderFindingCount && (o.Direction == FindingOrderASC || o.Direction == FindingOrderDESC)) {
-		return o, nil
-	}
-	return WorkloadOrder{}, fmt.Errorf("invalid workload order: %w", ErrInvalid)
-}
-
-type WorkloadOverviewOptions struct {
-	FindingFilter FindingFilter
-	AffectedOnly  bool
-	Order         WorkloadOrder
-}
-
 type VulnerabilitySeverityCounts struct {
 	Critical int64
 	High     int64
@@ -59,65 +30,14 @@ type WorkloadOverview struct {
 type WorkloadOverviewList struct {
 	Workloads     []WorkloadOverview
 	NextPageToken string
-	Cursors       []string
 	TotalCount    int64
 }
 
-type workloadOverviewCursor struct {
-	Version      int    `json:"version"`
-	Operation    string `json:"operation"`
-	Binding      string `json:"binding"`
-	Environment  string `json:"environment"`
-	Team         string `json:"team"`
-	Name         string `json:"name"`
-	FindingCount *int64 `json:"finding_count,omitempty"`
-}
+const workloadOverviewCursorVersion = 2
+const workloadOverviewOperation = "workload-overview"
 
-func (c workloadOverviewCursor) validate(binding string, order WorkloadOrder) error {
-	if c.Version != 1 || c.Operation != "workload-overview" {
-		return fmt.Errorf("incompatible workload overview cursor; restart pagination without a token: %w", ErrInvalid)
-	}
-	if c.Binding != binding {
-		return fmt.Errorf("workload overview cursor parameters changed; restart pagination without a token: %w", ErrInvalid)
-	}
-	if c.Environment == "" || c.Team == "" || c.Name == "" ||
-		(order.Field == WorkloadOrderFindingCount && (c.FindingCount == nil || *c.FindingCount < 0)) {
-		return fmt.Errorf("incomplete or invalid workload overview cursor; restart pagination without a token: %w", ErrInvalid)
-	}
-	return nil
-}
-
-func (o WorkloadOrder) sql() string {
-	if o.Field == WorkloadOrderFindingCount {
-		if o.Direction == FindingOrderDESC {
-			return "w.finding_count DESC, w.environment, w.team, w.name"
-		}
-		return "w.finding_count ASC, w.environment, w.team, w.name"
-	}
-	return "w.environment, w.team, w.name"
-}
-
-func (o WorkloadOrder) after(c workloadOverviewCursor, args *sqlArgs) string {
-	identity := fmt.Sprintf("(w.environment, w.team, w.name) > (%s, %s, %s)",
-		args.add(c.Environment), args.add(c.Team), args.add(c.Name))
-	if o.Field != WorkloadOrderFindingCount {
-		return identity
-	}
-	count := args.add(*c.FindingCount)
-	op := ">"
-	if o.Direction == FindingOrderDESC {
-		op = "<"
-	}
-	return fmt.Sprintf("(w.finding_count %s %s OR (w.finding_count = %s AND %s))", op, count, count, identity)
-}
-
-func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter, page Page, options WorkloadOverviewOptions) (WorkloadOverviewList, error) {
-	order, err := options.Order.effective()
-	if err != nil {
-		return WorkloadOverviewList{}, err
-	}
-	options.Order = order
-	filter, err := normalizeUnscopedFindingFilter(options.FindingFilter)
+func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter, page Page, filter FindingFilter) (WorkloadOverviewList, error) {
+	filter, err := normalizeUnscopedFindingFilter(filter)
 	if err != nil {
 		return WorkloadOverviewList{}, err
 	}
@@ -125,34 +45,38 @@ func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter
 	if err != nil {
 		return WorkloadOverviewList{}, err
 	}
-	binding, err := queryBinding(filter, struct {
-		Selection    WorkloadFilter
-		AffectedOnly bool
-		Order        WorkloadOrder
-	}{selection, options.AffectedOnly, order})
+	binding, err := queryBinding(filter, selection)
 	if err != nil {
 		return WorkloadOverviewList{}, err
 	}
-	var cursor workloadOverviewCursor
+	var cursor workloadCursor
 	if err := decodePageToken(page.Token, &cursor); err != nil {
 		return WorkloadOverviewList{}, fmt.Errorf("invalid workload overview cursor; restart pagination without a token: %w", err)
 	}
-	if page.Token != "" {
-		if err := cursor.validate(binding, order); err != nil {
-			return WorkloadOverviewList{}, err
-		}
+	if page.Token != "" &&
+		(cursor.Version != workloadOverviewCursorVersion || cursor.Operation != workloadOverviewOperation || cursor.Binding != binding ||
+			cursor.Environment == "" || cursor.Team == "" || cursor.Name == "") {
+		return WorkloadOverviewList{}, fmt.Errorf("invalid workload overview cursor or changed scope/filters; restart pagination without a token: %w", ErrInvalid)
 	}
 	var args sqlArgs
 	selected := and(selection.conditions(&args))
+	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return WorkloadOverviewList{}, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := requireKEVCatalog(ctx, tx); err != nil {
+		return WorkloadOverviewList{}, err
+	}
+	var result WorkloadOverviewList
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM workloads w WHERE `+selected, args...).Scan(&result.TotalCount); err != nil {
+		return WorkloadOverviewList{}, fmt.Errorf("counting workload overview: %w", err)
+	}
 	filter.Teams, filter.Environment, filter.Workload = selection.Teams, selection.Environment, selection.Workload
 	filter.Selector = selection.Selector
 	where, err := filter.conditions(&args)
 	if err != nil {
 		return WorkloadOverviewList{}, err
-	}
-	affected := "true"
-	if options.AffectedOnly {
-		affected = "c.finding_count > 0"
 	}
 	rank := (FindingOrder{Direction: FindingOrderDESC}).severityRank("f.severity")
 	query := `WITH selected AS (
@@ -180,29 +104,18 @@ func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter
 			coalesce(c.medium, 0) AS medium, coalesce(c.low, 0) AS low,
 			coalesce(c.unknown, 0) AS unknown
 		FROM selected w LEFT JOIN counts c USING (environment, team, name)
-		WHERE ` + affected + `
 	) `
-	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
-	if err != nil {
-		return WorkloadOverviewList{}, fmt.Errorf("beginning transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
-	if err := requireKEVCatalog(ctx, tx); err != nil {
-		return WorkloadOverviewList{}, err
-	}
-	var result WorkloadOverviewList
-	if err := tx.QueryRow(ctx, query+`SELECT count(*) FROM overview`, args...).Scan(&result.TotalCount); err != nil {
-		return WorkloadOverviewList{}, fmt.Errorf("counting workload overview: %w", err)
-	}
 	seek := "true"
 	if page.Token != "" {
-		seek = order.after(cursor, &args)
+		seek = fmt.Sprintf("(w.environment, w.team, w.name) > (%s, %s, %s)",
+			args.add(cursor.Environment), args.add(cursor.Team), args.add(cursor.Name))
 	}
+	limit := page.limit()
 	rows, err := tx.Query(ctx, query+`
 		SELECT w.environment, w.team, w.name, w.image_reference, w.resolve_error, `+imageColumns+`,
 			w.finding_count, w.unique_count, w.kev_count, w.critical, w.high, w.medium, w.low, w.unknown
 		FROM overview w LEFT JOIN images i ON i.id = w.image_id
-		WHERE `+seek+` ORDER BY `+order.sql()+` LIMIT `+args.add(page.limit()+1), args...)
+		WHERE `+seek+` ORDER BY w.environment, w.team, w.name LIMIT `+args.add(limit+1), args...)
 	if err != nil {
 		return WorkloadOverviewList{}, fmt.Errorf("listing workload overview: %w", err)
 	}
@@ -226,24 +139,16 @@ func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter
 	if err != nil {
 		return WorkloadOverviewList{}, fmt.Errorf("listing workload overview: %w", err)
 	}
-	hasNext := len(result.Workloads) > page.limit()
-	if hasNext {
-		result.Workloads = result.Workloads[:page.limit()]
-	}
-	for _, v := range result.Workloads {
-		c := workloadOverviewCursor{Version: 1, Operation: "workload-overview", Binding: binding,
-			Environment: v.Workload.Environment, Team: v.Workload.Team, Name: v.Workload.Name}
-		if order.Field == WorkloadOrderFindingCount {
-			c.FindingCount = &v.Counts.FindingCount
-		}
-		token, err := encodePageToken(c)
+	if len(result.Workloads) > limit {
+		result.Workloads = result.Workloads[:limit]
+		last := result.Workloads[limit-1].Workload
+		result.NextPageToken, err = encodePageToken(workloadCursor{
+			Version: workloadOverviewCursorVersion, Operation: workloadOverviewOperation, Binding: binding,
+			Environment: last.Environment, Team: last.Team, Name: last.Name,
+		})
 		if err != nil {
 			return WorkloadOverviewList{}, err
 		}
-		result.Cursors = append(result.Cursors, token)
-	}
-	if hasNext {
-		result.NextPageToken = result.Cursors[len(result.Cursors)-1]
 	}
 	return result, nil
 }

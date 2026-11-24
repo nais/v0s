@@ -123,8 +123,8 @@ Use the same `workloadSelector` at the top level of the other requests;
 for per-workload counts also send `"overview": {}` to `ListWorkloads`. SQL applies
 selection before grouping, counting, sorting, seek and LIMIT. Finding facets and
 overview totals cover the full intersected selection, not the current page,
-including on an empty continuation page. Workload overview still preserves
-zero-count/coverage-gap rows unless `affectedOnly` is true. Existing KEV
+including on an empty continuation page. Workload overview preserves
+zero-count and coverage-gap rows. Existing KEV
 availability errors still apply, including for empty selections.
 
 Continue with the same scope/filter/order/selector and the returned token.
@@ -251,11 +251,11 @@ Existing `ListFindings` behavior is unchanged.
 
 ### Workload overview
 
-`ListWorkloads` is extended additively: send `overview: {}` to opt in to
-per-workload finding counts, per-row cursors and `totalCount`. Without `overview`,
-the existing response and identity ordering are unchanged; counts/total are
-absent and no KEV catalog is required. The legacy cursor format is unchanged
-when `workloadSelector` is also omitted. There is no separate workload overview RPC.
+Use `ListWorkloads` with `overview: {}` to add server-computed finding counts
+to a batch of selected workloads. Nais API owns its workload lists, filters,
+sorting and UI pagination; it uses overview to enrich the workloads it has
+already selected. Without `overview`, neither counts nor `totalCount` are
+returned and no KEV catalog is required.
 
 Workload **selection** uses the existing top-level `team`, `environment` and
 `workload` fields, intersected with `workloadSelector` when present.
@@ -265,10 +265,10 @@ type. Its `team`, `environment` and `workload` must be empty; competing scope
 fields are rejected with `InvalidArgument`, even if they repeat the selection.
 Suppressed findings are excluded by default.
 
-All selected workloads remain present by default, including scanned workloads
+All selected workloads remain present, including scanned workloads
 with no findings, pending/failed scans, missing SBOMs and unresolved images.
-Finding filters affect counts, not selection. Set `overview.affectedOnly: true`
-to keep only workloads with at least one matching finding.
+Finding filters affect counts, not selection. An omitted selector adds no
+restriction; an explicitly empty selector returns no workloads.
 
 Each existing workload row keeps its identity, image reference, image status
 and errors, and adds `findingCounts`:
@@ -289,37 +289,29 @@ inspect image status, image errors and `resolveError`.
 
 ```sh
 grpcurl -plaintext -d '{
-  "team": "my-team",
-  "overview": {
-    "findingFilter": {"packageType": "npm"},
-    "affectedOnly": false,
-    "orderBy": {"field": "FIELD_FINDING_COUNT", "direction": "DIRECTION_DESC"}
-  },
-  "pageSize": 2
+  "workloadSelector": {"workloads": [
+    {"environment": "prod", "team": "my-team", "name": "app"},
+    {"environment": "prod", "team": "my-team", "name": "worker"}
+  ]},
+  "overview": {"findingFilter": {"packageType": "npm"}},
+  "pageSize": 1000
 }' localhost:50051 v0s.v1.VulnerabilityService/ListWorkloads
 ```
 
-Default ordering is environment, team, workload ASC, matching legacy mode.
-Explicit `FIELD_WORKLOAD` accepts only `DIRECTION_ASC`; `FIELD_FINDING_COUNT`
-accepts ASC and DESC with the full identity ASC as tie-breaker. SQL performs
-filtering, aggregation, sorting, seek and LIMIT. `totalCount` covers the selection
-after `affectedOnly` but before the cursor/LIMIT, including on an empty final page.
+Rows are ordered by environment, team and workload name. The default page size
+is 100; the maximum is 1000. To fetch the full batch, keep the same scope,
+selector and finding filter and pass `nextPageToken` as `pageToken` until the
+response has no next token. Tokens resume even if the boundary workload was
+deleted. Invalid tokens, including tokens from the previous overview format
+or from plain `ListWorkloads`, return `InvalidArgument`; restart without a token.
+Requests do not share a snapshot across pages.
 
-Continue with the same selection and overview options plus
-`"pageToken": "<nextPageToken from the response>"`. Stop at an empty next token.
-Each `cursors` entry also continues after its row, even if the boundary workload
-has been deleted. Overview cursors are versioned and bound to normalized
-selection, finding filter, `affectedOnly` and effective order, not page size.
-Omitted ordering equals explicit workload ASC. Legacy and overview cursors are
-not interchangeable; invalid/incompatible cursors or changed parameters return
-`InvalidArgument` and require restarting without a token.
-
-Page and total share a database snapshot within the request, but requests are
-not a snapshot across pages. Changing finding counts can move rows; totals may
-change. Existing scope supports one team or the whole tenant, optional
-environment, or one fully scoped workload. The shared
-[explicit workload selector](#explicit-workload-selection) additionally supports
-externally computed multi-team/multi-environment subsets without label/RBAC logic.
+`totalCount` is the size of the full workload selection before pagination,
+including on an empty page. It is not used for UI pagination, but nais/api
+currently checks that it is present to detect overview support. Keep the field
+until all relevant nais/api consumers accept responses without it, including
+empty responses, while still surfacing unavailable backend data and missing
+counts on returned rows.
 
 ### Summary of findings and coverage
 
