@@ -45,6 +45,8 @@ jobs:
         run: mise run check:proto
       - name: Lint Helm chart
         run: mise run check:helm
+      - name: Test API release tagging
+        run: mise run check:api-release
       - name: Go vet
         run: mise run check:vet
       - name: Staticcheck
@@ -73,6 +75,32 @@ jobs:
         with:
           name: v0s
           push: false
+
+  release-api:
+    name: Release Go API client
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-api
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Publish API module tag
+        run: |
+          tag=$(bash tools/api-release-tag.sh)
+          if [ -z "$tag" ]; then
+            echo "No unreleased API changes."
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              tag -a "$tag" -m "Release Go API client $tag"
+          git push origin "refs/tags/$tag"
 
   publish:
     name: Publish signed image and chart
