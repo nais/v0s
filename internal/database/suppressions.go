@@ -15,21 +15,21 @@ import (
 // matter for a package in an image name, in one workload. It applies until deleted.
 type Suppression struct {
 	SuppressionKey
-	Team      string
-	State     string // not_affected, false_positive or accepted_risk
-	Detail    string
-	UpdatedBy string
-	UpdatedAt time.Time
+	Team      string    `json:"team"`
+	State     string    `json:"state"` // not_affected, false_positive or accepted_risk
+	Detail    string    `json:"detail"`
+	UpdatedBy string    `json:"updated_by"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SuppressionKey identifies a team's suppression. Stored keys hold a package key
 // and a vulnerability ID; requests may give a purl and an alias.
 type SuppressionKey struct {
-	Environment     string
-	Workload        string
-	ImageName       string
-	Package         string // package key, or a purl whose version, qualifiers and subpath are dropped
-	VulnerabilityID string // ID, or an alias naming exactly one vulnerability
+	Environment     string `json:"environment"`
+	Workload        string `json:"workload"`
+	ImageName       string `json:"image_name"`
+	Package         string `json:"package_key"`      // package key, or a purl whose version, qualifiers and subpath are dropped
+	VulnerabilityID string `json:"vulnerability_id"` // ID, or an alias naming exactly one vulnerability
 }
 
 // suppressionColumns are the columns of suppressions s that collectSuppression reads.
@@ -104,6 +104,9 @@ func (db *DB) SetSuppressions(ctx context.Context, team string, items []NewSuppr
 
 	var set []Suppression
 	err := pgx.BeginFunc(ctx, db.pool, func(tx pgx.Tx) error {
+		if err := enableSuppressionEvents(ctx, tx, actor); err != nil {
+			return err
+		}
 		seen := make(map[SuppressionKey]int, len(items))
 		for i, item := range items {
 			if err := item.validate(); err != nil {
@@ -146,6 +149,10 @@ func (db *DB) SetSuppressions(ctx context.Context, team string, items []NewSuppr
 // DeleteSuppressions deletes team's suppressions with keys, in one transaction, and
 // returns the ones that existed. Deleting a suppression that does not exist is not an error.
 func (db *DB) DeleteSuppressions(ctx context.Context, team string, keys []SuppressionKey) ([]Suppression, error) {
+	return db.DeleteSuppressionsAs(ctx, team, keys, "")
+}
+
+func (db *DB) DeleteSuppressionsAs(ctx context.Context, team string, keys []SuppressionKey, actor string) ([]Suppression, error) {
 	switch {
 	case team == "":
 		return nil, fmt.Errorf("team is required: %w", ErrInvalid)
@@ -155,6 +162,9 @@ func (db *DB) DeleteSuppressions(ctx context.Context, team string, keys []Suppre
 
 	var deleted []Suppression
 	err := pgx.BeginFunc(ctx, db.pool, func(tx pgx.Tx) error {
+		if err := enableSuppressionEvents(ctx, tx, actor); err != nil {
+			return err
+		}
 		for i, k := range keys {
 			key, err := k.canonical(ctx, tx)
 			if err != nil {

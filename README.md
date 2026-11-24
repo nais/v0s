@@ -397,6 +397,93 @@ severity and coverage in one aggregate query after the catalog check, not by
 summing per-workload totals or paging through listings. Later requests use live
 data, not the same snapshot. No label, user or RBAC logic is introduced.
 
+## Durable assessment event delivery
+
+**Not ready for merge or activation.** This is the v0s delivery contract only;
+the nais/api consumer and transactional deduplication are not implemented here.
+New Console assessment writes must remain disabled until that integration is
+implemented and verified. A draft PR is not a deployment or cutover.
+
+Direct `SetSuppressions` and `DeleteSuppressions` calls atomically enqueue one
+immutable event per written/deleted assessment in PostgreSQL. Failure to enqueue
+fails the entire assessment batch. Events contain a UUID `event_id`, operation,
+actor, event time and complete before/after assessment snapshots, including
+environment, team, workload, image repository name, versionless package key and
+canonical vulnerability ID. Creation has no `before`; deletion has no `after`.
+Snapshots survive deletion of assessments, workloads and catalog entries.
+The activity log continues to belong to nais/api, not v0s.
+
+`DeleteSuppressionsRequest.actor` is an additive field. New clients must supply
+the deleting actor. Old clients may omit it (or send empty): deletion still
+succeeds, and the event's optional `actor` is **absent/unknown**. It is never
+copied from the old assessment's `updated_by`, which remains part of `before`.
+Set still requires its existing actor. The caller authorizes the operation and
+supplies actor metadata; no user/RBAC logic or client flow is enabled here.
+
+Every successful Set item emits an event, even with identical state, detail and
+actor, preserving existing update metadata behavior. Deleting a missing target
+emits none; duplicate delete keys delete and emit at most once. Retrying a write
+after a lost response is not idempotent: Set can produce another event with a
+new ID, and a retried delete emits none if the target is still absent. This is
+different from **redelivery**, which preserves the same ID and payload.
+There is no write-idempotency token or exactly-once write guarantee.
+
+The existing suppression service exposes a single logical queue for the
+nais/api activity log, shared by all its replicas:
+
+```sh
+grpcurl -plaintext -d '{"batchSize": 100}' localhost:50051 \
+  v0s.v1.SuppressionService/ListSuppressionEvents
+
+# Only after the activity log and deduplication record have committed in nais/api:
+grpcurl -plaintext \
+  -d '{"eventIds": ["<event_id returned above>"]}' localhost:50051 \
+  v0s.v1.SuppressionService/AcknowledgeSuppressionEvents
+```
+
+`ListSuppressionEvents` defaults to 100 items; sizes 1..1000 are accepted, zero
+selects the default, and negative/larger sizes give `InvalidArgument`.
+Acknowledgement accepts 1..1000 UUIDs and validates the whole request before
+removing anything. Repeated acknowledgements, duplicate IDs and unknown valid
+IDs are harmless. Only acknowledged IDs are removed, permanently. There is no
+automatic expiry or cleanup of unacknowledged events and no second independent
+subscription.
+
+The required nais/api processing protocol is:
+
+1. Poll a bounded batch. Retry errors with backoff; poll again after an empty
+   response. Multiple replicas may read the same events; reads do not reserve
+   or acknowledge them.
+2. For each event, use a unique constraint on event ID and **one nais/api database
+   transaction** to deduplicate and store the activity-log entry. Only the
+   transaction that inserts the deduplication record inserts the activity entry;
+   an already committed duplicate is a successful delivery.
+3. After commit, acknowledge only successfully stored/already-deduplicated IDs.
+   Never acknowledge an activity-log failure. A partial batch can acknowledge
+   its committed subset.
+
+Crash before commit: deliver again. Crash after commit or a lost ack response:
+deliver/deduplicate/ack again. Acknowledgement failure leaves retry safe.
+This is **at-least-once**, not exactly-once across services. No transaction spans
+the two databases. The pending queue is read from the beginning each time:
+there is no sequence cursor, lease or permanent high-water mark to skip late
+commits. Event time is the database trigger time, not commit order; delivery
+is not a globally ordered stream. Consumers must not use it to reconstruct
+authoritative current state by overwriting assessments.
+
+Batches are count-bounded, not byte-bounded. Assessment details and actors retain
+their existing write limits. Consumers must configure their gRPC receive size
+for before/after snapshots; reduce batch size on `ResourceExhausted` (down to 1)
+and allow room for both snapshots and the event actor. For writes within the
+server's default 4 MiB request limit, a 16 MiB receive limit with batch size 1
+allows this overhead. A failed read does not acknowledge or truncate anything.
+Database-injected values outside the write contract may require a larger limit.
+
+`ForwardV13sSuppression` deliberately emits **no events**: old assessment writes
+are already logged by nais/api. Its forwarding behavior and enablement are
+unchanged. There is no historical backfill. See
+[migration and activation requirements](docs/operations.md#assessment-outbox-rollout).
+
 ## Documentation
 
 [Documentation index](docs/README.md) ·

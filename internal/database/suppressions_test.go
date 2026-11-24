@@ -354,7 +354,9 @@ func TestMigrateWorkloadSuppressions(t *testing.T) {
 	_, err = conn.Exec(ctx, fixture+`
 			ALTER TABLE vulnerabilities ADD COLUMN cvss jsonb NOT NULL DEFAULT '{}';
 			UPDATE vulnerabilities SET cvss = '{"nvd":{"v3_score":7.5}}' WHERE id = 'CVE-1';
+			DROP TABLE suppression_events;
 			DROP TABLE suppressions;
+			DROP FUNCTION enqueue_suppression_event();
 			ALTER TABLE legacy_suppressions RENAME TO suppressions;
 			ALTER INDEX legacy_suppressions_pkey RENAME TO suppressions_pkey;
 			DELETE FROM schema_migrations WHERE version > 1;
@@ -392,6 +394,9 @@ func TestMigrateWorkloadSuppressions(t *testing.T) {
 		if s.Team != "team-a" || s.Detail != "original reason" || s.UpdatedBy != "original actor" || s.UpdatedAt.Format("2006-01-02") != "2026-01-02" {
 			t.Errorf("migration changed attribution or scope: %+v", s)
 		}
+	}
+	if events := pendingEvents(t, migrated); len(events) != 0 {
+		t.Fatalf("migration must not backfill activity events: %+v", events)
 	}
 	var preserved int
 	if err := conn.QueryRow(ctx, "SELECT count(*) FROM legacy_suppressions").Scan(&preserved); err != nil || preserved != 2 {

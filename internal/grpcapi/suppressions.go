@@ -32,7 +32,7 @@ func (s *Server) DeleteSuppressions(ctx context.Context, req *v0sv1.DeleteSuppre
 	for _, k := range req.GetKeys() {
 		keys = append(keys, suppressionKey(k))
 	}
-	deleted, err := s.db.DeleteSuppressions(ctx, req.GetTeam(), keys)
+	deleted, err := s.db.DeleteSuppressionsAs(ctx, req.GetTeam(), keys, req.GetActor())
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}

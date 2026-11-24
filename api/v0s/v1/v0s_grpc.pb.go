@@ -379,10 +379,12 @@ var VulnerabilityService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	SuppressionService_SetSuppressions_FullMethodName        = "/v0s.v1.SuppressionService/SetSuppressions"
-	SuppressionService_DeleteSuppressions_FullMethodName     = "/v0s.v1.SuppressionService/DeleteSuppressions"
-	SuppressionService_ListSuppressions_FullMethodName       = "/v0s.v1.SuppressionService/ListSuppressions"
-	SuppressionService_ForwardV13SSuppression_FullMethodName = "/v0s.v1.SuppressionService/ForwardV13sSuppression"
+	SuppressionService_SetSuppressions_FullMethodName              = "/v0s.v1.SuppressionService/SetSuppressions"
+	SuppressionService_DeleteSuppressions_FullMethodName           = "/v0s.v1.SuppressionService/DeleteSuppressions"
+	SuppressionService_ListSuppressions_FullMethodName             = "/v0s.v1.SuppressionService/ListSuppressions"
+	SuppressionService_ListSuppressionEvents_FullMethodName        = "/v0s.v1.SuppressionService/ListSuppressionEvents"
+	SuppressionService_AcknowledgeSuppressionEvents_FullMethodName = "/v0s.v1.SuppressionService/AcknowledgeSuppressionEvents"
+	SuppressionService_ForwardV13SSuppression_FullMethodName       = "/v0s.v1.SuppressionService/ForwardV13sSuppression"
 )
 
 // SuppressionServiceClient is the client API for SuppressionService service.
@@ -390,7 +392,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // Suppressions manages teams' durable assessments of findings, owned by v0s. Only the current
-// state is kept; the caller keeps the history of changes if it wants one.
+// state is kept. Direct writes also enqueue durable change events for the caller's activity log.
 type SuppressionServiceClient interface {
 	// SetSuppressions sets suppressions atomically, replacing any with the same key.
 	// Each item targets one workload in the authorized team; no other workloads inherit it.
@@ -399,6 +401,11 @@ type SuppressionServiceClient interface {
 	DeleteSuppressions(ctx context.Context, in *DeleteSuppressionsRequest, opts ...grpc.CallOption) (*DeleteSuppressionsResponse, error)
 	// ListSuppressions lists suppressions.
 	ListSuppressions(ctx context.Context, in *ListSuppressionsRequest, opts ...grpc.CallOption) (*ListSuppressionsResponse, error)
+	// Reads pending events for one logical activity-log consumer shared by all nais/api replicas.
+	// No cursor or reservation: concurrent reads may return the same events.
+	ListSuppressionEvents(ctx context.Context, in *ListSuppressionEventsRequest, opts ...grpc.CallOption) (*ListSuppressionEventsResponse, error)
+	// Call only after atomically storing the activity entry and event-ID deduplication in nais/api.
+	AcknowledgeSuppressionEvents(ctx context.Context, in *AcknowledgeSuppressionEventsRequest, opts ...grpc.CallOption) (*AcknowledgeSuppressionEventsResponse, error)
 	ForwardV13SSuppression(ctx context.Context, in *ForwardV13SSuppressionRequest, opts ...grpc.CallOption) (*ForwardV13SSuppressionResponse, error)
 }
 
@@ -440,6 +447,26 @@ func (c *suppressionServiceClient) ListSuppressions(ctx context.Context, in *Lis
 	return out, nil
 }
 
+func (c *suppressionServiceClient) ListSuppressionEvents(ctx context.Context, in *ListSuppressionEventsRequest, opts ...grpc.CallOption) (*ListSuppressionEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSuppressionEventsResponse)
+	err := c.cc.Invoke(ctx, SuppressionService_ListSuppressionEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *suppressionServiceClient) AcknowledgeSuppressionEvents(ctx context.Context, in *AcknowledgeSuppressionEventsRequest, opts ...grpc.CallOption) (*AcknowledgeSuppressionEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AcknowledgeSuppressionEventsResponse)
+	err := c.cc.Invoke(ctx, SuppressionService_AcknowledgeSuppressionEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *suppressionServiceClient) ForwardV13SSuppression(ctx context.Context, in *ForwardV13SSuppressionRequest, opts ...grpc.CallOption) (*ForwardV13SSuppressionResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ForwardV13SSuppressionResponse)
@@ -455,7 +482,7 @@ func (c *suppressionServiceClient) ForwardV13SSuppression(ctx context.Context, i
 // for forward compatibility.
 //
 // Suppressions manages teams' durable assessments of findings, owned by v0s. Only the current
-// state is kept; the caller keeps the history of changes if it wants one.
+// state is kept. Direct writes also enqueue durable change events for the caller's activity log.
 type SuppressionServiceServer interface {
 	// SetSuppressions sets suppressions atomically, replacing any with the same key.
 	// Each item targets one workload in the authorized team; no other workloads inherit it.
@@ -464,6 +491,11 @@ type SuppressionServiceServer interface {
 	DeleteSuppressions(context.Context, *DeleteSuppressionsRequest) (*DeleteSuppressionsResponse, error)
 	// ListSuppressions lists suppressions.
 	ListSuppressions(context.Context, *ListSuppressionsRequest) (*ListSuppressionsResponse, error)
+	// Reads pending events for one logical activity-log consumer shared by all nais/api replicas.
+	// No cursor or reservation: concurrent reads may return the same events.
+	ListSuppressionEvents(context.Context, *ListSuppressionEventsRequest) (*ListSuppressionEventsResponse, error)
+	// Call only after atomically storing the activity entry and event-ID deduplication in nais/api.
+	AcknowledgeSuppressionEvents(context.Context, *AcknowledgeSuppressionEventsRequest) (*AcknowledgeSuppressionEventsResponse, error)
 	ForwardV13SSuppression(context.Context, *ForwardV13SSuppressionRequest) (*ForwardV13SSuppressionResponse, error)
 	mustEmbedUnimplementedSuppressionServiceServer()
 }
@@ -483,6 +515,12 @@ func (UnimplementedSuppressionServiceServer) DeleteSuppressions(context.Context,
 }
 func (UnimplementedSuppressionServiceServer) ListSuppressions(context.Context, *ListSuppressionsRequest) (*ListSuppressionsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListSuppressions not implemented")
+}
+func (UnimplementedSuppressionServiceServer) ListSuppressionEvents(context.Context, *ListSuppressionEventsRequest) (*ListSuppressionEventsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListSuppressionEvents not implemented")
+}
+func (UnimplementedSuppressionServiceServer) AcknowledgeSuppressionEvents(context.Context, *AcknowledgeSuppressionEventsRequest) (*AcknowledgeSuppressionEventsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AcknowledgeSuppressionEvents not implemented")
 }
 func (UnimplementedSuppressionServiceServer) ForwardV13SSuppression(context.Context, *ForwardV13SSuppressionRequest) (*ForwardV13SSuppressionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ForwardV13SSuppression not implemented")
@@ -562,6 +600,42 @@ func _SuppressionService_ListSuppressions_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SuppressionService_ListSuppressionEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSuppressionEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SuppressionServiceServer).ListSuppressionEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SuppressionService_ListSuppressionEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SuppressionServiceServer).ListSuppressionEvents(ctx, req.(*ListSuppressionEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SuppressionService_AcknowledgeSuppressionEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcknowledgeSuppressionEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SuppressionServiceServer).AcknowledgeSuppressionEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SuppressionService_AcknowledgeSuppressionEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SuppressionServiceServer).AcknowledgeSuppressionEvents(ctx, req.(*AcknowledgeSuppressionEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SuppressionService_ForwardV13SSuppression_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ForwardV13SSuppressionRequest)
 	if err := dec(in); err != nil {
@@ -598,6 +672,14 @@ var SuppressionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListSuppressions",
 			Handler:    _SuppressionService_ListSuppressions_Handler,
+		},
+		{
+			MethodName: "ListSuppressionEvents",
+			Handler:    _SuppressionService_ListSuppressionEvents_Handler,
+		},
+		{
+			MethodName: "AcknowledgeSuppressionEvents",
+			Handler:    _SuppressionService_AcknowledgeSuppressionEvents_Handler,
 		},
 		{
 			MethodName: "ForwardV13sSuppression",

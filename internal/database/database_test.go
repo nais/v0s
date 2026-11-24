@@ -58,6 +58,17 @@ func TestRuntimeRoleReadsAndWritesWithoutOwningSchema(t *testing.T) {
 	if err := db.SyncWorkloadImages(ctx, "dev", nil); err != nil {
 		t.Fatalf("runtime inventory delete: %v", err)
 	}
+	if _, err := owner.Exec(ctx, "INSERT INTO vulnerabilities (id, db_version) VALUES ('CVE-1', now())"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SetSuppressions(ctx, "team-a", []database.NewSuppression{lodashSuppression("accepted_risk")}, "actor"); err != nil {
+		t.Fatalf("runtime assessment and event writes: %v", err)
+	}
+	events := pendingEvents(t, db)
+	if len(events) != 1 {
+		t.Fatalf("runtime event read = %+v", events)
+	}
+	acknowledgeEvents(t, db, events)
 	runtime, err := pgx.Connect(ctx, runtimeURL)
 	if err != nil {
 		t.Fatal(err)

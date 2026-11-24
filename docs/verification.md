@@ -118,6 +118,13 @@ Before adding consumers:
 - Verify NetworkPolicy admits only intended trusted callers. Confirm callers
   authorize suppression writes; the service itself trusts their team and actor.
 - Establish database backup and restore, preserving suppressions.
+- Before enabling new assessment writes, implement nais/api's outbox consumer and
+  atomic event-ID deduplication/activity-entry transaction. Verify failure before
+  acknowledgement, lost acknowledgement responses, multiple consumers and
+  late-committing assessment transactions without missing events. Verify empty
+  delete actor is displayed as unknown, unchanged Set retries have new event IDs,
+  and legacy forwarding does not double-log. Keep Console writes disabled until
+  this passes; follow the [outbox rollout gate](operations.md#assessment-outbox-rollout).
 - Review attestation identity limitations and remaining integration items in
   [Operations](operations.md).
 - Map consumer assessment states explicitly. Suppression migration from v13s is

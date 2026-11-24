@@ -36,7 +36,7 @@ service VulnerabilityService {
 }
 
 // Suppressions manages teams' durable assessments of findings, owned by v0s. Only the current
-// state is kept; the caller keeps the history of changes if it wants one.
+// state is kept. Direct writes also enqueue durable change events for the caller's activity log.
 service SuppressionService {
   // SetSuppressions sets suppressions atomically, replacing any with the same key.
   // Each item targets one workload in the authorized team; no other workloads inherit it.
@@ -45,6 +45,11 @@ service SuppressionService {
   rpc DeleteSuppressions(DeleteSuppressionsRequest) returns (DeleteSuppressionsResponse);
   // ListSuppressions lists suppressions.
   rpc ListSuppressions(ListSuppressionsRequest) returns (ListSuppressionsResponse);
+  // Reads pending events for one logical activity-log consumer shared by all nais/api replicas.
+  // No cursor or reservation: concurrent reads may return the same events.
+  rpc ListSuppressionEvents(ListSuppressionEventsRequest) returns (ListSuppressionEventsResponse);
+  // Call only after atomically storing the activity entry and event-ID deduplication in nais/api.
+  rpc AcknowledgeSuppressionEvents(AcknowledgeSuppressionEventsRequest) returns (AcknowledgeSuppressionEventsResponse);
   rpc ForwardV13sSuppression(ForwardV13sSuppressionRequest) returns (ForwardV13sSuppressionResponse);
 }
 
@@ -543,12 +548,55 @@ message DeleteSuppressionsRequest {
   // The team the suppressions belong to. The caller has authorized the actor for it.
   string team = 1;
   repeated SuppressionKey keys = 2;
+  // Deleting human's identity. Empty for older clients means unknown, never the previous updated_by.
+  string actor = 3;
 }
 
 message DeleteSuppressionsResponse {
   // The suppressions that existed and were deleted.
   repeated Suppression deleted = 1;
 }
+
+enum SuppressionEventOperation {
+  SUPPRESSION_EVENT_OPERATION_UNSPECIFIED = 0;
+  SUPPRESSION_EVENT_OPERATION_SET = 1;
+  SUPPRESSION_EVENT_OPERATION_DELETE = 2;
+}
+
+// Immutable change from a direct Set/DeleteSuppressions call, not legacy forwarding.
+// Delivery is at-least-once, not globally ordered and not exactly-once across services.
+// Each successful Set item emits an event, even when values are unchanged. A missing
+// delete target emits none. Retrying a write can produce new IDs; redelivery preserves IDs.
+message SuppressionEvent {
+  string event_id = 1;
+  SuppressionEventOperation operation = 2;
+  // Absent means the deleting legacy client did not supply an actor.
+  optional string actor = 3;
+  google.protobuf.Timestamp occurred_at = 4;
+  // Full immutable assessment snapshots, including canonical key and update metadata.
+  // before is absent on creation; after is absent on deletion.
+  Suppression before = 5;
+  Suppression after = 6;
+}
+
+message ListSuppressionEventsRequest {
+  // Default 100; valid range 1..1000. Negative or larger values are InvalidArgument.
+  int32 batch_size = 1;
+}
+
+message ListSuppressionEventsResponse {
+  // Up to batch_size pending events; retry reads from the pending set, never from a cursor.
+  // Empty does not establish a permanent high-water mark: other transactions may commit later.
+  repeated SuppressionEvent events = 1;
+}
+
+message AcknowledgeSuppressionEventsRequest {
+  // 1..1000 UUIDs. The whole request is validated before removal.
+  // Acknowledgement removes events permanently; repeated/unknown valid IDs are harmless.
+  repeated string event_ids = 1;
+}
+
+message AcknowledgeSuppressionEventsResponse {}
 
 message ListSuppressionsRequest {
   reserved 1;

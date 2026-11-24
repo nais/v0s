@@ -77,8 +77,9 @@ it, even within the same team or image. Image and package versions are not part
 of the key, but changing the image repository stops the assessment applying.
 It has a state (not affected, false positive or accepted risk),
 a reason in the team's words, and who last set it. Setting it again replaces
-it; deleting it removes it. There is no expiry or history of changes in v0s;
-callers keep any activity log they need. These assessments are durable data
+it; deleting it removes it. There is no expiry or activity-log history in v0s;
+direct writes atomically enqueue durable change events for the caller's activity
+log. Pending delivery is not a historical query API. These assessments are durable data
 owned here; unlike inventory and scan results, they cannot be rebuilt from
 external sources.
 

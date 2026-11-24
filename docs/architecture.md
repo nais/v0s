@@ -246,7 +246,8 @@ Suppressions are keyed by team, environment, workload name, image name,
 versionless package key and canonical vulnerability ID. They survive package
 versions and image builds within that workload and repository. No other workload
 or environment inherits them. Setting replaces the current assessment; deleting
-removes it. There is no expiry or assessment history in v0s.
+removes it. There is no expiry or activity-log history in v0s. Direct writes also
+produce a durable delivery outbox for nais/api's activity log.
 
 Clients discover other affected workloads using `ListFindings` with a
 vulnerability ID or alias, optionally a package filter, and `suppressed=INCLUDE`.
@@ -257,6 +258,41 @@ workload/image/package/vulnerability. Each batch is atomic within one authorized
 team; cross-team operations require separate authorization and requests.
 `ListSuppressions` can filter by environment and workload. These are service
 capabilities, not an implemented Console workflow.
+
+### Assessment delivery outbox
+
+Direct Set/Delete batches opt in to event capture using transaction-local
+PostgreSQL settings for emission and the current request's actor. An AFTER row
+trigger inserts immutable old/new snapshots into `suppression_events`, in the
+same transaction as the assessment. This captures the actual row versions under
+concurrent upserts/deletes without a separate, racy before-read. Every Set update
+emits, including unchanged values; deletion emits only for rows actually deleted.
+The batch rolls back if any validation, assessment write or outbox insert fails.
+Settings expire on commit/rollback and do not affect a later pooled connection
+user. Forwarding does not opt in and remains unlogged here.
+
+Events use random UUIDs and have no foreign keys to mutable inventory, catalog
+or assessment rows. `occurred_at` uses the database clock at event creation, not
+the assessment's previous update time. An omitted delete actor is represented
+as unknown, never inferred from `before.updated_by`. The full canonical
+assessment identity and metadata are retained in the snapshots.
+
+A bounded SQL query returns pending events ordered by event time and UUID for
+convenience only. It has no seek cursor or reservation: a later-committing
+transaction is still pending even if its event time is earlier. Concurrent
+nais/api replicas may read identical batches. Explicit acknowledgement by UUID
+permanently deletes only those events; it is idempotent. No background retention
+job deletes unacknowledged events. This is one shared logical destination, not
+a general message broker or multi-subscriber event platform.
+
+The consumer must commit event-ID deduplication and the activity entry in a
+single nais/api database transaction, then acknowledge. At-least-once redelivery
+after failures/restarts preserves event ID; retrying the original write may
+instead create another ID. v0s cannot guarantee exactly-once across services,
+global delivery order or consumer availability. Pending events are durable data,
+not rebuildable scan inventory, and require backup alongside assessments.
+See the [consumer contract](../README.md#durable-assessment-event-delivery)
+and [rollout gate](operations.md#assessment-outbox-rollout).
 
 Until cutover, v13s forwards its suppression changes with `ForwardV13sSuppression`
 on the same `SuppressionService`. It is always accepted: only services in the same

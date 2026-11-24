@@ -97,6 +97,54 @@ packaging commands. CI publishes the chart after the signed image, then creates
 Fasit assignments for `ci-nais` management first, with a wait for success, and
 then all management environments.
 
+## Assessment outbox rollout
+
+**Do not merge or activate yet.** The outbox draft contains no nais/api consumer,
+deduplication storage, Console write activation, deployment or cutover. These
+are explicit later integration/review gates.
+
+Migration `0004_suppression_events.sql` adds the pending-event table, delivery
+index and transaction-scoped opt-in trigger. It does not rewrite assessments,
+backfill historical events, change existing protobuf field numbers or change
+legacy forwarding. Existing wire clients remain valid against the new server:
+delete without actor emits an explicitly unknown actor. No old actor is guessed.
+New clients must supply the actual deleting actor.
+
+After separate approval, the compatible rollout order is:
+
+1. Verify backups/recovery for both assessments and pending events. Keep new
+   Console writes disabled. Do not mix direct writes from old and new v0s
+   binaries: old binaries do not opt in to event creation. Stop/drain all old
+   replicas before migration, following the existing Recreate upgrade procedure.
+2. Apply the additive migration with owner credentials, then start the matching
+   v0s binary with the existing runtime read/write role. Startup schema checks
+   reject mismatched versions. Verify direct writes and outbox inserts roll back
+   together, forwarding still creates no outbox events, and unacknowledged events
+   survive service/database recovery. This draft's tests are not deployment proof.
+3. Implement and deploy nais/api's consumer of `ListSuppressionEvents` and
+   `AcknowledgeSuppressionEvents`. Add durable, unique event-ID deduplication,
+   atomically committed with activity-log entries. Supply delete actor metadata,
+   render both snapshots/unknown actor correctly, and acknowledge only after
+   commit. Remove any competing direct-write activity logging when routing those
+   writes through this consumer, but leave existing legacy-forwarding logging
+   unchanged. Verify crash/retry behavior with multiple API replicas.
+4. Configure bounded polling, retry/backoff, receive-size handling and operational
+   visibility of errors, backlog size/age and storage growth. No leases or TTL
+   limit retention: a stopped consumer grows the outbox rather than losing events.
+   Keep deduplication IDs for as long as a delivery/ack retry or coordinated
+   recovery could replay an event; no automatic deduplication expiry is defined.
+5. Only after end-to-end verification and explicit approval enable new Console
+   writes. This PR changes no flags or existing client routing. Do not start a
+   second independent consumer: all replicas share the single activity-log queue.
+
+Do not roll back by dropping the outbox, deleting pending events or restoring an
+old writer while direct writes continue. The old binary rejects schema version 4;
+Helm rollback does not undo migrations. Fix forward, or pause writes and plan a
+separately reviewed data-preserving recovery. Coordinate restores of both services:
+acknowledged events have been removed from v0s, so restoring nais/api to an earlier
+point alone can lose already acknowledged activity entries. Restoring v0s can
+redeliver acknowledged IDs and requires retained nais/api deduplication records.
+
 ## Runtime configuration
 
 Configuration is read from environment variables by [`cmd/v0s`](../cmd/v0s/main.go).
