@@ -254,9 +254,12 @@ OOMs, database replication and recovery.
   Credential resolution uses the service context: cached token sources must
   survive individual fetches. External credential helpers have their own timeout
   behavior and are not force-stopped by the per-image deadline.
-- Missing attestations are retried after 6 hours; failed fetches, including local
-  timeouts, after 30 minutes. Shutdown cancellation leaves the image due without
-  recording a failure.
+- Missing attestations and failed fetches, including local timeouts, are retried
+  after 30 minutes. This also applies to rejected attestations classified as
+  missing, so late attestations and signing-policy changes are checked sooner.
+  Existing recorded retry times are unchanged by upgrades or restarts; the
+  shorter backoff applies after the next fetch attempt. Shutdown cancellation
+  leaves the image due without recording a failure.
 - Failed loops retry after the shorter of their normal interval and 5 minutes.
 - A recorded scan failure is not retried until a newer DB is loaded. Previous
   findings are kept; an already scanned image stays `SCANNED` with an error.
