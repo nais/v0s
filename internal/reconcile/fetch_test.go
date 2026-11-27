@@ -155,9 +155,15 @@ func TestFetchFailureRetryPolicy(t *testing.T) {
 		err   error
 		state v0s.SBOMState
 		retry time.Duration
+		msg   string
 	}{
-		{"missing", attest.ErrNotFound, v0s.SBOMMissing, retryMissing},
-		{"transport", errors.New("registry unavailable"), v0s.SBOMFailed, retryFailed},
+		{
+			"missing",
+			fmt.Errorf("%w: got subjects [ola.nordmann@nav.no] with issuer https://accounts.google.com", attest.ErrNotFound),
+			v0s.SBOMMissing, retryMissing,
+			"attestation not found: got subjects [<email>] with issuer https://accounts.google.com",
+		},
+		{"transport", errors.New("registry unavailable"), v0s.SBOMFailed, retryFailed, "registry unavailable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, url := databasetest.NewWithURL(t)
@@ -181,14 +187,29 @@ func TestFetchFailureRetryPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer conn.Close(ctx)
-			var state string
+			var state, msg string
 			var retryAt time.Time
-			if err := conn.QueryRow(ctx, `SELECT sbom_state, sbom_next_attempt_at FROM images`).Scan(&state, &retryAt); err != nil {
+			if err := conn.QueryRow(ctx, `SELECT sbom_state, error, sbom_next_attempt_at FROM images`).Scan(&state, &msg, &retryAt); err != nil {
 				t.Fatal(err)
 			}
 			if state != string(tc.state) || retryAt.Before(start.Add(tc.retry)) || retryAt.After(end.Add(tc.retry)) {
 				t.Errorf("state=%s, retry=%s; want %s and retry after %s", state, retryAt, tc.state, tc.retry)
 			}
+			if msg != tc.msg {
+				t.Errorf("error = %q, want %q", msg, tc.msg)
+			}
 		})
+	}
+}
+
+func TestRedactEmails(t *testing.T) {
+	for in, want := range map[string]string{
+		"got subjects [ola.nordmann@nav.no] with issuer https://accounts.google.com": "got subjects [<email>] with issuer https://accounts.google.com",
+		"https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main":    "https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main",
+		"registry/app@sha256:abc": "registry/app@sha256:abc",
+	} {
+		if got := redactEmails(errors.New(in)); got != want {
+			t.Errorf("redactEmails(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
