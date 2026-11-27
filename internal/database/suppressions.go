@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -196,6 +197,9 @@ type SuppressionFilter struct {
 }
 
 type suppressionCursor struct {
+	Version         int    `json:"version"`
+	Operation       string `json:"operation"`
+	Binding         string `json:"binding"`
 	Team            string `json:"t"`
 	Environment     string `json:"e"`
 	Workload        string `json:"w"`
@@ -204,19 +208,57 @@ type suppressionCursor struct {
 	VulnerabilityID string `json:"v"`
 }
 
-// PageToken returns a cursor immediately after this suppression.
-func (s Suppression) PageToken() (string, error) {
-	return encodePageToken(suppressionCursor{s.Team, s.Environment, s.Workload, s.ImageName, s.Package, s.VulnerabilityID})
+func newSuppressionCursor(s Suppression, binding string) suppressionCursor {
+	return suppressionCursor{
+		Version: 1, Operation: "suppressions", Binding: binding,
+		Team: s.Team, Environment: s.Environment, Workload: s.Workload,
+		ImageName: s.ImageName, PackageKey: s.Package, VulnerabilityID: s.VulnerabilityID,
+	}
+}
+
+func (c suppressionCursor) values() []any {
+	return []any{c.Team, c.Environment, c.Workload, c.ImageName, c.PackageKey, c.VulnerabilityID}
+}
+
+type SuppressionList struct {
+	Suppressions  []Suppression
+	NextPageToken string
+	Cursors       []string
+	PageInfo      PageInfo
 }
 
 // ListSuppressions lists suppressions matching filter, ordered by key.
-func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, page Page) ([]Suppression, string, error) {
+func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, page Page) (SuppressionList, error) {
+	if err := page.validate(); err != nil {
+		return SuppressionList{}, err
+	}
+	filter.Teams = normalizedSet(filter.Teams)
+	if len(filter.Teams) == 0 {
+		filter.Teams = nil
+	}
+	order := keysetOrder{
+		{column: "s.team"}, {column: "s.environment"}, {column: "s.workload"},
+		{column: "s.image_name"}, {column: "s.package_key"}, {column: "s.vulnerability_id"},
+	}
+	binding, err := queryBinding(filter, "suppression-key-asc")
+	if err != nil {
+		return SuppressionList{}, err
+	}
 	var cursor suppressionCursor
 	if err := decodePageToken(page.Token, &cursor); err != nil {
-		return nil, "", err
+		return SuppressionList{}, err
 	}
-	if page.Token != "" && (cursor.Environment == "" || cursor.Workload == "") {
-		return nil, "", fmt.Errorf("page token predates workload-scoped suppressions: %w", ErrInvalid)
+	if page.Token != "" {
+		if cursor.Version != 1 || cursor.Operation != "suppressions" {
+			return SuppressionList{}, fmt.Errorf("incompatible suppression cursor; restart pagination without a token: %w", ErrInvalid)
+		}
+		if cursor.Binding != binding {
+			return SuppressionList{}, fmt.Errorf("suppression cursor filter or order changed; restart pagination without a token: %w", ErrInvalid)
+		}
+		if cursor.Team == "" || cursor.Environment == "" || cursor.Workload == "" ||
+			cursor.ImageName == "" || cursor.PackageKey == "" || cursor.VulnerabilityID == "" {
+			return SuppressionList{}, fmt.Errorf("incomplete suppression cursor; restart pagination without a token: %w", ErrInvalid)
+		}
 	}
 	var (
 		args  sqlArgs
@@ -237,33 +279,63 @@ func (db *DB) ListSuppressions(ctx context.Context, filter SuppressionFilter, pa
 	if filter.VulnerabilityID != "" {
 		where = append(where, vulnerabilityMatch("s.vulnerability_id", filter.VulnerabilityID, &args))
 	}
+	baseWhere, baseArgs := slices.Clone(where), slices.Clone(args)
 	if page.Token != "" {
-		where = append(where, fmt.Sprintf("(s.team, s.environment, s.workload, s.image_name, s.package_key, s.vulnerability_id) > (%s, %s, %s, %s, %s, %s)",
-			args.add(cursor.Team), args.add(cursor.Environment), args.add(cursor.Workload), args.add(cursor.ImageName), args.add(cursor.PackageKey), args.add(cursor.VulnerabilityID)))
+		where = append(where, order.seek(cursor.values(), &args, page.Direction == PageBackward, false))
 	}
 	limit := page.limit()
 
-	rows, err := db.pool.Query(ctx, `
+	tx, err := db.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
+	if err != nil {
+		return SuppressionList{}, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	rows, err := tx.Query(ctx, `
 		SELECT `+suppressionColumns+`
 		FROM suppressions s
 		WHERE `+and(where)+`
-		ORDER BY s.team, s.environment, s.workload, s.image_name, s.package_key, s.vulnerability_id
+		ORDER BY `+order.sql(page.Direction == PageBackward)+`
 		LIMIT `+args.add(limit+1), args...)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing suppressions: %w", err)
+		return SuppressionList{}, fmt.Errorf("listing suppressions: %w", err)
 	}
 	suppressions, err := pgx.CollectRows(rows, collectSuppression)
 	if err != nil {
-		return nil, "", fmt.Errorf("listing suppressions: %w", err)
+		return SuppressionList{}, fmt.Errorf("listing suppressions: %w", err)
 	}
 
-	var next string
-	if len(suppressions) > limit {
+	more := len(suppressions) > limit
+	if more {
 		suppressions = suppressions[:limit]
-		next, err = suppressions[limit-1].PageToken()
+	}
+	if page.Direction == PageBackward {
+		slices.Reverse(suppressions)
+	}
+	result := SuppressionList{Suppressions: suppressions, Cursors: make([]string, len(suppressions))}
+	for i, s := range suppressions {
+		result.Cursors[i], err = encodePageToken(newSuppressionCursor(s, binding))
 		if err != nil {
-			return nil, "", err
+			return SuppressionList{}, err
 		}
 	}
-	return suppressions, next, nil
+	var edge []any
+	if len(suppressions) > 0 {
+		index := 0
+		if page.Direction == PageBackward {
+			index = len(suppressions) - 1
+		}
+		edge = newSuppressionCursor(suppressions[index], binding).values()
+	} else if page.Token != "" {
+		edge = cursor.values()
+	}
+	result.PageInfo, err = keysetPageInfo(ctx, tx,
+		"SELECT EXISTS (SELECT 1 FROM suppressions s WHERE "+and(baseWhere)+" AND ",
+		baseArgs, order, page, edge, len(suppressions) == 0, more)
+	if err != nil {
+		return SuppressionList{}, err
+	}
+	if result.PageInfo.HasNextPage && len(result.Cursors) > 0 {
+		result.NextPageToken = result.Cursors[len(result.Cursors)-1]
+	}
+	return result, nil
 }

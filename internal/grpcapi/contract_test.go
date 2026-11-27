@@ -1,17 +1,249 @@
 package grpcapi_test
 
 import (
+	"context"
 	"encoding/base64"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	v0sv1 "github.com/nais/v0s/api/v0s/v1"
+	"github.com/nais/v0s/internal/database/databasetest"
+	"github.com/nais/v0s/internal/grpcapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 )
+
+func assertBidirectionalRPC[T proto.Message](t *testing.T,
+	fetch func(int32, string, v0sv1.PageDirection) ([]T, []string, string, *v0sv1.PageInfo, error),
+) {
+	t.Helper()
+	all, cursors, _, _, err := fetch(100, "", v0sv1.PageDirection_PAGE_DIRECTION_UNSPECIFIED)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(size int32, token string, direction v0sv1.PageDirection, start, end int) {
+		t.Helper()
+		rows, tokens, next, info, err := fetch(size, token, direction)
+		if err != nil {
+			t.Fatal(err)
+		}
+		previous, following := start > 0, end < len(all)
+		if start == end && token != "" {
+			previous = direction != v0sv1.PageDirection_PAGE_DIRECTION_BACKWARD
+			following = !previous
+		}
+		if info == nil || info.GetHasPreviousPage() != previous || info.GetHasNextPage() != following ||
+			!slices.Equal(tokens, cursors[start:end]) ||
+			!slices.EqualFunc(rows, all[start:end], func(a, b T) bool { return proto.Equal(a, b) }) {
+			t.Fatalf("size=%d token=%q direction=%s: rows=%v info=%v; want [%d:%d] previous=%t next=%t",
+				size, token, direction, rows, info, start, end, previous, following)
+		}
+		wantNext := ""
+		if end > start && following {
+			wantNext = cursors[end-1]
+		}
+		if next != wantNext {
+			t.Fatalf("next token differs from forward end cursor: %q, want %q", next, wantNext)
+		}
+	}
+	check(3, "", v0sv1.PageDirection_PAGE_DIRECTION_FORWARD, 0, min(3, len(all)))
+	check(3, "", v0sv1.PageDirection_PAGE_DIRECTION_BACKWARD, max(0, len(all)-3), len(all))
+	for i, cursor := range cursors {
+		check(3, cursor, v0sv1.PageDirection_PAGE_DIRECTION_FORWARD, i+1, min(len(all), i+4))
+		check(3, cursor, v0sv1.PageDirection_PAGE_DIRECTION_BACKWARD, max(0, i-3), i)
+	}
+	if len(all) > 3 {
+		check(3, cursors[2], v0sv1.PageDirection_PAGE_DIRECTION_FORWARD, 3, min(6, len(all)))
+		check(3, cursors[3], v0sv1.PageDirection_PAGE_DIRECTION_BACKWARD, 0, 3)
+	}
+	if _, _, _, _, err := fetch(3, "", 99); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("invalid page_direction: %v", err)
+	}
+}
+
+func TestBidirectionalPaginationOverGRPC(t *testing.T) {
+	db, url := databasetest.NewWithURL(t)
+	conn, err := pgx.Connect(t.Context(), url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close(context.Background())
+	_, err = conn.Exec(t.Context(), `
+		INSERT INTO images (id, name, digest) OVERRIDING SYSTEM VALUE VALUES (1, 'repo/app', 'a');
+		INSERT INTO workloads (environment, team, name, image_reference, image_id) VALUES
+			('dev', 'team', 'app', 'repo/app:1', 1),
+			('dev', 'team', 'worker', 'repo/app:1', 1),
+			('prod', 'team', 'app', 'repo/app:1', 1);
+		INSERT INTO vulnerabilities (id, db_version)
+			SELECT id, now() FROM unnest(ARRAY['A','B','C','D','E','F']) id;
+		INSERT INTO findings (image_id, vulnerability_id, purl, package_key, installed_version, status, severity)
+			SELECT 1, id, p, split_part(p, '@', 1), '1', 'affected', severity
+			FROM (VALUES ('A','pkg:maven/a@1','UNKNOWN'), ('B','pkg:npm/b@1','LOW'),
+				('C','pkg:npm/c@1','MEDIUM'), ('D','pkg:npm/d@1','HIGH'),
+				('D','pkg:npm/z@1','HIGH'), ('E','pkg:npm/e@1','CRITICAL'),
+				('F','pkg:npm/f@1','HIGH')) v(id,p,severity);
+		INSERT INTO suppressions (team, environment, workload, image_name, package_key, vulnerability_id, state, detail, updated_by)
+			SELECT w.team, w.environment, w.name, 'repo/app', f.package_key, f.vulnerability_id, 'accepted_risk', 'assessed', 'user'
+			FROM workloads w JOIN findings f ON f.image_id=w.image_id;
+		INSERT INTO kev (cve, date_added, known_ransomware_campaign) VALUES ('E', '2026-01-02', false);
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := grpcapi.New(db, slog.New(slog.DiscardHandler))
+	client := serveVulnerabilities(t, server)
+	suppressionClient := serve(t, server)
+	filter := &v0sv1.FindingFilter{Suppressed: v0sv1.SuppressedFilter_SUPPRESSED_FILTER_INCLUDE}
+	for _, field := range []v0sv1.FindingOrderBy_Field{
+		v0sv1.FindingOrderBy_FIELD_UNSPECIFIED, v0sv1.FindingOrderBy_FIELD_SEVERITY, v0sv1.FindingOrderBy_FIELD_VULNERABILITY_ID,
+	} {
+		for _, direction := range []v0sv1.FindingOrderBy_Direction{v0sv1.FindingOrderBy_DIRECTION_ASC, v0sv1.FindingOrderBy_DIRECTION_DESC} {
+			var order *v0sv1.FindingOrderBy
+			if field != v0sv1.FindingOrderBy_FIELD_UNSPECIFIED {
+				order = &v0sv1.FindingOrderBy{Field: field, Direction: direction}
+			}
+			t.Run("findings/"+field.String()+"/"+direction.String(), func(t *testing.T) {
+				assertBidirectionalRPC(t, func(size int32, token string, traversal v0sv1.PageDirection) ([]*v0sv1.Finding, []string, string, *v0sv1.PageInfo, error) {
+					resp, err := client.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{
+						Filter: filter, OrderBy: order, PageSize: size, PageToken: token, PageDirection: traversal,
+					})
+					if err == nil && (len(resp.GetPackageTypeCounts()) != 2 ||
+						resp.GetPackageTypeCounts()[0].GetCount() != 3 || resp.GetPackageTypeCounts()[1].GetCount() != 18) {
+						t.Fatalf("facets changed: %v", resp)
+					}
+					return resp.GetFindings(), resp.GetCursors(), resp.GetNextPageToken(), resp.GetPageInfo(), err
+				})
+			})
+		}
+	}
+	for _, field := range []v0sv1.VulnerabilityOrderBy_Field{
+		v0sv1.VulnerabilityOrderBy_FIELD_UNSPECIFIED, v0sv1.VulnerabilityOrderBy_FIELD_SEVERITY,
+		v0sv1.VulnerabilityOrderBy_FIELD_VULNERABILITY_ID, v0sv1.VulnerabilityOrderBy_FIELD_AFFECTED_WORKLOAD_COUNT,
+	} {
+		for _, direction := range []v0sv1.VulnerabilityOrderBy_Direction{v0sv1.VulnerabilityOrderBy_DIRECTION_ASC, v0sv1.VulnerabilityOrderBy_DIRECTION_DESC} {
+			var order *v0sv1.VulnerabilityOrderBy
+			if field != v0sv1.VulnerabilityOrderBy_FIELD_UNSPECIFIED {
+				order = &v0sv1.VulnerabilityOrderBy{Field: field, Direction: direction}
+			}
+			t.Run("vulnerabilities/"+field.String()+"/"+direction.String(), func(t *testing.T) {
+				assertBidirectionalRPC(t, func(size int32, token string, traversal v0sv1.PageDirection) ([]*v0sv1.VulnerabilitySummary, []string, string, *v0sv1.PageInfo, error) {
+					resp, err := client.ListVulnerabilities(t.Context(), &v0sv1.ListVulnerabilitiesRequest{
+						Filter: filter, OrderBy: order, PageSize: size, PageToken: token, PageDirection: traversal,
+					})
+					if err == nil && resp.GetTotalCount() != 6 {
+						t.Fatalf("total changed: %v", resp)
+					}
+					return resp.GetVulnerabilities(), resp.GetCursors(), resp.GetNextPageToken(), resp.GetPageInfo(), err
+				})
+			})
+		}
+	}
+	t.Run("suppressions", func(t *testing.T) {
+		assertBidirectionalRPC(t, func(size int32, token string, traversal v0sv1.PageDirection) ([]*v0sv1.Suppression, []string, string, *v0sv1.PageInfo, error) {
+			resp, err := suppressionClient.ListSuppressions(t.Context(), &v0sv1.ListSuppressionsRequest{
+				PageSize: size, PageToken: token, PageDirection: traversal,
+			})
+			return resp.GetSuppressions(), resp.GetCursors(), resp.GetNextPageToken(), resp.GetPageInfo(), err
+		})
+	})
+
+	scope := &v0sv1.FindingFilter{Team: "team", Environment: "dev", Workload: "app",
+		VulnerabilityIds: []string{"A"}, Suppressed: v0sv1.SuppressedFilter_SUPPRESSED_FILTER_INCLUDE}
+	f, err := client.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{Filter: scope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := client.ListVulnerabilities(t.Context(), &v0sv1.ListVulnerabilitiesRequest{Filter: scope})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := suppressionClient.ListSuppressions(t.Context(), &v0sv1.ListSuppressionsRequest{
+		Team: "team", Environment: "dev", Workload: "app", VulnerabilityId: "A",
+	})
+	if err != nil || len(f.GetCursors()) != 1 || len(v.GetCursors()) != 1 || len(s.GetCursors()) != 1 {
+		t.Fatalf("boundary cursors: %v %v %v, %v", f, v, s, err)
+	}
+	if _, err := conn.Exec(t.Context(), `DELETE FROM findings WHERE vulnerability_id='A'; DELETE FROM suppressions WHERE vulnerability_id='A'`); err != nil {
+		t.Fatal(err)
+	}
+	for _, direction := range []v0sv1.PageDirection{v0sv1.PageDirection_PAGE_DIRECTION_FORWARD, v0sv1.PageDirection_PAGE_DIRECTION_BACKWARD} {
+		rf, err := client.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{Filter: scope, PageToken: f.GetCursors()[0], PageDirection: direction})
+		if err != nil || len(rf.GetFindings()) != 0 || !proto.Equal(rf.GetPageInfo(), &v0sv1.PageInfo{}) || len(rf.GetPackageTypeCounts()) != 0 {
+			t.Fatalf("deleted finding boundary: %v, %v", rf, err)
+		}
+		rv, err := client.ListVulnerabilities(t.Context(), &v0sv1.ListVulnerabilitiesRequest{Filter: scope, PageToken: v.GetCursors()[0], PageDirection: direction})
+		if err != nil || len(rv.GetVulnerabilities()) != 0 || rv.GetTotalCount() != 0 || !proto.Equal(rv.GetPageInfo(), &v0sv1.PageInfo{}) {
+			t.Fatalf("deleted overview boundary: %v, %v", rv, err)
+		}
+		rs, err := suppressionClient.ListSuppressions(t.Context(), &v0sv1.ListSuppressionsRequest{
+			Team: "team", Environment: "dev", Workload: "app", VulnerabilityId: "A",
+			PageToken: s.GetCursors()[0], PageDirection: direction,
+		})
+		if err != nil || len(rs.GetSuppressions()) != 0 || !proto.Equal(rs.GetPageInfo(), &v0sv1.PageInfo{}) {
+			t.Fatalf("deleted suppression boundary: %v, %v", rs, err)
+		}
+		if _, err := client.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{Filter: filter, PageToken: f.GetCursors()[0], PageDirection: direction}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("changed finding scope: %v", err)
+		}
+		if _, err := client.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{
+			Filter: scope, PageToken: f.GetCursors()[0], PageDirection: direction,
+			OrderBy: &v0sv1.FindingOrderBy{Field: v0sv1.FindingOrderBy_FIELD_SEVERITY, Direction: v0sv1.FindingOrderBy_DIRECTION_ASC},
+		}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("changed finding order: %v", err)
+		}
+		if _, err := client.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{
+			Filter: scope, PageToken: f.GetCursors()[0], PageDirection: direction, WorkloadSelector: &v0sv1.WorkloadSelector{},
+		}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("changed finding selector: %v", err)
+		}
+		if _, err := client.ListVulnerabilities(t.Context(), &v0sv1.ListVulnerabilitiesRequest{Filter: filter, PageToken: v.GetCursors()[0], PageDirection: direction}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("changed overview scope: %v", err)
+		}
+		if _, err := client.ListVulnerabilities(t.Context(), &v0sv1.ListVulnerabilitiesRequest{
+			Filter: scope, PageToken: v.GetCursors()[0], PageDirection: direction,
+			OrderBy: &v0sv1.VulnerabilityOrderBy{Field: v0sv1.VulnerabilityOrderBy_FIELD_VULNERABILITY_ID, Direction: v0sv1.VulnerabilityOrderBy_DIRECTION_ASC},
+		}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("changed overview order: %v", err)
+		}
+		if _, err := client.ListVulnerabilities(t.Context(), &v0sv1.ListVulnerabilitiesRequest{
+			Filter: scope, PageToken: v.GetCursors()[0], PageDirection: direction, WorkloadSelector: &v0sv1.WorkloadSelector{},
+		}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("changed overview selector: %v", err)
+		}
+		if _, err := suppressionClient.ListSuppressions(t.Context(), &v0sv1.ListSuppressionsRequest{PageToken: s.GetCursors()[0], PageDirection: direction}); status.Code(err) != codes.InvalidArgument {
+			t.Fatalf("changed suppression scope: %v", err)
+		}
+	}
+	t.Run("empty findings", func(t *testing.T) {
+		assertBidirectionalRPC(t, func(size int32, token string, traversal v0sv1.PageDirection) ([]*v0sv1.Finding, []string, string, *v0sv1.PageInfo, error) {
+			resp, err := client.ListFindings(t.Context(), &v0sv1.ListFindingsRequest{
+				Filter: scope, PageSize: size, PageToken: token, PageDirection: traversal,
+			})
+			return resp.GetFindings(), resp.GetCursors(), resp.GetNextPageToken(), resp.GetPageInfo(), err
+		})
+	})
+	t.Run("empty vulnerabilities", func(t *testing.T) {
+		assertBidirectionalRPC(t, func(size int32, token string, traversal v0sv1.PageDirection) ([]*v0sv1.VulnerabilitySummary, []string, string, *v0sv1.PageInfo, error) {
+			resp, err := client.ListVulnerabilities(t.Context(), &v0sv1.ListVulnerabilitiesRequest{
+				Filter: scope, PageSize: size, PageToken: token, PageDirection: traversal,
+			})
+			return resp.GetVulnerabilities(), resp.GetCursors(), resp.GetNextPageToken(), resp.GetPageInfo(), err
+		})
+	})
+	t.Run("empty suppressions", func(t *testing.T) {
+		assertBidirectionalRPC(t, func(size int32, token string, traversal v0sv1.PageDirection) ([]*v0sv1.Suppression, []string, string, *v0sv1.PageInfo, error) {
+			resp, err := suppressionClient.ListSuppressions(t.Context(), &v0sv1.ListSuppressionsRequest{
+				Team: "missing", PageSize: size, PageToken: token, PageDirection: traversal,
+			})
+			return resp.GetSuppressions(), resp.GetCursors(), resp.GetNextPageToken(), resp.GetPageInfo(), err
+		})
+	})
+}
 
 func TestFindingOrderContract(t *testing.T) {
 	s := newServer(t, `

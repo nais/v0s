@@ -245,6 +245,57 @@ func (SuppressedFilter) EnumDescriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{3}
 }
 
+// Traversal relative to page_token, independently of order_by presentation.
+type PageDirection int32
+
+const (
+	// Same as FORWARD, preserving existing requests.
+	PageDirection_PAGE_DIRECTION_UNSPECIFIED PageDirection = 0
+	PageDirection_PAGE_DIRECTION_FORWARD     PageDirection = 1
+	PageDirection_PAGE_DIRECTION_BACKWARD    PageDirection = 2
+)
+
+// Enum value maps for PageDirection.
+var (
+	PageDirection_name = map[int32]string{
+		0: "PAGE_DIRECTION_UNSPECIFIED",
+		1: "PAGE_DIRECTION_FORWARD",
+		2: "PAGE_DIRECTION_BACKWARD",
+	}
+	PageDirection_value = map[string]int32{
+		"PAGE_DIRECTION_UNSPECIFIED": 0,
+		"PAGE_DIRECTION_FORWARD":     1,
+		"PAGE_DIRECTION_BACKWARD":    2,
+	}
+)
+
+func (x PageDirection) Enum() *PageDirection {
+	p := new(PageDirection)
+	*p = x
+	return p
+}
+
+func (x PageDirection) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (PageDirection) Descriptor() protoreflect.EnumDescriptor {
+	return file_v0s_v1_v0s_proto_enumTypes[4].Descriptor()
+}
+
+func (PageDirection) Type() protoreflect.EnumType {
+	return &file_v0s_v1_v0s_proto_enumTypes[4]
+}
+
+func (x PageDirection) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use PageDirection.Descriptor instead.
+func (PageDirection) EnumDescriptor() ([]byte, []int) {
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{4}
+}
+
 type ForwardOutcome int32
 
 const (
@@ -284,11 +335,11 @@ func (x ForwardOutcome) String() string {
 }
 
 func (ForwardOutcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[4].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[5].Descriptor()
 }
 
 func (ForwardOutcome) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[4]
+	return &file_v0s_v1_v0s_proto_enumTypes[5]
 }
 
 func (x ForwardOutcome) Number() protoreflect.EnumNumber {
@@ -297,7 +348,7 @@ func (x ForwardOutcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ForwardOutcome.Descriptor instead.
 func (ForwardOutcome) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{4}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{5}
 }
 
 type WorkloadOrderBy_Field int32
@@ -327,11 +378,11 @@ func (x WorkloadOrderBy_Field) String() string {
 }
 
 func (WorkloadOrderBy_Field) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[5].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[6].Descriptor()
 }
 
 func (WorkloadOrderBy_Field) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[5]
+	return &file_v0s_v1_v0s_proto_enumTypes[6]
 }
 
 func (x WorkloadOrderBy_Field) Number() protoreflect.EnumNumber {
@@ -370,11 +421,11 @@ func (x WorkloadOrderBy_Direction) String() string {
 }
 
 func (WorkloadOrderBy_Direction) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[6].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[7].Descriptor()
 }
 
 func (WorkloadOrderBy_Direction) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[6]
+	return &file_v0s_v1_v0s_proto_enumTypes[7]
 }
 
 func (x WorkloadOrderBy_Direction) Number() protoreflect.EnumNumber {
@@ -391,7 +442,7 @@ type FindingOrderBy_Field int32
 const (
 	FindingOrderBy_FIELD_UNSPECIFIED FindingOrderBy_Field = 0
 	// DESC: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN.
-	// ASC: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN.
+	// ASC: UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL.
 	// Ties: vulnerability ID ASC, then environment, team, workload and purl ASC.
 	FindingOrderBy_FIELD_SEVERITY FindingOrderBy_Field = 1
 	// Ties: environment, team, workload and purl ASC.
@@ -423,11 +474,11 @@ func (x FindingOrderBy_Field) String() string {
 }
 
 func (FindingOrderBy_Field) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[7].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[8].Descriptor()
 }
 
 func (FindingOrderBy_Field) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[7]
+	return &file_v0s_v1_v0s_proto_enumTypes[8]
 }
 
 func (x FindingOrderBy_Field) Number() protoreflect.EnumNumber {
@@ -436,7 +487,7 @@ func (x FindingOrderBy_Field) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FindingOrderBy_Field.Descriptor instead.
 func (FindingOrderBy_Field) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{15, 0}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{16, 0}
 }
 
 type FindingOrderBy_Direction int32
@@ -472,11 +523,11 @@ func (x FindingOrderBy_Direction) String() string {
 }
 
 func (FindingOrderBy_Direction) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[8].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[9].Descriptor()
 }
 
 func (FindingOrderBy_Direction) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[8]
+	return &file_v0s_v1_v0s_proto_enumTypes[9]
 }
 
 func (x FindingOrderBy_Direction) Number() protoreflect.EnumNumber {
@@ -485,7 +536,7 @@ func (x FindingOrderBy_Direction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FindingOrderBy_Direction.Descriptor instead.
 func (FindingOrderBy_Direction) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{15, 1}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{16, 1}
 }
 
 type VulnerabilityOrderBy_Field int32
@@ -493,7 +544,7 @@ type VulnerabilityOrderBy_Field int32
 const (
 	VulnerabilityOrderBy_FIELD_UNSPECIFIED VulnerabilityOrderBy_Field = 0
 	// DESC: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN.
-	// ASC: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN.
+	// ASC: UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL.
 	VulnerabilityOrderBy_FIELD_SEVERITY VulnerabilityOrderBy_Field = 1
 	// Bytewise, case-sensitive PostgreSQL COLLATE "C", not natural/numeric ordering.
 	VulnerabilityOrderBy_FIELD_VULNERABILITY_ID        VulnerabilityOrderBy_Field = 2
@@ -527,11 +578,11 @@ func (x VulnerabilityOrderBy_Field) String() string {
 }
 
 func (VulnerabilityOrderBy_Field) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[9].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[10].Descriptor()
 }
 
 func (VulnerabilityOrderBy_Field) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[9]
+	return &file_v0s_v1_v0s_proto_enumTypes[10]
 }
 
 func (x VulnerabilityOrderBy_Field) Number() protoreflect.EnumNumber {
@@ -540,7 +591,7 @@ func (x VulnerabilityOrderBy_Field) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VulnerabilityOrderBy_Field.Descriptor instead.
 func (VulnerabilityOrderBy_Field) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{19, 0}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{20, 0}
 }
 
 type VulnerabilityOrderBy_Direction int32
@@ -576,11 +627,11 @@ func (x VulnerabilityOrderBy_Direction) String() string {
 }
 
 func (VulnerabilityOrderBy_Direction) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[10].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[11].Descriptor()
 }
 
 func (VulnerabilityOrderBy_Direction) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[10]
+	return &file_v0s_v1_v0s_proto_enumTypes[11]
 }
 
 func (x VulnerabilityOrderBy_Direction) Number() protoreflect.EnumNumber {
@@ -589,7 +640,7 @@ func (x VulnerabilityOrderBy_Direction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VulnerabilityOrderBy_Direction.Descriptor instead.
 func (VulnerabilityOrderBy_Direction) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{19, 1}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{20, 1}
 }
 
 type CountFindingsRequest_GroupBy int32
@@ -634,11 +685,11 @@ func (x CountFindingsRequest_GroupBy) String() string {
 }
 
 func (CountFindingsRequest_GroupBy) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[11].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[12].Descriptor()
 }
 
 func (CountFindingsRequest_GroupBy) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[11]
+	return &file_v0s_v1_v0s_proto_enumTypes[12]
 }
 
 func (x CountFindingsRequest_GroupBy) Number() protoreflect.EnumNumber {
@@ -647,7 +698,7 @@ func (x CountFindingsRequest_GroupBy) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use CountFindingsRequest_GroupBy.Descriptor instead.
 func (CountFindingsRequest_GroupBy) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{22, 0}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{23, 0}
 }
 
 type Image struct {
@@ -1831,6 +1882,64 @@ func (x *WorkloadCoverage) GetUnresolvedImageCount() int64 {
 	return 0
 }
 
+// Existence in the full filtered selection, in presentation order.
+// Nonempty pages: rows before the first / after the last returned row.
+// Empty FORWARD pages: previous means a row on/before the supplied boundary;
+// empty BACKWARD pages: next means a row on/after the supplied boundary.
+// Without a boundary, an empty selection has both flags false.
+// Each response uses one snapshot; separate requests read live data.
+type PageInfo struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	HasNextPage     bool                   `protobuf:"varint,1,opt,name=has_next_page,json=hasNextPage,proto3" json:"has_next_page,omitempty"`
+	HasPreviousPage bool                   `protobuf:"varint,2,opt,name=has_previous_page,json=hasPreviousPage,proto3" json:"has_previous_page,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PageInfo) Reset() {
+	*x = PageInfo{}
+	mi := &file_v0s_v1_v0s_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PageInfo) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PageInfo) ProtoMessage() {}
+
+func (x *PageInfo) ProtoReflect() protoreflect.Message {
+	mi := &file_v0s_v1_v0s_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PageInfo.ProtoReflect.Descriptor instead.
+func (*PageInfo) Descriptor() ([]byte, []int) {
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *PageInfo) GetHasNextPage() bool {
+	if x != nil {
+		return x.HasNextPage
+	}
+	return false
+}
+
+func (x *PageInfo) GetHasPreviousPage() bool {
+	if x != nil {
+		return x.HasPreviousPage
+	}
+	return false
+}
+
 type ListFindingsRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	Filter    *FindingFilter         `protobuf:"bytes,1,opt,name=filter,proto3" json:"filter,omitempty"`
@@ -1840,13 +1949,17 @@ type ListFindingsRequest struct {
 	// When present, both field and direction are required.
 	OrderBy          *FindingOrderBy   `protobuf:"bytes,4,opt,name=order_by,json=orderBy,proto3" json:"order_by,omitempty"`
 	WorkloadSelector *WorkloadSelector `protobuf:"bytes,5,opt,name=workload_selector,json=workloadSelector,proto3" json:"workload_selector,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// FORWARD: exclusive after page_token, or first page without a token.
+	// BACKWARD: exclusive before the same row cursor, or last page without a token.
+	// Returned rows always retain order_by presentation. Defaults to FORWARD.
+	PageDirection PageDirection `protobuf:"varint,6,opt,name=page_direction,json=pageDirection,proto3,enum=v0s.v1.PageDirection" json:"page_direction,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListFindingsRequest) Reset() {
 	*x = ListFindingsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[14]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1858,7 +1971,7 @@ func (x *ListFindingsRequest) String() string {
 func (*ListFindingsRequest) ProtoMessage() {}
 
 func (x *ListFindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[14]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1871,7 +1984,7 @@ func (x *ListFindingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFindingsRequest.ProtoReflect.Descriptor instead.
 func (*ListFindingsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{14}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ListFindingsRequest) GetFilter() *FindingFilter {
@@ -1909,6 +2022,13 @@ func (x *ListFindingsRequest) GetWorkloadSelector() *WorkloadSelector {
 	return nil
 }
 
+func (x *ListFindingsRequest) GetPageDirection() PageDirection {
+	if x != nil {
+		return x.PageDirection
+	}
+	return PageDirection_PAGE_DIRECTION_UNSPECIFIED
+}
+
 type FindingOrderBy struct {
 	state         protoimpl.MessageState   `protogen:"open.v1"`
 	Field         FindingOrderBy_Field     `protobuf:"varint,1,opt,name=field,proto3,enum=v0s.v1.FindingOrderBy_Field" json:"field,omitempty"`
@@ -1919,7 +2039,7 @@ type FindingOrderBy struct {
 
 func (x *FindingOrderBy) Reset() {
 	*x = FindingOrderBy{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[15]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1931,7 +2051,7 @@ func (x *FindingOrderBy) String() string {
 func (*FindingOrderBy) ProtoMessage() {}
 
 func (x *FindingOrderBy) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[15]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1944,7 +2064,7 @@ func (x *FindingOrderBy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FindingOrderBy.ProtoReflect.Descriptor instead.
 func (*FindingOrderBy) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{15}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FindingOrderBy) GetField() FindingOrderBy_Field {
@@ -1964,23 +2084,30 @@ func (x *FindingOrderBy) GetDirection() FindingOrderBy_Direction {
 type ListFindingsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Ordered according to order_by, or the documented default when omitted.
-	Findings      []*Finding `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
-	NextPageToken string     `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	Findings []*Finding `protobuf:"bytes,1,rep,name=findings,proto3" json:"findings,omitempty"`
+	// Forward continuation from the last returned row when has_next_page is true.
+	// Empty on empty pages. For backward continuation use cursors[0] with BACKWARD
+	// when has_previous_page is true.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	// One cursor per finding, in the same order. Each can be used as page_token
-	// to continue after that finding, including when it is no longer present.
+	// for exclusive after/FORWARD or before/BACKWARD, even after deletion.
 	// Opaque, versioned and bound to the normalized filter and order, not page_size.
-	// Incompatible/legacy cursors or changed filters/orders return InvalidArgument;
+	// Traversal direction is not bound. Old severity-ASC cursors are incompatible;
+	// unchanged v1 orders remain supported. Changed filters/orders return InvalidArgument;
 	// restart without a token. Pages use live data, not a cross-request snapshot.
 	Cursors []string `protobuf:"bytes,3,rep,name=cursors,proto3" json:"cursors,omitempty"`
 	// Full filtered selection, independent of cursor, page size and ordering.
 	PackageTypeCounts []*PackageTypeCount `protobuf:"bytes,4,rep,name=package_type_counts,json=packageTypeCounts,proto3" json:"package_type_counts,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// Always present. Start/end cursors are the first/last entries in cursors;
+	// both are absent on empty pages, never replaced by the request boundary.
+	PageInfo      *PageInfo `protobuf:"bytes,5,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListFindingsResponse) Reset() {
 	*x = ListFindingsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[16]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1992,7 +2119,7 @@ func (x *ListFindingsResponse) String() string {
 func (*ListFindingsResponse) ProtoMessage() {}
 
 func (x *ListFindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[16]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2005,7 +2132,7 @@ func (x *ListFindingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListFindingsResponse.ProtoReflect.Descriptor instead.
 func (*ListFindingsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{16}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ListFindingsResponse) GetFindings() []*Finding {
@@ -2036,6 +2163,13 @@ func (x *ListFindingsResponse) GetPackageTypeCounts() []*PackageTypeCount {
 	return nil
 }
 
+func (x *ListFindingsResponse) GetPageInfo() *PageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
 type PackageTypeCount struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Value         string                 `protobuf:"bytes,1,opt,name=value,proto3" json:"value,omitempty"`
@@ -2046,7 +2180,7 @@ type PackageTypeCount struct {
 
 func (x *PackageTypeCount) Reset() {
 	*x = PackageTypeCount{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[17]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2058,7 +2192,7 @@ func (x *PackageTypeCount) String() string {
 func (*PackageTypeCount) ProtoMessage() {}
 
 func (x *PackageTypeCount) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[17]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2071,7 +2205,7 @@ func (x *PackageTypeCount) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PackageTypeCount.ProtoReflect.Descriptor instead.
 func (*PackageTypeCount) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{17}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *PackageTypeCount) GetValue() string {
@@ -2097,13 +2231,15 @@ type ListVulnerabilitiesRequest struct {
 	// Omitted means severity DESC. When present, both fields are required.
 	OrderBy          *VulnerabilityOrderBy `protobuf:"bytes,4,opt,name=order_by,json=orderBy,proto3" json:"order_by,omitempty"`
 	WorkloadSelector *WorkloadSelector     `protobuf:"bytes,5,opt,name=workload_selector,json=workloadSelector,proto3" json:"workload_selector,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// Same exclusive traversal and no-token first/last semantics as ListFindings.
+	PageDirection PageDirection `protobuf:"varint,6,opt,name=page_direction,json=pageDirection,proto3,enum=v0s.v1.PageDirection" json:"page_direction,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListVulnerabilitiesRequest) Reset() {
 	*x = ListVulnerabilitiesRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[18]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2115,7 +2251,7 @@ func (x *ListVulnerabilitiesRequest) String() string {
 func (*ListVulnerabilitiesRequest) ProtoMessage() {}
 
 func (x *ListVulnerabilitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[18]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2128,7 +2264,7 @@ func (x *ListVulnerabilitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVulnerabilitiesRequest.ProtoReflect.Descriptor instead.
 func (*ListVulnerabilitiesRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{18}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ListVulnerabilitiesRequest) GetFilter() *FindingFilter {
@@ -2166,6 +2302,13 @@ func (x *ListVulnerabilitiesRequest) GetWorkloadSelector() *WorkloadSelector {
 	return nil
 }
 
+func (x *ListVulnerabilitiesRequest) GetPageDirection() PageDirection {
+	if x != nil {
+		return x.PageDirection
+	}
+	return PageDirection_PAGE_DIRECTION_UNSPECIFIED
+}
+
 type VulnerabilityOrderBy struct {
 	state         protoimpl.MessageState         `protogen:"open.v1"`
 	Field         VulnerabilityOrderBy_Field     `protobuf:"varint,1,opt,name=field,proto3,enum=v0s.v1.VulnerabilityOrderBy_Field" json:"field,omitempty"`
@@ -2176,7 +2319,7 @@ type VulnerabilityOrderBy struct {
 
 func (x *VulnerabilityOrderBy) Reset() {
 	*x = VulnerabilityOrderBy{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[19]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2188,7 +2331,7 @@ func (x *VulnerabilityOrderBy) String() string {
 func (*VulnerabilityOrderBy) ProtoMessage() {}
 
 func (x *VulnerabilityOrderBy) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[19]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2201,7 +2344,7 @@ func (x *VulnerabilityOrderBy) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VulnerabilityOrderBy.ProtoReflect.Descriptor instead.
 func (*VulnerabilityOrderBy) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{19}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *VulnerabilityOrderBy) GetField() VulnerabilityOrderBy_Field {
@@ -2233,7 +2376,7 @@ type VulnerabilitySummary struct {
 
 func (x *VulnerabilitySummary) Reset() {
 	*x = VulnerabilitySummary{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[20]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2245,7 +2388,7 @@ func (x *VulnerabilitySummary) String() string {
 func (*VulnerabilitySummary) ProtoMessage() {}
 
 func (x *VulnerabilitySummary) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[20]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2258,7 +2401,7 @@ func (x *VulnerabilitySummary) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VulnerabilitySummary.ProtoReflect.Descriptor instead.
 func (*VulnerabilitySummary) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{20}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *VulnerabilitySummary) GetVulnerabilityId() string {
@@ -2293,21 +2436,27 @@ type ListVulnerabilitiesResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Severity/count ties use canonical ID ASC with COLLATE "C".
 	Vulnerabilities []*VulnerabilitySummary `protobuf:"bytes,1,rep,name=vulnerabilities,proto3" json:"vulnerabilities,omitempty"`
-	NextPageToken   string                  `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	// Forward continuation from the last row, independent of page_direction.
+	// Empty on empty pages; backward continuation uses cursors[0] and PageInfo.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	// One opaque, versioned cursor per row, including the last page. Bound to the
-	// effective filter/order, not page size; works after the boundary row disappears.
+	// effective filter/selection/order, not page size or traversal direction.
+	// Supports exclusive after/FORWARD and before/BACKWARD after boundary deletion.
+	// Old severity-ASC cursors require restart; unchanged v1 orders are supported.
 	// Invalid/incompatible tokens or changed filter/order give InvalidArgument:
 	// restart without a token. Pages are live data, not a snapshot between calls.
 	Cursors []string `protobuf:"bytes,3,rep,name=cursors,proto3" json:"cursors,omitempty"`
 	// All unique canonical IDs after filtering, before cursor/LIMIT, even on empty pages.
-	TotalCount    int64 `protobuf:"varint,4,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	TotalCount int64 `protobuf:"varint,4,opt,name=total_count,json=totalCount,proto3" json:"total_count,omitempty"`
+	// Always present; start/end cursors come from cursors, absent on empty pages.
+	PageInfo      *PageInfo `protobuf:"bytes,5,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListVulnerabilitiesResponse) Reset() {
 	*x = ListVulnerabilitiesResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[21]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2319,7 +2468,7 @@ func (x *ListVulnerabilitiesResponse) String() string {
 func (*ListVulnerabilitiesResponse) ProtoMessage() {}
 
 func (x *ListVulnerabilitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[21]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2332,7 +2481,7 @@ func (x *ListVulnerabilitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListVulnerabilitiesResponse.ProtoReflect.Descriptor instead.
 func (*ListVulnerabilitiesResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{21}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ListVulnerabilitiesResponse) GetVulnerabilities() []*VulnerabilitySummary {
@@ -2363,6 +2512,13 @@ func (x *ListVulnerabilitiesResponse) GetTotalCount() int64 {
 	return 0
 }
 
+func (x *ListVulnerabilitiesResponse) GetPageInfo() *PageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
 type CountFindingsRequest struct {
 	state            protoimpl.MessageState       `protogen:"open.v1"`
 	Filter           *FindingFilter               `protobuf:"bytes,1,opt,name=filter,proto3" json:"filter,omitempty"`
@@ -2374,7 +2530,7 @@ type CountFindingsRequest struct {
 
 func (x *CountFindingsRequest) Reset() {
 	*x = CountFindingsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[22]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2386,7 +2542,7 @@ func (x *CountFindingsRequest) String() string {
 func (*CountFindingsRequest) ProtoMessage() {}
 
 func (x *CountFindingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[22]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2399,7 +2555,7 @@ func (x *CountFindingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CountFindingsRequest.ProtoReflect.Descriptor instead.
 func (*CountFindingsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{22}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *CountFindingsRequest) GetFilter() *FindingFilter {
@@ -2432,7 +2588,7 @@ type CountFindingsResponse struct {
 
 func (x *CountFindingsResponse) Reset() {
 	*x = CountFindingsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[23]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2444,7 +2600,7 @@ func (x *CountFindingsResponse) String() string {
 func (*CountFindingsResponse) ProtoMessage() {}
 
 func (x *CountFindingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[23]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2457,7 +2613,7 @@ func (x *CountFindingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CountFindingsResponse.ProtoReflect.Descriptor instead.
 func (*CountFindingsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{23}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *CountFindingsResponse) GetBuckets() []*CountFindingsResponse_Bucket {
@@ -2476,7 +2632,7 @@ type GetVulnerabilityRequest struct {
 
 func (x *GetVulnerabilityRequest) Reset() {
 	*x = GetVulnerabilityRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[24]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2488,7 +2644,7 @@ func (x *GetVulnerabilityRequest) String() string {
 func (*GetVulnerabilityRequest) ProtoMessage() {}
 
 func (x *GetVulnerabilityRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[24]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2501,7 +2657,7 @@ func (x *GetVulnerabilityRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVulnerabilityRequest.ProtoReflect.Descriptor instead.
 func (*GetVulnerabilityRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{24}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *GetVulnerabilityRequest) GetId() string {
@@ -2520,7 +2676,7 @@ type GetVulnerabilityResponse struct {
 
 func (x *GetVulnerabilityResponse) Reset() {
 	*x = GetVulnerabilityResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[25]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2532,7 +2688,7 @@ func (x *GetVulnerabilityResponse) String() string {
 func (*GetVulnerabilityResponse) ProtoMessage() {}
 
 func (x *GetVulnerabilityResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[25]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2545,7 +2701,7 @@ func (x *GetVulnerabilityResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetVulnerabilityResponse.ProtoReflect.Descriptor instead.
 func (*GetVulnerabilityResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{25}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *GetVulnerabilityResponse) GetVulnerability() *Vulnerability {
@@ -2573,7 +2729,7 @@ type Vulnerability struct {
 
 func (x *Vulnerability) Reset() {
 	*x = Vulnerability{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[26]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2585,7 +2741,7 @@ func (x *Vulnerability) String() string {
 func (*Vulnerability) ProtoMessage() {}
 
 func (x *Vulnerability) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[26]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2598,7 +2754,7 @@ func (x *Vulnerability) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Vulnerability.ProtoReflect.Descriptor instead.
 func (*Vulnerability) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{26}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *Vulnerability) GetId() string {
@@ -2663,7 +2819,7 @@ type SearchComponentsRequest struct {
 
 func (x *SearchComponentsRequest) Reset() {
 	*x = SearchComponentsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[27]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2675,7 +2831,7 @@ func (x *SearchComponentsRequest) String() string {
 func (*SearchComponentsRequest) ProtoMessage() {}
 
 func (x *SearchComponentsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[27]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2688,7 +2844,7 @@ func (x *SearchComponentsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchComponentsRequest.ProtoReflect.Descriptor instead.
 func (*SearchComponentsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{27}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SearchComponentsRequest) GetQuery() string {
@@ -2729,7 +2885,7 @@ type SearchComponentsResponse struct {
 
 func (x *SearchComponentsResponse) Reset() {
 	*x = SearchComponentsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[28]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2741,7 +2897,7 @@ func (x *SearchComponentsResponse) String() string {
 func (*SearchComponentsResponse) ProtoMessage() {}
 
 func (x *SearchComponentsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[28]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2754,7 +2910,7 @@ func (x *SearchComponentsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SearchComponentsResponse.ProtoReflect.Descriptor instead.
 func (*SearchComponentsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{28}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *SearchComponentsResponse) GetMatches() []*ComponentMatch {
@@ -2785,7 +2941,7 @@ type ComponentMatch struct {
 
 func (x *ComponentMatch) Reset() {
 	*x = ComponentMatch{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[29]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2797,7 +2953,7 @@ func (x *ComponentMatch) String() string {
 func (*ComponentMatch) ProtoMessage() {}
 
 func (x *ComponentMatch) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[29]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2810,7 +2966,7 @@ func (x *ComponentMatch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ComponentMatch.ProtoReflect.Descriptor instead.
 func (*ComponentMatch) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{29}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ComponentMatch) GetPurl() string {
@@ -2859,7 +3015,7 @@ type WorkloadRef struct {
 
 func (x *WorkloadRef) Reset() {
 	*x = WorkloadRef{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[30]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2871,7 +3027,7 @@ func (x *WorkloadRef) String() string {
 func (*WorkloadRef) ProtoMessage() {}
 
 func (x *WorkloadRef) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[30]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2884,7 +3040,7 @@ func (x *WorkloadRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadRef.ProtoReflect.Descriptor instead.
 func (*WorkloadRef) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{30}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *WorkloadRef) GetEnvironment() string {
@@ -2925,7 +3081,7 @@ type WorkloadSelector struct {
 
 func (x *WorkloadSelector) Reset() {
 	*x = WorkloadSelector{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[31]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2937,7 +3093,7 @@ func (x *WorkloadSelector) String() string {
 func (*WorkloadSelector) ProtoMessage() {}
 
 func (x *WorkloadSelector) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[31]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2950,7 +3106,7 @@ func (x *WorkloadSelector) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WorkloadSelector.ProtoReflect.Descriptor instead.
 func (*WorkloadSelector) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{31}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *WorkloadSelector) GetWorkloads() []*WorkloadRef {
@@ -2976,7 +3132,7 @@ type SuppressionKey struct {
 
 func (x *SuppressionKey) Reset() {
 	*x = SuppressionKey{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[32]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2988,7 +3144,7 @@ func (x *SuppressionKey) String() string {
 func (*SuppressionKey) ProtoMessage() {}
 
 func (x *SuppressionKey) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[32]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3001,7 +3157,7 @@ func (x *SuppressionKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SuppressionKey.ProtoReflect.Descriptor instead.
 func (*SuppressionKey) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{32}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *SuppressionKey) GetImageName() string {
@@ -3060,7 +3216,7 @@ type Suppression struct {
 
 func (x *Suppression) Reset() {
 	*x = Suppression{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[33]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3072,7 +3228,7 @@ func (x *Suppression) String() string {
 func (*Suppression) ProtoMessage() {}
 
 func (x *Suppression) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[33]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3085,7 +3241,7 @@ func (x *Suppression) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Suppression.ProtoReflect.Descriptor instead.
 func (*Suppression) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{33}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Suppression) GetTeam() string {
@@ -3169,7 +3325,7 @@ type NewSuppression struct {
 
 func (x *NewSuppression) Reset() {
 	*x = NewSuppression{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[34]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3181,7 +3337,7 @@ func (x *NewSuppression) String() string {
 func (*NewSuppression) ProtoMessage() {}
 
 func (x *NewSuppression) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[34]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3194,7 +3350,7 @@ func (x *NewSuppression) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NewSuppression.ProtoReflect.Descriptor instead.
 func (*NewSuppression) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{34}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *NewSuppression) GetKey() *SuppressionKey {
@@ -3231,7 +3387,7 @@ type SetSuppressionsRequest struct {
 
 func (x *SetSuppressionsRequest) Reset() {
 	*x = SetSuppressionsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[35]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3243,7 +3399,7 @@ func (x *SetSuppressionsRequest) String() string {
 func (*SetSuppressionsRequest) ProtoMessage() {}
 
 func (x *SetSuppressionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[35]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3256,7 +3412,7 @@ func (x *SetSuppressionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSuppressionsRequest.ProtoReflect.Descriptor instead.
 func (*SetSuppressionsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{35}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SetSuppressionsRequest) GetTeam() string {
@@ -3289,7 +3445,7 @@ type SetSuppressionsResponse struct {
 
 func (x *SetSuppressionsResponse) Reset() {
 	*x = SetSuppressionsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[36]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3301,7 +3457,7 @@ func (x *SetSuppressionsResponse) String() string {
 func (*SetSuppressionsResponse) ProtoMessage() {}
 
 func (x *SetSuppressionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[36]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3314,7 +3470,7 @@ func (x *SetSuppressionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetSuppressionsResponse.ProtoReflect.Descriptor instead.
 func (*SetSuppressionsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{36}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SetSuppressionsResponse) GetSuppressions() []*Suppression {
@@ -3335,7 +3491,7 @@ type DeleteSuppressionsRequest struct {
 
 func (x *DeleteSuppressionsRequest) Reset() {
 	*x = DeleteSuppressionsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[37]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3347,7 +3503,7 @@ func (x *DeleteSuppressionsRequest) String() string {
 func (*DeleteSuppressionsRequest) ProtoMessage() {}
 
 func (x *DeleteSuppressionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[37]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3360,7 +3516,7 @@ func (x *DeleteSuppressionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSuppressionsRequest.ProtoReflect.Descriptor instead.
 func (*DeleteSuppressionsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{37}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *DeleteSuppressionsRequest) GetTeam() string {
@@ -3387,7 +3543,7 @@ type DeleteSuppressionsResponse struct {
 
 func (x *DeleteSuppressionsResponse) Reset() {
 	*x = DeleteSuppressionsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[38]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3399,7 +3555,7 @@ func (x *DeleteSuppressionsResponse) String() string {
 func (*DeleteSuppressionsResponse) ProtoMessage() {}
 
 func (x *DeleteSuppressionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[38]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3412,7 +3568,7 @@ func (x *DeleteSuppressionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteSuppressionsResponse.ProtoReflect.Descriptor instead.
 func (*DeleteSuppressionsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{38}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *DeleteSuppressionsResponse) GetDeleted() []*Suppression {
@@ -3432,14 +3588,18 @@ type ListSuppressionsRequest struct {
 	PageToken       string `protobuf:"bytes,5,opt,name=page_token,json=pageToken,proto3" json:"page_token,omitempty"`
 	Environment     string `protobuf:"bytes,6,opt,name=environment,proto3" json:"environment,omitempty"`
 	// Requires team and environment.
-	Workload      string `protobuf:"bytes,7,opt,name=workload,proto3" json:"workload,omitempty"`
+	Workload string `protobuf:"bytes,7,opt,name=workload,proto3" json:"workload,omitempty"`
+	// FORWARD: exclusive after page_token, or first page without a token.
+	// BACKWARD: exclusive before the same cursor, or last page without a token.
+	// Presentation remains the fixed ascending suppression-key order.
+	PageDirection PageDirection `protobuf:"varint,9,opt,name=page_direction,json=pageDirection,proto3,enum=v0s.v1.PageDirection" json:"page_direction,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListSuppressionsRequest) Reset() {
 	*x = ListSuppressionsRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[39]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3451,7 +3611,7 @@ func (x *ListSuppressionsRequest) String() string {
 func (*ListSuppressionsRequest) ProtoMessage() {}
 
 func (x *ListSuppressionsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[39]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3464,7 +3624,7 @@ func (x *ListSuppressionsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSuppressionsRequest.ProtoReflect.Descriptor instead.
 func (*ListSuppressionsRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{39}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *ListSuppressionsRequest) GetTeam() string {
@@ -3516,21 +3676,35 @@ func (x *ListSuppressionsRequest) GetWorkload() string {
 	return ""
 }
 
+func (x *ListSuppressionsRequest) GetPageDirection() PageDirection {
+	if x != nil {
+		return x.PageDirection
+	}
+	return PageDirection_PAGE_DIRECTION_UNSPECIFIED
+}
+
 type ListSuppressionsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Ordered by team, environment, workload, image name, package key and vulnerability ID.
-	Suppressions  []*Suppression `protobuf:"bytes,1,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
-	NextPageToken string         `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	Suppressions []*Suppression `protobuf:"bytes,1,rep,name=suppressions,proto3" json:"suppressions,omitempty"`
+	// Forward continuation from the last row, independent of page_direction.
+	// Empty on empty pages; backward continuation uses cursors[0] and PageInfo.
+	NextPageToken string `protobuf:"bytes,2,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
 	// One cursor per suppression, in the same order. Each can be used as page_token
-	// to continue after that suppression, including when it has been deleted.
-	Cursors       []string `protobuf:"bytes,3,rep,name=cursors,proto3" json:"cursors,omitempty"`
+	// for exclusive after/FORWARD or before/BACKWARD, even after deletion.
+	// Bound to normalized scope/filter and fixed ordering, not size or traversal.
+	// Old unbound cursors and changed filters return InvalidArgument; restart
+	// without a token. Separate requests read live data, not a shared snapshot.
+	Cursors []string `protobuf:"bytes,3,rep,name=cursors,proto3" json:"cursors,omitempty"`
+	// Always present; start/end cursors come from cursors, absent on empty pages.
+	PageInfo      *PageInfo `protobuf:"bytes,4,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ListSuppressionsResponse) Reset() {
 	*x = ListSuppressionsResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[40]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3542,7 +3716,7 @@ func (x *ListSuppressionsResponse) String() string {
 func (*ListSuppressionsResponse) ProtoMessage() {}
 
 func (x *ListSuppressionsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[40]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3555,7 +3729,7 @@ func (x *ListSuppressionsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSuppressionsResponse.ProtoReflect.Descriptor instead.
 func (*ListSuppressionsResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{40}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ListSuppressionsResponse) GetSuppressions() []*Suppression {
@@ -3579,6 +3753,13 @@ func (x *ListSuppressionsResponse) GetCursors() []string {
 	return nil
 }
 
+func (x *ListSuppressionsResponse) GetPageInfo() *PageInfo {
+	if x != nil {
+		return x.PageInfo
+	}
+	return nil
+}
+
 type ForwardV13SSuppressionRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	ImageName        string                 `protobuf:"bytes,1,opt,name=image_name,json=imageName,proto3" json:"image_name,omitempty"`
@@ -3591,7 +3772,7 @@ type ForwardV13SSuppressionRequest struct {
 
 func (x *ForwardV13SSuppressionRequest) Reset() {
 	*x = ForwardV13SSuppressionRequest{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[41]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3603,7 +3784,7 @@ func (x *ForwardV13SSuppressionRequest) String() string {
 func (*ForwardV13SSuppressionRequest) ProtoMessage() {}
 
 func (x *ForwardV13SSuppressionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[41]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3616,7 +3797,7 @@ func (x *ForwardV13SSuppressionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForwardV13SSuppressionRequest.ProtoReflect.Descriptor instead.
 func (*ForwardV13SSuppressionRequest) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{41}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ForwardV13SSuppressionRequest) GetImageName() string {
@@ -3659,7 +3840,7 @@ type V13SAssessment struct {
 
 func (x *V13SAssessment) Reset() {
 	*x = V13SAssessment{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[42]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3671,7 +3852,7 @@ func (x *V13SAssessment) String() string {
 func (*V13SAssessment) ProtoMessage() {}
 
 func (x *V13SAssessment) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[42]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3684,7 +3865,7 @@ func (x *V13SAssessment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use V13SAssessment.ProtoReflect.Descriptor instead.
 func (*V13SAssessment) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{42}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *V13SAssessment) GetState() SuppressionState {
@@ -3726,7 +3907,7 @@ type ForwardV13SSuppressionResponse struct {
 
 func (x *ForwardV13SSuppressionResponse) Reset() {
 	*x = ForwardV13SSuppressionResponse{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[43]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3738,7 +3919,7 @@ func (x *ForwardV13SSuppressionResponse) String() string {
 func (*ForwardV13SSuppressionResponse) ProtoMessage() {}
 
 func (x *ForwardV13SSuppressionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[43]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3751,7 +3932,7 @@ func (x *ForwardV13SSuppressionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ForwardV13SSuppressionResponse.ProtoReflect.Descriptor instead.
 func (*ForwardV13SSuppressionResponse) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{43}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *ForwardV13SSuppressionResponse) GetOutcome() ForwardOutcome {
@@ -3786,7 +3967,7 @@ type CountFindingsResponse_Bucket struct {
 
 func (x *CountFindingsResponse_Bucket) Reset() {
 	*x = CountFindingsResponse_Bucket{}
-	mi := &file_v0s_v1_v0s_proto_msgTypes[44]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3798,7 +3979,7 @@ func (x *CountFindingsResponse_Bucket) String() string {
 func (*CountFindingsResponse_Bucket) ProtoMessage() {}
 
 func (x *CountFindingsResponse_Bucket) ProtoReflect() protoreflect.Message {
-	mi := &file_v0s_v1_v0s_proto_msgTypes[44]
+	mi := &file_v0s_v1_v0s_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3811,7 +3992,7 @@ func (x *CountFindingsResponse_Bucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CountFindingsResponse_Bucket.ProtoReflect.Descriptor instead.
 func (*CountFindingsResponse_Bucket) Descriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{23, 0}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{24, 0}
 }
 
 func (x *CountFindingsResponse_Bucket) GetKey() string {
@@ -3942,14 +4123,18 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\rpending_count\x18\x03 \x01(\x03R\fpendingCount\x12\"\n" +
 	"\rno_sbom_count\x18\x04 \x01(\x03R\vnoSbomCount\x12!\n" +
 	"\ffailed_count\x18\x05 \x01(\x03R\vfailedCount\x124\n" +
-	"\x16unresolved_image_count\x18\x06 \x01(\x03R\x14unresolvedImageCount\"\xfa\x01\n" +
+	"\x16unresolved_image_count\x18\x06 \x01(\x03R\x14unresolvedImageCount\"Z\n" +
+	"\bPageInfo\x12\"\n" +
+	"\rhas_next_page\x18\x01 \x01(\bR\vhasNextPage\x12*\n" +
+	"\x11has_previous_page\x18\x02 \x01(\bR\x0fhasPreviousPage\"\xb8\x02\n" +
 	"\x13ListFindingsRequest\x12-\n" +
 	"\x06filter\x18\x01 \x01(\v2\x15.v0s.v1.FindingFilterR\x06filter\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\x121\n" +
 	"\border_by\x18\x04 \x01(\v2\x16.v0s.v1.FindingOrderByR\aorderBy\x12E\n" +
-	"\x11workload_selector\x18\x05 \x01(\v2\x18.v0s.v1.WorkloadSelectorR\x10workloadSelector\"\xa3\x02\n" +
+	"\x11workload_selector\x18\x05 \x01(\v2\x18.v0s.v1.WorkloadSelectorR\x10workloadSelector\x12<\n" +
+	"\x0epage_direction\x18\x06 \x01(\x0e2\x15.v0s.v1.PageDirectionR\rpageDirection\"\xa3\x02\n" +
 	"\x0eFindingOrderBy\x122\n" +
 	"\x05field\x18\x01 \x01(\x0e2\x1c.v0s.v1.FindingOrderBy.FieldR\x05field\x12>\n" +
 	"\tdirection\x18\x02 \x01(\x0e2 .v0s.v1.FindingOrderBy.DirectionR\tdirection\"N\n" +
@@ -3960,22 +4145,24 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\tDirection\x12\x19\n" +
 	"\x15DIRECTION_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rDIRECTION_ASC\x10\x01\x12\x12\n" +
-	"\x0eDIRECTION_DESC\x10\x02\"\xcf\x01\n" +
+	"\x0eDIRECTION_DESC\x10\x02\"\xfe\x01\n" +
 	"\x14ListFindingsResponse\x12+\n" +
 	"\bfindings\x18\x01 \x03(\v2\x0f.v0s.v1.FindingR\bfindings\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x18\n" +
 	"\acursors\x18\x03 \x03(\tR\acursors\x12H\n" +
-	"\x13package_type_counts\x18\x04 \x03(\v2\x18.v0s.v1.PackageTypeCountR\x11packageTypeCounts\">\n" +
+	"\x13package_type_counts\x18\x04 \x03(\v2\x18.v0s.v1.PackageTypeCountR\x11packageTypeCounts\x12-\n" +
+	"\tpage_info\x18\x05 \x01(\v2\x10.v0s.v1.PageInfoR\bpageInfo\">\n" +
 	"\x10PackageTypeCount\x12\x14\n" +
 	"\x05value\x18\x01 \x01(\tR\x05value\x12\x14\n" +
-	"\x05count\x18\x02 \x01(\x03R\x05count\"\x87\x02\n" +
+	"\x05count\x18\x02 \x01(\x03R\x05count\"\xc5\x02\n" +
 	"\x1aListVulnerabilitiesRequest\x12-\n" +
 	"\x06filter\x18\x01 \x01(\v2\x15.v0s.v1.FindingFilterR\x06filter\x12\x1b\n" +
 	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x03 \x01(\tR\tpageToken\x127\n" +
 	"\border_by\x18\x04 \x01(\v2\x1c.v0s.v1.VulnerabilityOrderByR\aorderBy\x12E\n" +
-	"\x11workload_selector\x18\x05 \x01(\v2\x18.v0s.v1.WorkloadSelectorR\x10workloadSelector\"\xd8\x02\n" +
+	"\x11workload_selector\x18\x05 \x01(\v2\x18.v0s.v1.WorkloadSelectorR\x10workloadSelector\x12<\n" +
+	"\x0epage_direction\x18\x06 \x01(\x0e2\x15.v0s.v1.PageDirectionR\rpageDirection\"\xd8\x02\n" +
 	"\x14VulnerabilityOrderBy\x128\n" +
 	"\x05field\x18\x01 \x01(\x0e2\".v0s.v1.VulnerabilityOrderBy.FieldR\x05field\x12D\n" +
 	"\tdirection\x18\x02 \x01(\x0e2&.v0s.v1.VulnerabilityOrderBy.DirectionR\tdirection\"q\n" +
@@ -3992,13 +4179,14 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x10vulnerability_id\x18\x01 \x01(\tR\x0fvulnerabilityId\x12,\n" +
 	"\bseverity\x18\x02 \x01(\x0e2\x10.v0s.v1.SeverityR\bseverity\x12#\n" +
 	"\rfinding_count\x18\x03 \x01(\x03R\ffindingCount\x126\n" +
-	"\x17affected_workload_count\x18\x04 \x01(\x03R\x15affectedWorkloadCount\"\xc8\x01\n" +
+	"\x17affected_workload_count\x18\x04 \x01(\x03R\x15affectedWorkloadCount\"\xf7\x01\n" +
 	"\x1bListVulnerabilitiesResponse\x12F\n" +
 	"\x0fvulnerabilities\x18\x01 \x03(\v2\x1c.v0s.v1.VulnerabilitySummaryR\x0fvulnerabilities\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x18\n" +
 	"\acursors\x18\x03 \x03(\tR\acursors\x12\x1f\n" +
 	"\vtotal_count\x18\x04 \x01(\x03R\n" +
-	"totalCount\"\xe4\x02\n" +
+	"totalCount\x12-\n" +
+	"\tpage_info\x18\x05 \x01(\v2\x10.v0s.v1.PageInfoR\bpageInfo\"\xe4\x02\n" +
 	"\x14CountFindingsRequest\x12-\n" +
 	"\x06filter\x18\x01 \x01(\v2\x15.v0s.v1.FindingFilterR\x06filter\x12?\n" +
 	"\bgroup_by\x18\x02 \x01(\x0e2$.v0s.v1.CountFindingsRequest.GroupByR\agroupBy\x12E\n" +
@@ -4091,7 +4279,7 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x04team\x18\x01 \x01(\tR\x04team\x12*\n" +
 	"\x04keys\x18\x02 \x03(\v2\x16.v0s.v1.SuppressionKeyR\x04keys\"K\n" +
 	"\x1aDeleteSuppressionsResponse\x12-\n" +
-	"\adeleted\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\adeleted\"\xfe\x01\n" +
+	"\adeleted\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\adeleted\"\xbc\x02\n" +
 	"\x17ListSuppressionsRequest\x12\x12\n" +
 	"\x04team\x18\b \x01(\tR\x04team\x12\x1d\n" +
 	"\n" +
@@ -4101,11 +4289,13 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\n" +
 	"page_token\x18\x05 \x01(\tR\tpageToken\x12 \n" +
 	"\venvironment\x18\x06 \x01(\tR\venvironment\x12\x1a\n" +
-	"\bworkload\x18\a \x01(\tR\bworkloadJ\x04\b\x01\x10\x02R\x05teams\"\x95\x01\n" +
+	"\bworkload\x18\a \x01(\tR\bworkload\x12<\n" +
+	"\x0epage_direction\x18\t \x01(\x0e2\x15.v0s.v1.PageDirectionR\rpageDirectionJ\x04\b\x01\x10\x02R\x05teams\"\xc4\x01\n" +
 	"\x18ListSuppressionsResponse\x127\n" +
 	"\fsuppressions\x18\x01 \x03(\v2\x13.v0s.v1.SuppressionR\fsuppressions\x12&\n" +
 	"\x0fnext_page_token\x18\x02 \x01(\tR\rnextPageToken\x12\x18\n" +
-	"\acursors\x18\x03 \x03(\tR\acursors\"\xbd\x01\n" +
+	"\acursors\x18\x03 \x03(\tR\acursors\x12-\n" +
+	"\tpage_info\x18\x04 \x01(\v2\x10.v0s.v1.PageInfoR\bpageInfo\"\xbd\x01\n" +
 	"\x1dForwardV13sSuppressionRequest\x12\x1d\n" +
 	"\n" +
 	"image_name\x18\x01 \x01(\tR\timageName\x12\x18\n" +
@@ -4147,7 +4337,11 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x1dSUPPRESSED_FILTER_UNSPECIFIED\x10\x00\x12\x1d\n" +
 	"\x19SUPPRESSED_FILTER_EXCLUDE\x10\x01\x12\x1d\n" +
 	"\x19SUPPRESSED_FILTER_INCLUDE\x10\x02\x12\x1a\n" +
-	"\x16SUPPRESSED_FILTER_ONLY\x10\x03*\xc8\x01\n" +
+	"\x16SUPPRESSED_FILTER_ONLY\x10\x03*h\n" +
+	"\rPageDirection\x12\x1e\n" +
+	"\x1aPAGE_DIRECTION_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16PAGE_DIRECTION_FORWARD\x10\x01\x12\x1b\n" +
+	"\x17PAGE_DIRECTION_BACKWARD\x10\x02*\xc8\x01\n" +
 	"\x0eForwardOutcome\x12\x1f\n" +
 	"\x1bFORWARD_OUTCOME_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17FORWARD_OUTCOME_APPLIED\x10\x01\x12 \n" +
@@ -4181,153 +4375,161 @@ func file_v0s_v1_v0s_proto_rawDescGZIP() []byte {
 	return file_v0s_v1_v0s_proto_rawDescData
 }
 
-var file_v0s_v1_v0s_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
-var file_v0s_v1_v0s_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_v0s_v1_v0s_proto_enumTypes = make([]protoimpl.EnumInfo, 13)
+var file_v0s_v1_v0s_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
 var file_v0s_v1_v0s_proto_goTypes = []any{
 	(Severity)(0),                          // 0: v0s.v1.Severity
 	(ImageStatus)(0),                       // 1: v0s.v1.ImageStatus
 	(SuppressionState)(0),                  // 2: v0s.v1.SuppressionState
 	(SuppressedFilter)(0),                  // 3: v0s.v1.SuppressedFilter
-	(ForwardOutcome)(0),                    // 4: v0s.v1.ForwardOutcome
-	(WorkloadOrderBy_Field)(0),             // 5: v0s.v1.WorkloadOrderBy.Field
-	(WorkloadOrderBy_Direction)(0),         // 6: v0s.v1.WorkloadOrderBy.Direction
-	(FindingOrderBy_Field)(0),              // 7: v0s.v1.FindingOrderBy.Field
-	(FindingOrderBy_Direction)(0),          // 8: v0s.v1.FindingOrderBy.Direction
-	(VulnerabilityOrderBy_Field)(0),        // 9: v0s.v1.VulnerabilityOrderBy.Field
-	(VulnerabilityOrderBy_Direction)(0),    // 10: v0s.v1.VulnerabilityOrderBy.Direction
-	(CountFindingsRequest_GroupBy)(0),      // 11: v0s.v1.CountFindingsRequest.GroupBy
-	(*Image)(nil),                          // 12: v0s.v1.Image
-	(*Workload)(nil),                       // 13: v0s.v1.Workload
-	(*FindingFilter)(nil),                  // 14: v0s.v1.FindingFilter
-	(*Finding)(nil),                        // 15: v0s.v1.Finding
-	(*Epss)(nil),                           // 16: v0s.v1.Epss
-	(*ListWorkloadsRequest)(nil),           // 17: v0s.v1.ListWorkloadsRequest
-	(*ListWorkloadsResponse)(nil),          // 18: v0s.v1.ListWorkloadsResponse
-	(*WorkloadOverviewOptions)(nil),        // 19: v0s.v1.WorkloadOverviewOptions
-	(*WorkloadOrderBy)(nil),                // 20: v0s.v1.WorkloadOrderBy
-	(*WorkloadFindingCounts)(nil),          // 21: v0s.v1.WorkloadFindingCounts
-	(*VulnerabilitySeverityCounts)(nil),    // 22: v0s.v1.VulnerabilitySeverityCounts
-	(*GetSummaryRequest)(nil),              // 23: v0s.v1.GetSummaryRequest
-	(*GetSummaryResponse)(nil),             // 24: v0s.v1.GetSummaryResponse
-	(*WorkloadCoverage)(nil),               // 25: v0s.v1.WorkloadCoverage
-	(*ListFindingsRequest)(nil),            // 26: v0s.v1.ListFindingsRequest
-	(*FindingOrderBy)(nil),                 // 27: v0s.v1.FindingOrderBy
-	(*ListFindingsResponse)(nil),           // 28: v0s.v1.ListFindingsResponse
-	(*PackageTypeCount)(nil),               // 29: v0s.v1.PackageTypeCount
-	(*ListVulnerabilitiesRequest)(nil),     // 30: v0s.v1.ListVulnerabilitiesRequest
-	(*VulnerabilityOrderBy)(nil),           // 31: v0s.v1.VulnerabilityOrderBy
-	(*VulnerabilitySummary)(nil),           // 32: v0s.v1.VulnerabilitySummary
-	(*ListVulnerabilitiesResponse)(nil),    // 33: v0s.v1.ListVulnerabilitiesResponse
-	(*CountFindingsRequest)(nil),           // 34: v0s.v1.CountFindingsRequest
-	(*CountFindingsResponse)(nil),          // 35: v0s.v1.CountFindingsResponse
-	(*GetVulnerabilityRequest)(nil),        // 36: v0s.v1.GetVulnerabilityRequest
-	(*GetVulnerabilityResponse)(nil),       // 37: v0s.v1.GetVulnerabilityResponse
-	(*Vulnerability)(nil),                  // 38: v0s.v1.Vulnerability
-	(*SearchComponentsRequest)(nil),        // 39: v0s.v1.SearchComponentsRequest
-	(*SearchComponentsResponse)(nil),       // 40: v0s.v1.SearchComponentsResponse
-	(*ComponentMatch)(nil),                 // 41: v0s.v1.ComponentMatch
-	(*WorkloadRef)(nil),                    // 42: v0s.v1.WorkloadRef
-	(*WorkloadSelector)(nil),               // 43: v0s.v1.WorkloadSelector
-	(*SuppressionKey)(nil),                 // 44: v0s.v1.SuppressionKey
-	(*Suppression)(nil),                    // 45: v0s.v1.Suppression
-	(*NewSuppression)(nil),                 // 46: v0s.v1.NewSuppression
-	(*SetSuppressionsRequest)(nil),         // 47: v0s.v1.SetSuppressionsRequest
-	(*SetSuppressionsResponse)(nil),        // 48: v0s.v1.SetSuppressionsResponse
-	(*DeleteSuppressionsRequest)(nil),      // 49: v0s.v1.DeleteSuppressionsRequest
-	(*DeleteSuppressionsResponse)(nil),     // 50: v0s.v1.DeleteSuppressionsResponse
-	(*ListSuppressionsRequest)(nil),        // 51: v0s.v1.ListSuppressionsRequest
-	(*ListSuppressionsResponse)(nil),       // 52: v0s.v1.ListSuppressionsResponse
-	(*ForwardV13SSuppressionRequest)(nil),  // 53: v0s.v1.ForwardV13sSuppressionRequest
-	(*V13SAssessment)(nil),                 // 54: v0s.v1.V13sAssessment
-	(*ForwardV13SSuppressionResponse)(nil), // 55: v0s.v1.ForwardV13sSuppressionResponse
-	(*CountFindingsResponse_Bucket)(nil),   // 56: v0s.v1.CountFindingsResponse.Bucket
-	(*timestamppb.Timestamp)(nil),          // 57: google.protobuf.Timestamp
+	(PageDirection)(0),                     // 4: v0s.v1.PageDirection
+	(ForwardOutcome)(0),                    // 5: v0s.v1.ForwardOutcome
+	(WorkloadOrderBy_Field)(0),             // 6: v0s.v1.WorkloadOrderBy.Field
+	(WorkloadOrderBy_Direction)(0),         // 7: v0s.v1.WorkloadOrderBy.Direction
+	(FindingOrderBy_Field)(0),              // 8: v0s.v1.FindingOrderBy.Field
+	(FindingOrderBy_Direction)(0),          // 9: v0s.v1.FindingOrderBy.Direction
+	(VulnerabilityOrderBy_Field)(0),        // 10: v0s.v1.VulnerabilityOrderBy.Field
+	(VulnerabilityOrderBy_Direction)(0),    // 11: v0s.v1.VulnerabilityOrderBy.Direction
+	(CountFindingsRequest_GroupBy)(0),      // 12: v0s.v1.CountFindingsRequest.GroupBy
+	(*Image)(nil),                          // 13: v0s.v1.Image
+	(*Workload)(nil),                       // 14: v0s.v1.Workload
+	(*FindingFilter)(nil),                  // 15: v0s.v1.FindingFilter
+	(*Finding)(nil),                        // 16: v0s.v1.Finding
+	(*Epss)(nil),                           // 17: v0s.v1.Epss
+	(*ListWorkloadsRequest)(nil),           // 18: v0s.v1.ListWorkloadsRequest
+	(*ListWorkloadsResponse)(nil),          // 19: v0s.v1.ListWorkloadsResponse
+	(*WorkloadOverviewOptions)(nil),        // 20: v0s.v1.WorkloadOverviewOptions
+	(*WorkloadOrderBy)(nil),                // 21: v0s.v1.WorkloadOrderBy
+	(*WorkloadFindingCounts)(nil),          // 22: v0s.v1.WorkloadFindingCounts
+	(*VulnerabilitySeverityCounts)(nil),    // 23: v0s.v1.VulnerabilitySeverityCounts
+	(*GetSummaryRequest)(nil),              // 24: v0s.v1.GetSummaryRequest
+	(*GetSummaryResponse)(nil),             // 25: v0s.v1.GetSummaryResponse
+	(*WorkloadCoverage)(nil),               // 26: v0s.v1.WorkloadCoverage
+	(*PageInfo)(nil),                       // 27: v0s.v1.PageInfo
+	(*ListFindingsRequest)(nil),            // 28: v0s.v1.ListFindingsRequest
+	(*FindingOrderBy)(nil),                 // 29: v0s.v1.FindingOrderBy
+	(*ListFindingsResponse)(nil),           // 30: v0s.v1.ListFindingsResponse
+	(*PackageTypeCount)(nil),               // 31: v0s.v1.PackageTypeCount
+	(*ListVulnerabilitiesRequest)(nil),     // 32: v0s.v1.ListVulnerabilitiesRequest
+	(*VulnerabilityOrderBy)(nil),           // 33: v0s.v1.VulnerabilityOrderBy
+	(*VulnerabilitySummary)(nil),           // 34: v0s.v1.VulnerabilitySummary
+	(*ListVulnerabilitiesResponse)(nil),    // 35: v0s.v1.ListVulnerabilitiesResponse
+	(*CountFindingsRequest)(nil),           // 36: v0s.v1.CountFindingsRequest
+	(*CountFindingsResponse)(nil),          // 37: v0s.v1.CountFindingsResponse
+	(*GetVulnerabilityRequest)(nil),        // 38: v0s.v1.GetVulnerabilityRequest
+	(*GetVulnerabilityResponse)(nil),       // 39: v0s.v1.GetVulnerabilityResponse
+	(*Vulnerability)(nil),                  // 40: v0s.v1.Vulnerability
+	(*SearchComponentsRequest)(nil),        // 41: v0s.v1.SearchComponentsRequest
+	(*SearchComponentsResponse)(nil),       // 42: v0s.v1.SearchComponentsResponse
+	(*ComponentMatch)(nil),                 // 43: v0s.v1.ComponentMatch
+	(*WorkloadRef)(nil),                    // 44: v0s.v1.WorkloadRef
+	(*WorkloadSelector)(nil),               // 45: v0s.v1.WorkloadSelector
+	(*SuppressionKey)(nil),                 // 46: v0s.v1.SuppressionKey
+	(*Suppression)(nil),                    // 47: v0s.v1.Suppression
+	(*NewSuppression)(nil),                 // 48: v0s.v1.NewSuppression
+	(*SetSuppressionsRequest)(nil),         // 49: v0s.v1.SetSuppressionsRequest
+	(*SetSuppressionsResponse)(nil),        // 50: v0s.v1.SetSuppressionsResponse
+	(*DeleteSuppressionsRequest)(nil),      // 51: v0s.v1.DeleteSuppressionsRequest
+	(*DeleteSuppressionsResponse)(nil),     // 52: v0s.v1.DeleteSuppressionsResponse
+	(*ListSuppressionsRequest)(nil),        // 53: v0s.v1.ListSuppressionsRequest
+	(*ListSuppressionsResponse)(nil),       // 54: v0s.v1.ListSuppressionsResponse
+	(*ForwardV13SSuppressionRequest)(nil),  // 55: v0s.v1.ForwardV13sSuppressionRequest
+	(*V13SAssessment)(nil),                 // 56: v0s.v1.V13sAssessment
+	(*ForwardV13SSuppressionResponse)(nil), // 57: v0s.v1.ForwardV13sSuppressionResponse
+	(*CountFindingsResponse_Bucket)(nil),   // 58: v0s.v1.CountFindingsResponse.Bucket
+	(*timestamppb.Timestamp)(nil),          // 59: google.protobuf.Timestamp
 }
 var file_v0s_v1_v0s_proto_depIdxs = []int32{
 	1,  // 0: v0s.v1.Image.status:type_name -> v0s.v1.ImageStatus
-	57, // 1: v0s.v1.Image.scanned_at:type_name -> google.protobuf.Timestamp
-	12, // 2: v0s.v1.Workload.image:type_name -> v0s.v1.Image
-	21, // 3: v0s.v1.Workload.finding_counts:type_name -> v0s.v1.WorkloadFindingCounts
+	59, // 1: v0s.v1.Image.scanned_at:type_name -> google.protobuf.Timestamp
+	13, // 2: v0s.v1.Workload.image:type_name -> v0s.v1.Image
+	22, // 3: v0s.v1.Workload.finding_counts:type_name -> v0s.v1.WorkloadFindingCounts
 	0,  // 4: v0s.v1.FindingFilter.severities:type_name -> v0s.v1.Severity
 	3,  // 5: v0s.v1.FindingFilter.suppressed:type_name -> v0s.v1.SuppressedFilter
-	42, // 6: v0s.v1.Finding.workload:type_name -> v0s.v1.WorkloadRef
-	12, // 7: v0s.v1.Finding.image:type_name -> v0s.v1.Image
+	44, // 6: v0s.v1.Finding.workload:type_name -> v0s.v1.WorkloadRef
+	13, // 7: v0s.v1.Finding.image:type_name -> v0s.v1.Image
 	0,  // 8: v0s.v1.Finding.severity:type_name -> v0s.v1.Severity
-	16, // 9: v0s.v1.Finding.epss:type_name -> v0s.v1.Epss
-	45, // 10: v0s.v1.Finding.suppression:type_name -> v0s.v1.Suppression
-	19, // 11: v0s.v1.ListWorkloadsRequest.overview:type_name -> v0s.v1.WorkloadOverviewOptions
-	43, // 12: v0s.v1.ListWorkloadsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	13, // 13: v0s.v1.ListWorkloadsResponse.workloads:type_name -> v0s.v1.Workload
-	14, // 14: v0s.v1.WorkloadOverviewOptions.finding_filter:type_name -> v0s.v1.FindingFilter
-	22, // 15: v0s.v1.WorkloadFindingCounts.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
-	43, // 16: v0s.v1.GetSummaryRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	14, // 17: v0s.v1.GetSummaryRequest.finding_filter:type_name -> v0s.v1.FindingFilter
-	22, // 18: v0s.v1.GetSummaryResponse.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
-	25, // 19: v0s.v1.GetSummaryResponse.coverage:type_name -> v0s.v1.WorkloadCoverage
-	14, // 20: v0s.v1.ListFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
-	27, // 21: v0s.v1.ListFindingsRequest.order_by:type_name -> v0s.v1.FindingOrderBy
-	43, // 22: v0s.v1.ListFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	7,  // 23: v0s.v1.FindingOrderBy.field:type_name -> v0s.v1.FindingOrderBy.Field
-	8,  // 24: v0s.v1.FindingOrderBy.direction:type_name -> v0s.v1.FindingOrderBy.Direction
-	15, // 25: v0s.v1.ListFindingsResponse.findings:type_name -> v0s.v1.Finding
-	29, // 26: v0s.v1.ListFindingsResponse.package_type_counts:type_name -> v0s.v1.PackageTypeCount
-	14, // 27: v0s.v1.ListVulnerabilitiesRequest.filter:type_name -> v0s.v1.FindingFilter
-	31, // 28: v0s.v1.ListVulnerabilitiesRequest.order_by:type_name -> v0s.v1.VulnerabilityOrderBy
-	43, // 29: v0s.v1.ListVulnerabilitiesRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	9,  // 30: v0s.v1.VulnerabilityOrderBy.field:type_name -> v0s.v1.VulnerabilityOrderBy.Field
-	10, // 31: v0s.v1.VulnerabilityOrderBy.direction:type_name -> v0s.v1.VulnerabilityOrderBy.Direction
-	0,  // 32: v0s.v1.VulnerabilitySummary.severity:type_name -> v0s.v1.Severity
-	32, // 33: v0s.v1.ListVulnerabilitiesResponse.vulnerabilities:type_name -> v0s.v1.VulnerabilitySummary
-	14, // 34: v0s.v1.CountFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
-	11, // 35: v0s.v1.CountFindingsRequest.group_by:type_name -> v0s.v1.CountFindingsRequest.GroupBy
-	43, // 36: v0s.v1.CountFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	56, // 37: v0s.v1.CountFindingsResponse.buckets:type_name -> v0s.v1.CountFindingsResponse.Bucket
-	38, // 38: v0s.v1.GetVulnerabilityResponse.vulnerability:type_name -> v0s.v1.Vulnerability
-	16, // 39: v0s.v1.Vulnerability.epss:type_name -> v0s.v1.Epss
-	41, // 40: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
-	12, // 41: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
-	42, // 42: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
-	42, // 43: v0s.v1.WorkloadSelector.workloads:type_name -> v0s.v1.WorkloadRef
-	2,  // 44: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
-	57, // 45: v0s.v1.Suppression.updated_at:type_name -> google.protobuf.Timestamp
-	44, // 46: v0s.v1.NewSuppression.key:type_name -> v0s.v1.SuppressionKey
-	2,  // 47: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
-	46, // 48: v0s.v1.SetSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
-	45, // 49: v0s.v1.SetSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
-	44, // 50: v0s.v1.DeleteSuppressionsRequest.keys:type_name -> v0s.v1.SuppressionKey
-	45, // 51: v0s.v1.DeleteSuppressionsResponse.deleted:type_name -> v0s.v1.Suppression
-	45, // 52: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
-	54, // 53: v0s.v1.ForwardV13sSuppressionRequest.assessment:type_name -> v0s.v1.V13sAssessment
-	2,  // 54: v0s.v1.V13sAssessment.state:type_name -> v0s.v1.SuppressionState
-	57, // 55: v0s.v1.V13sAssessment.updated_at:type_name -> google.protobuf.Timestamp
-	4,  // 56: v0s.v1.ForwardV13sSuppressionResponse.outcome:type_name -> v0s.v1.ForwardOutcome
-	17, // 57: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
-	26, // 58: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
-	30, // 59: v0s.v1.VulnerabilityService.ListVulnerabilities:input_type -> v0s.v1.ListVulnerabilitiesRequest
-	34, // 60: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
-	23, // 61: v0s.v1.VulnerabilityService.GetSummary:input_type -> v0s.v1.GetSummaryRequest
-	36, // 62: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
-	39, // 63: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
-	47, // 64: v0s.v1.SuppressionService.SetSuppressions:input_type -> v0s.v1.SetSuppressionsRequest
-	49, // 65: v0s.v1.SuppressionService.DeleteSuppressions:input_type -> v0s.v1.DeleteSuppressionsRequest
-	51, // 66: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
-	53, // 67: v0s.v1.SuppressionService.ForwardV13sSuppression:input_type -> v0s.v1.ForwardV13sSuppressionRequest
-	18, // 68: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
-	28, // 69: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
-	33, // 70: v0s.v1.VulnerabilityService.ListVulnerabilities:output_type -> v0s.v1.ListVulnerabilitiesResponse
-	35, // 71: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
-	24, // 72: v0s.v1.VulnerabilityService.GetSummary:output_type -> v0s.v1.GetSummaryResponse
-	37, // 73: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
-	40, // 74: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
-	48, // 75: v0s.v1.SuppressionService.SetSuppressions:output_type -> v0s.v1.SetSuppressionsResponse
-	50, // 76: v0s.v1.SuppressionService.DeleteSuppressions:output_type -> v0s.v1.DeleteSuppressionsResponse
-	52, // 77: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
-	55, // 78: v0s.v1.SuppressionService.ForwardV13sSuppression:output_type -> v0s.v1.ForwardV13sSuppressionResponse
-	68, // [68:79] is the sub-list for method output_type
-	57, // [57:68] is the sub-list for method input_type
-	57, // [57:57] is the sub-list for extension type_name
-	57, // [57:57] is the sub-list for extension extendee
-	0,  // [0:57] is the sub-list for field type_name
+	17, // 9: v0s.v1.Finding.epss:type_name -> v0s.v1.Epss
+	47, // 10: v0s.v1.Finding.suppression:type_name -> v0s.v1.Suppression
+	20, // 11: v0s.v1.ListWorkloadsRequest.overview:type_name -> v0s.v1.WorkloadOverviewOptions
+	45, // 12: v0s.v1.ListWorkloadsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	14, // 13: v0s.v1.ListWorkloadsResponse.workloads:type_name -> v0s.v1.Workload
+	15, // 14: v0s.v1.WorkloadOverviewOptions.finding_filter:type_name -> v0s.v1.FindingFilter
+	23, // 15: v0s.v1.WorkloadFindingCounts.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
+	45, // 16: v0s.v1.GetSummaryRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	15, // 17: v0s.v1.GetSummaryRequest.finding_filter:type_name -> v0s.v1.FindingFilter
+	23, // 18: v0s.v1.GetSummaryResponse.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
+	26, // 19: v0s.v1.GetSummaryResponse.coverage:type_name -> v0s.v1.WorkloadCoverage
+	15, // 20: v0s.v1.ListFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
+	29, // 21: v0s.v1.ListFindingsRequest.order_by:type_name -> v0s.v1.FindingOrderBy
+	45, // 22: v0s.v1.ListFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	4,  // 23: v0s.v1.ListFindingsRequest.page_direction:type_name -> v0s.v1.PageDirection
+	8,  // 24: v0s.v1.FindingOrderBy.field:type_name -> v0s.v1.FindingOrderBy.Field
+	9,  // 25: v0s.v1.FindingOrderBy.direction:type_name -> v0s.v1.FindingOrderBy.Direction
+	16, // 26: v0s.v1.ListFindingsResponse.findings:type_name -> v0s.v1.Finding
+	31, // 27: v0s.v1.ListFindingsResponse.package_type_counts:type_name -> v0s.v1.PackageTypeCount
+	27, // 28: v0s.v1.ListFindingsResponse.page_info:type_name -> v0s.v1.PageInfo
+	15, // 29: v0s.v1.ListVulnerabilitiesRequest.filter:type_name -> v0s.v1.FindingFilter
+	33, // 30: v0s.v1.ListVulnerabilitiesRequest.order_by:type_name -> v0s.v1.VulnerabilityOrderBy
+	45, // 31: v0s.v1.ListVulnerabilitiesRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	4,  // 32: v0s.v1.ListVulnerabilitiesRequest.page_direction:type_name -> v0s.v1.PageDirection
+	10, // 33: v0s.v1.VulnerabilityOrderBy.field:type_name -> v0s.v1.VulnerabilityOrderBy.Field
+	11, // 34: v0s.v1.VulnerabilityOrderBy.direction:type_name -> v0s.v1.VulnerabilityOrderBy.Direction
+	0,  // 35: v0s.v1.VulnerabilitySummary.severity:type_name -> v0s.v1.Severity
+	34, // 36: v0s.v1.ListVulnerabilitiesResponse.vulnerabilities:type_name -> v0s.v1.VulnerabilitySummary
+	27, // 37: v0s.v1.ListVulnerabilitiesResponse.page_info:type_name -> v0s.v1.PageInfo
+	15, // 38: v0s.v1.CountFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
+	12, // 39: v0s.v1.CountFindingsRequest.group_by:type_name -> v0s.v1.CountFindingsRequest.GroupBy
+	45, // 40: v0s.v1.CountFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	58, // 41: v0s.v1.CountFindingsResponse.buckets:type_name -> v0s.v1.CountFindingsResponse.Bucket
+	40, // 42: v0s.v1.GetVulnerabilityResponse.vulnerability:type_name -> v0s.v1.Vulnerability
+	17, // 43: v0s.v1.Vulnerability.epss:type_name -> v0s.v1.Epss
+	43, // 44: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
+	13, // 45: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
+	44, // 46: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
+	44, // 47: v0s.v1.WorkloadSelector.workloads:type_name -> v0s.v1.WorkloadRef
+	2,  // 48: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
+	59, // 49: v0s.v1.Suppression.updated_at:type_name -> google.protobuf.Timestamp
+	46, // 50: v0s.v1.NewSuppression.key:type_name -> v0s.v1.SuppressionKey
+	2,  // 51: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
+	48, // 52: v0s.v1.SetSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
+	47, // 53: v0s.v1.SetSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	46, // 54: v0s.v1.DeleteSuppressionsRequest.keys:type_name -> v0s.v1.SuppressionKey
+	47, // 55: v0s.v1.DeleteSuppressionsResponse.deleted:type_name -> v0s.v1.Suppression
+	4,  // 56: v0s.v1.ListSuppressionsRequest.page_direction:type_name -> v0s.v1.PageDirection
+	47, // 57: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	27, // 58: v0s.v1.ListSuppressionsResponse.page_info:type_name -> v0s.v1.PageInfo
+	56, // 59: v0s.v1.ForwardV13sSuppressionRequest.assessment:type_name -> v0s.v1.V13sAssessment
+	2,  // 60: v0s.v1.V13sAssessment.state:type_name -> v0s.v1.SuppressionState
+	59, // 61: v0s.v1.V13sAssessment.updated_at:type_name -> google.protobuf.Timestamp
+	5,  // 62: v0s.v1.ForwardV13sSuppressionResponse.outcome:type_name -> v0s.v1.ForwardOutcome
+	18, // 63: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
+	28, // 64: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
+	32, // 65: v0s.v1.VulnerabilityService.ListVulnerabilities:input_type -> v0s.v1.ListVulnerabilitiesRequest
+	36, // 66: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
+	24, // 67: v0s.v1.VulnerabilityService.GetSummary:input_type -> v0s.v1.GetSummaryRequest
+	38, // 68: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
+	41, // 69: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
+	49, // 70: v0s.v1.SuppressionService.SetSuppressions:input_type -> v0s.v1.SetSuppressionsRequest
+	51, // 71: v0s.v1.SuppressionService.DeleteSuppressions:input_type -> v0s.v1.DeleteSuppressionsRequest
+	53, // 72: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
+	55, // 73: v0s.v1.SuppressionService.ForwardV13sSuppression:input_type -> v0s.v1.ForwardV13sSuppressionRequest
+	19, // 74: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
+	30, // 75: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
+	35, // 76: v0s.v1.VulnerabilityService.ListVulnerabilities:output_type -> v0s.v1.ListVulnerabilitiesResponse
+	37, // 77: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
+	25, // 78: v0s.v1.VulnerabilityService.GetSummary:output_type -> v0s.v1.GetSummaryResponse
+	39, // 79: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
+	42, // 80: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
+	50, // 81: v0s.v1.SuppressionService.SetSuppressions:output_type -> v0s.v1.SetSuppressionsResponse
+	52, // 82: v0s.v1.SuppressionService.DeleteSuppressions:output_type -> v0s.v1.DeleteSuppressionsResponse
+	54, // 83: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
+	57, // 84: v0s.v1.SuppressionService.ForwardV13sSuppression:output_type -> v0s.v1.ForwardV13sSuppressionResponse
+	74, // [74:85] is the sub-list for method output_type
+	63, // [63:74] is the sub-list for method input_type
+	63, // [63:63] is the sub-list for extension type_name
+	63, // [63:63] is the sub-list for extension extendee
+	0,  // [0:63] is the sub-list for field type_name
 }
 
 func init() { file_v0s_v1_v0s_proto_init() }
@@ -4341,8 +4543,8 @@ func file_v0s_v1_v0s_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v0s_v1_v0s_proto_rawDesc), len(file_v0s_v1_v0s_proto_rawDesc)),
-			NumEnums:      12,
-			NumMessages:   45,
+			NumEnums:      13,
+			NumMessages:   46,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -115,11 +115,11 @@ func set(t *testing.T, db *database.DB, items ...database.NewSuppression) []data
 // listSuppressions returns every suppression.
 func listSuppressions(t *testing.T, db *database.DB) []database.Suppression {
 	t.Helper()
-	all, _, err := db.ListSuppressions(context.Background(), database.SuppressionFilter{}, database.Page{})
+	all, err := db.ListSuppressions(context.Background(), database.SuppressionFilter{}, database.Page{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return all
+	return all.Suppressions
 }
 
 func TestSetSuppressions(t *testing.T) {
@@ -134,8 +134,8 @@ func TestSetSuppressions(t *testing.T) {
 		if s.Team != "team-a" || s.SuppressionKey != lodashKey || s.UpdatedBy != "me" || s.UpdatedAt.IsZero() {
 			t.Errorf("set = %+v, want team-a's CVE-1 on pkg:npm/lodash by me", s)
 		}
-		listed, _, err := db.ListSuppressions(ctx, database.SuppressionFilter{VulnerabilityID: "GHSA-1"}, database.Page{})
-		if err != nil || len(listed) != 1 || listed[0] != s {
+		listed, err := db.ListSuppressions(ctx, database.SuppressionFilter{VulnerabilityID: "GHSA-1"}, database.Page{})
+		if err != nil || len(listed.Suppressions) != 1 || listed.Suppressions[0] != s {
 			t.Errorf("ListSuppressions by alias = %+v, %v; want %+v", listed, err, s)
 		}
 	})
@@ -274,27 +274,109 @@ func TestListSuppressionsPagination(t *testing.T) {
 	if _, err := db.SetSuppressions(ctx, "team-b", []database.NewSuppression{lodashSuppression("accepted_risk")}, "me"); err != nil {
 		t.Fatal(err)
 	}
+	otherID := lodashSuppression("accepted_risk")
+	otherID.VulnerabilityID = "CVE-2"
+	otherImage := lodashSuppression("accepted_risk")
+	otherImage.ImageName = "repo/other"
+	set(t, db, otherID, otherImage)
+	all, err := db.ListSuppressions(ctx, database.SuppressionFilter{}, database.Page{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertBidirectionalPages(t, all.Suppressions, all.Cursors, func(page database.Page) ([]database.Suppression, []string, string, database.PageInfo, error) {
+		list, err := db.ListSuppressions(ctx, database.SuppressionFilter{}, page)
+		return list.Suppressions, list.Cursors, list.NextPageToken, list.PageInfo, err
+	})
+	assertBidirectionalPages(t, []database.Suppression{}, nil, func(page database.Page) ([]database.Suppression, []string, string, database.PageInfo, error) {
+		list, err := db.ListSuppressions(ctx, database.SuppressionFilter{Teams: []string{"missing"}}, page)
+		return list.Suppressions, list.Cursors, list.NextPageToken, list.PageInfo, err
+	})
 
 	var (
 		got  []string
 		page = database.Page{Size: 1}
 	)
 	for range 10 {
-		suppressions, next, err := db.ListSuppressions(ctx, database.SuppressionFilter{}, page)
+		list, err := db.ListSuppressions(ctx, database.SuppressionFilter{}, page)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, s := range suppressions {
-			got = append(got, s.Team+" "+s.Environment+" "+s.Workload+" "+s.Package)
+		for _, s := range list.Suppressions {
+			got = append(got, s.Team+" "+s.Environment+" "+s.Workload+" "+s.ImageName+" "+s.Package+" "+s.VulnerabilityID)
 		}
-		if next == "" {
+		if list.NextPageToken == "" {
 			break
 		}
-		page.Token = next
+		page.Token = list.NextPageToken
 	}
-	want := []string{"team-a c1 app pkg:npm/express", "team-a c1 app pkg:npm/lodash", "team-a c1 worker pkg:npm/lodash", "team-a prod app pkg:npm/lodash", "team-b c1 app pkg:npm/lodash"}
+	want := []string{
+		"team-a c1 app repo/app pkg:npm/express CVE-2",
+		"team-a c1 app repo/app pkg:npm/lodash CVE-1",
+		"team-a c1 app repo/app pkg:npm/lodash CVE-2",
+		"team-a c1 app repo/other pkg:npm/lodash CVE-1",
+		"team-a c1 worker repo/app pkg:npm/lodash CVE-1",
+		"team-a prod app repo/app pkg:npm/lodash CVE-1",
+		"team-b c1 app repo/app pkg:npm/lodash CVE-1",
+	}
 	if !slices.Equal(got, want) {
 		t.Errorf("suppressions = %q, want %q", got, want)
+	}
+}
+
+func TestSuppressionCursorBindingAndDeletion(t *testing.T) {
+	db, _ := newFixture(t)
+	app := lodashSuppression("accepted_risk")
+	worker := app
+	worker.Workload = "worker"
+	prod := app
+	prod.Environment = "prod"
+	set(t, db, app, worker, prod)
+	filter := database.SuppressionFilter{Teams: []string{"team-b", "team-a", "team-a"}}
+	all, err := db.ListSuppressions(t.Context(), filter, database.Page{})
+	if err != nil || len(all.Cursors) != 3 {
+		t.Fatalf("initial: %+v, %v", all, err)
+	}
+	if !slices.Equal(filter.Teams, []string{"team-b", "team-a", "team-a"}) {
+		t.Fatal("mutated filter")
+	}
+	filter.Teams = []string{"team-a", "team-b"}
+	for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+		page := database.Page{Token: all.Cursors[1], Direction: direction}
+		if _, err := db.ListSuppressions(t.Context(), filter, page); err != nil {
+			t.Fatalf("equivalent scope: %v", err)
+		}
+		for _, changed := range []database.SuppressionFilter{
+			{}, {Teams: []string{"team-a"}}, {Teams: filter.Teams, Environment: "c1"},
+			{Teams: filter.Teams, Workload: "worker"}, {Teams: filter.Teams, ImageName: "repo/app"},
+			{Teams: filter.Teams, VulnerabilityID: "CVE-1"},
+		} {
+			if _, err := db.ListSuppressions(t.Context(), changed, page); !errors.Is(err, database.ErrInvalid) {
+				t.Fatalf("changed filter %+v accepted: %v", changed, err)
+			}
+		}
+	}
+	for _, raw := range []any{
+		map[string]any{"t": "team-a", "e": "c1", "w": "app", "i": "repo/app", "p": "pkg:npm/lodash", "v": "CVE-1"},
+		map[string]any{"version": 1, "operation": "findings"},
+		map[string]any{}, nil,
+	} {
+		if _, err := db.ListSuppressions(t.Context(), filter, database.Page{Token: encodeCursor(t, raw)}); !errors.Is(err, database.ErrInvalid) {
+			t.Fatalf("invalid cursor accepted: %v", err)
+		}
+	}
+	if _, err := db.DeleteSuppressions(t.Context(), "team-a", []database.SuppressionKey{worker.SuppressionKey}); err != nil {
+		t.Fatal(err)
+	}
+	for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+		list, err := db.ListSuppressions(t.Context(), filter, database.Page{Token: all.Cursors[1], Direction: direction})
+		want := all.Suppressions[2:]
+		if direction == database.PageBackward {
+			want = all.Suppressions[:1]
+		}
+		if err != nil || !slices.Equal(list.Suppressions, want) ||
+			list.PageInfo != (database.PageInfo{HasNextPage: direction == database.PageBackward, HasPreviousPage: direction == database.PageForward}) {
+			t.Fatalf("deleted boundary direction %v: %+v, %v", direction, list, err)
+		}
 	}
 }
 
@@ -325,8 +407,8 @@ func TestWorkloadSuppressionBatch(t *testing.T) {
 	if err != nil || !slices.Equal(findingKeys(only.Findings), []string{workerLodash}) {
 		t.Fatalf("after deleting app assessment = %v, %v; want worker only", findingKeys(only.Findings), err)
 	}
-	listed, _, err := db.ListSuppressions(ctx, database.SuppressionFilter{Teams: []string{"team-a"}, Environment: "c1", Workload: "worker"}, database.Page{Size: 1})
-	if err != nil || len(listed) != 1 || listed[0].Workload != "worker" {
+	listed, err := db.ListSuppressions(ctx, database.SuppressionFilter{Teams: []string{"team-a"}, Environment: "c1", Workload: "worker"}, database.Page{Size: 1})
+	if err != nil || len(listed.Suppressions) != 1 || listed.Suppressions[0].Workload != "worker" {
 		t.Fatalf("list worker assessments = %v, %v", listed, err)
 	}
 	// A new digest and package version in the same repository retain this workload's assessment.

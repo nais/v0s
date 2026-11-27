@@ -80,6 +80,22 @@ func page(size int32, token string) database.Page {
 	return database.Page{Size: int(size), Token: token}
 }
 
+func directedPage(size int32, token string, direction v0sv1.PageDirection) (database.Page, error) {
+	p := page(size, token)
+	switch direction {
+	case v0sv1.PageDirection_PAGE_DIRECTION_UNSPECIFIED, v0sv1.PageDirection_PAGE_DIRECTION_FORWARD:
+	case v0sv1.PageDirection_PAGE_DIRECTION_BACKWARD:
+		p.Direction = database.PageBackward
+	default:
+		return database.Page{}, invalidArgument("page_direction must be valid")
+	}
+	return p, nil
+}
+
+func pageInfoToProto(info database.PageInfo) *v0sv1.PageInfo {
+	return &v0sv1.PageInfo{HasNextPage: info.HasNextPage, HasPreviousPage: info.HasPreviousPage}
+}
+
 // ListWorkloads implements VulnerabilityService.
 func (s *Server) ListWorkloads(ctx context.Context, req *v0sv1.ListWorkloadsRequest) (*v0sv1.ListWorkloadsResponse, error) {
 	if err := rejectLegacyTeams(req, 1); err != nil {
@@ -136,13 +152,17 @@ func (s *Server) ListFindings(ctx context.Context, req *v0sv1.ListFindingsReques
 			return nil, invalidArgument("order_by.direction is required and must be valid")
 		}
 	}
-	found, err := s.db.ListFindings(ctx, filter, page(req.GetPageSize(), req.GetPageToken()), order)
+	p, err := directedPage(req.GetPageSize(), req.GetPageToken(), req.GetPageDirection())
+	if err != nil {
+		return nil, err
+	}
+	found, err := s.db.ListFindings(ctx, filter, p, order)
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
 	resp := &v0sv1.ListFindingsResponse{
 		Findings: make([]*v0sv1.Finding, 0, len(found.Findings)), NextPageToken: found.NextPageToken,
-		Cursors: found.Cursors,
+		Cursors: found.Cursors, PageInfo: pageInfoToProto(found.PageInfo),
 	}
 	for _, c := range found.PackageTypeCounts {
 		resp.PackageTypeCounts = append(resp.PackageTypeCounts, &v0sv1.PackageTypeCount{Value: c.Key, Count: c.Count})

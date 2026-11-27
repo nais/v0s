@@ -293,6 +293,25 @@ message WorkloadCoverage {
   int64 unresolved_image_count = 6;
 }
 
+// Traversal relative to page_token, independently of order_by presentation.
+enum PageDirection {
+  // Same as FORWARD, preserving existing requests.
+  PAGE_DIRECTION_UNSPECIFIED = 0;
+  PAGE_DIRECTION_FORWARD = 1;
+  PAGE_DIRECTION_BACKWARD = 2;
+}
+
+// Existence in the full filtered selection, in presentation order.
+// Nonempty pages: rows before the first / after the last returned row.
+// Empty FORWARD pages: previous means a row on/before the supplied boundary;
+// empty BACKWARD pages: next means a row on/after the supplied boundary.
+// Without a boundary, an empty selection has both flags false.
+// Each response uses one snapshot; separate requests read live data.
+message PageInfo {
+  bool has_next_page = 1;
+  bool has_previous_page = 2;
+}
+
 message ListFindingsRequest {
   FindingFilter filter = 1;
   int32 page_size = 2;
@@ -301,6 +320,10 @@ message ListFindingsRequest {
   // When present, both field and direction are required.
   FindingOrderBy order_by = 4;
   WorkloadSelector workload_selector = 5;
+  // FORWARD: exclusive after page_token, or first page without a token.
+  // BACKWARD: exclusive before the same row cursor, or last page without a token.
+  // Returned rows always retain order_by presentation. Defaults to FORWARD.
+  PageDirection page_direction = 6;
 }
 
 message FindingOrderBy {
@@ -310,7 +333,7 @@ message FindingOrderBy {
   enum Field {
     FIELD_UNSPECIFIED = 0;
     // DESC: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN.
-    // ASC: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN.
+    // ASC: UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL.
     // Ties: vulnerability ID ASC, then environment, team, workload and purl ASC.
     FIELD_SEVERITY = 1;
     // Ties: environment, team, workload and purl ASC.
@@ -327,15 +350,22 @@ message FindingOrderBy {
 message ListFindingsResponse {
   // Ordered according to order_by, or the documented default when omitted.
   repeated Finding findings = 1;
+  // Forward continuation from the last returned row when has_next_page is true.
+  // Empty on empty pages. For backward continuation use cursors[0] with BACKWARD
+  // when has_previous_page is true.
   string next_page_token = 2;
   // One cursor per finding, in the same order. Each can be used as page_token
-  // to continue after that finding, including when it is no longer present.
+  // for exclusive after/FORWARD or before/BACKWARD, even after deletion.
   // Opaque, versioned and bound to the normalized filter and order, not page_size.
-  // Incompatible/legacy cursors or changed filters/orders return InvalidArgument;
+  // Traversal direction is not bound. Old severity-ASC cursors are incompatible;
+  // unchanged v1 orders remain supported. Changed filters/orders return InvalidArgument;
   // restart without a token. Pages use live data, not a cross-request snapshot.
   repeated string cursors = 3;
   // Full filtered selection, independent of cursor, page size and ordering.
   repeated PackageTypeCount package_type_counts = 4;
+  // Always present. Start/end cursors are the first/last entries in cursors;
+  // both are absent on empty pages, never replaced by the request boundary.
+  PageInfo page_info = 5;
 }
 
 message PackageTypeCount {
@@ -351,6 +381,8 @@ message ListVulnerabilitiesRequest {
   // Omitted means severity DESC. When present, both fields are required.
   VulnerabilityOrderBy order_by = 4;
   WorkloadSelector workload_selector = 5;
+  // Same exclusive traversal and no-token first/last semantics as ListFindings.
+  PageDirection page_direction = 6;
 }
 
 message VulnerabilityOrderBy {
@@ -360,7 +392,7 @@ message VulnerabilityOrderBy {
   enum Field {
     FIELD_UNSPECIFIED = 0;
     // DESC: CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN.
-    // ASC: LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN.
+    // ASC: UNKNOWN, LOW, MEDIUM, HIGH, CRITICAL.
     FIELD_SEVERITY = 1;
     // Bytewise, case-sensitive PostgreSQL COLLATE "C", not natural/numeric ordering.
     FIELD_VULNERABILITY_ID = 2;
@@ -387,14 +419,20 @@ message VulnerabilitySummary {
 message ListVulnerabilitiesResponse {
   // Severity/count ties use canonical ID ASC with COLLATE "C".
   repeated VulnerabilitySummary vulnerabilities = 1;
+  // Forward continuation from the last row, independent of page_direction.
+  // Empty on empty pages; backward continuation uses cursors[0] and PageInfo.
   string next_page_token = 2;
   // One opaque, versioned cursor per row, including the last page. Bound to the
-  // effective filter/order, not page size; works after the boundary row disappears.
+  // effective filter/selection/order, not page size or traversal direction.
+  // Supports exclusive after/FORWARD and before/BACKWARD after boundary deletion.
+  // Old severity-ASC cursors require restart; unchanged v1 orders are supported.
   // Invalid/incompatible tokens or changed filter/order give InvalidArgument:
   // restart without a token. Pages are live data, not a snapshot between calls.
   repeated string cursors = 3;
   // All unique canonical IDs after filtering, before cursor/LIMIT, even on empty pages.
   int64 total_count = 4;
+  // Always present; start/end cursors come from cursors, absent on empty pages.
+  PageInfo page_info = 5;
 }
 
 message CountFindingsRequest {
@@ -557,15 +595,26 @@ message ListSuppressionsRequest {
   string environment = 6;
   // Requires team and environment.
   string workload = 7;
+  // FORWARD: exclusive after page_token, or first page without a token.
+  // BACKWARD: exclusive before the same cursor, or last page without a token.
+  // Presentation remains the fixed ascending suppression-key order.
+  PageDirection page_direction = 9;
 }
 
 message ListSuppressionsResponse {
   // Ordered by team, environment, workload, image name, package key and vulnerability ID.
   repeated Suppression suppressions = 1;
+  // Forward continuation from the last row, independent of page_direction.
+  // Empty on empty pages; backward continuation uses cursors[0] and PageInfo.
   string next_page_token = 2;
   // One cursor per suppression, in the same order. Each can be used as page_token
-  // to continue after that suppression, including when it has been deleted.
+  // for exclusive after/FORWARD or before/BACKWARD, even after deletion.
+  // Bound to normalized scope/filter and fixed ordering, not size or traversal.
+  // Old unbound cursors and changed filters return InvalidArgument; restart
+  // without a token. Separate requests read live data, not a shared snapshot.
   repeated string cursors = 3;
+  // Always present; start/end cursors come from cursors, absent on empty pages.
+  PageInfo page_info = 4;
 }
 
 message ForwardV13sSuppressionRequest {

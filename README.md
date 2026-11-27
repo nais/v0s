@@ -130,8 +130,9 @@ availability errors still apply, including for empty selections.
 Continue with the same scope/filter/order/selector and the returned token.
 Reordering or duplicating references is equivalent; changing the identity set,
 including adding/removing an unknown reference, returns `InvalidArgument`.
-Restart without a token after an actual selection change. No selector means
-existing cursor bytes and compatibility are preserved. Plain `ListWorkloads`
+Restart without a token after an actual selection change. Omitting the selector
+preserves existing cursor bytes for unchanged orders (see severity-ASC compatibility
+below). Plain `ListWorkloads`
 with a selector uses a separate versioned, scope/selection-bound cursor; it
 cannot be mixed with unselected legacy cursors or overview cursors. Deleting a
 boundary workload does not invalidate continuation with the same selector.
@@ -150,8 +151,11 @@ workloads after them, as well as transport-level rejection over 4 MiB.
 Without `order_by`, `ListFindings` retains its existing order: environment,
 team, workload name, vulnerability ID and purl, all ascending. Explicit ordering
 supports severity or vulnerability ID in either direction, in SQL before LIMIT.
-Severity DESC is CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN; ASC is LOW, MEDIUM,
-HIGH, CRITICAL, UNKNOWN. UNKNOWN is always last. Severity ties use vulnerability
+Severity DESC is CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN; ASC is UNKNOWN, LOW,
+MEDIUM, HIGH, CRITICAL. Previously ASC was LOW, MEDIUM, HIGH, CRITICAL, UNKNOWN.
+The single semantic rank is UNKNOWN=0, LOW=1,
+MEDIUM=2, HIGH=3, CRITICAL=4; ASC and DESC reverse the severity field exactly.
+UNKNOWN is first in ASC and last in DESC. Severity ties use vulnerability
 ID ascending. Remaining ties, including for ID ordering, use environment, team,
 workload name and purl ascending.
 
@@ -177,8 +181,9 @@ grpcurl -plaintext -d '{
 }' localhost:50051 v0s.v1.VulnerabilityService/ListFindings
 ```
 
-An empty `nextPageToken` means there is no next page. Each entry in `cursors`
-can also be used to continue after its corresponding finding, even if that
+On a nonempty page, an empty `nextPageToken` means there is no next page.
+For empty-page existence use `page_info` as documented below. Each entry in `cursors`
+can also be used to continue after or before its corresponding finding, even if that
 finding has since been deleted. Cursors are opaque and versioned, bound to the
 normalized filter and ordering, but not page size. Equivalent list permutations,
 duplicates, package-type case, purl spellings and omitted/default filter values
@@ -186,6 +191,10 @@ are normalized. Replacing an alias with its canonical vulnerability ID is still
 a filter change. Changed filters/orders and legacy or incompatible cursors return
 `InvalidArgument`; restart without a token. When `orderBy` is present, both field
 and direction must be valid and specified.
+
+Old severity-ASC cursors are rejected because UNKNOWN moved from last to first;
+restart without a token. Other existing v1 finding orders/cursor bytes remain
+compatible, including severity DESC. New severity-ASC cursors use version 2.
 
 Each request reads live data; there is no snapshot across requests. Changes to
 sort values can move findings between pages. Package-type facets always cover
@@ -215,7 +224,7 @@ Sorting, grouping, counts and pagination happen in SQL. `VulnerabilityOrderBy`
 supports `FIELD_SEVERITY`, `FIELD_VULNERABILITY_ID` and
 `FIELD_AFFECTED_WORKLOAD_COUNT`, each with `DIRECTION_ASC` or `DIRECTION_DESC`.
 Omitting `orderBy` defaults to severity DESC. Severity orders are the same as
-above, with UNKNOWN always last. Severity/count ties use canonical ID ASC.
+above, with UNKNOWN first in ASC and last in DESC. Severity/count ties use canonical ID ASC.
 All identifier ordering and seek comparisons use PostgreSQL `COLLATE "C"`:
 bytewise, case-sensitive lexical order, **not** natural/numeric CVE order
 (`CVE-10` sorts before `CVE-2` in ASC).
@@ -247,7 +256,194 @@ restart without a token. Finding cursors and overview cursors are not interchang
 Requests use live data, not a snapshot between calls: updates to severity or
 workload counts can move rows, and totals can change. A loaded KEV catalog is
 required only when filtering on KEV; otherwise this overview has no KEV dependency.
-Existing `ListFindings` behavior is unchanged.
+Finding listing remains a separate operation with the same pagination semantics.
+
+### Bidirectional pagination and PageInfo
+
+`ListFindings`, `ListVulnerabilities` and `ListSuppressions` share
+`page_size`, `page_token` and `page_direction`. These are backend keyset
+parameters, not offset pagination. Size defaults to 100 for non-positive values
+and is capped at 1000. `page_direction` is separate from `order_by.direction`:
+
+| Request | Selection |
+|---|---|
+| Direction omitted/UNSPECIFIED/FORWARD, no token | First page |
+| FORWARD, row token | Nearest rows exclusively **after** the boundary |
+| BACKWARD, no token | Last page |
+| BACKWARD, same row token | Nearest rows exclusively **before** the boundary |
+
+Unknown direction enum values are `InvalidArgument`. SQL reverses every search
+ordering term, including tie-breakers, for BACKWARD, fetches at most size+1 rows,
+and returns the bounded page in the original presentation order. Do not invert
+`order_by.direction` or reverse returned rows to request a previous page.
+
+Every response from a supporting server contains `page_info`. For a nonempty
+page, `has_previous_page` means at least one matching row exists before its first
+row, and `has_next_page` means at least one exists after its last row, in the
+full filtered selection. These meanings do not depend on traversal direction.
+Start/end cursors are already available as the first/last entries in `cursors`;
+there are no redundant start/end response fields.
+
+`next_page_token` retains its forward meaning: the last returned row's cursor
+when `has_next_page` is true, otherwise empty. To continue BACKWARD, use the
+first returned cursor with BACKWARD when `has_previous_page` is true.
+
+Empty pages have no row cursors or `next_page_token`; GraphQL start/end cursors
+are null, never the submitted boundary. Their flags describe the boundary:
+
+- Empty FORWARD/after: next=false; previous is true if any matching row exists
+  **on or before** the supplied boundary.
+- Empty BACKWARD/before: previous=false; next is true if any matching row exists
+  **on or after** the supplied boundary.
+- Empty selection without a boundary: both false.
+- A deleted boundary contributes no row, but its stored ordering values still
+  define the seek. If the whole selection disappears, both flags are false.
+
+Pages, boundary-existence checks and existing totals/facets share one read-only
+repeatable-read snapshot per request. Separate requests remain live, not a
+snapshot: rows can disappear or change sort values and full-selection totals
+can change. An existence flag does not guarantee a nonempty later request.
+Pagination never narrows `package_type_counts`, `total_count`, or the counts
+inside vulnerability summaries.
+
+Cursor bindings include the effective scope, workloadSelector when supported,
+normalized filter and presentation order, but exclude size and traversal.
+Changing direction with the same row cursor is valid; changing the selection
+or order is `InvalidArgument`. Normalized set permutations/duplicates remain
+equivalent; substituting an alias with its canonical ID remains a filter change.
+
+Compatibility:
+
+- Findings and vulnerability overview retain existing v1 cursors for unchanged
+  orders. Severity ASC requires restart; new cursors for that order are v2.
+- Suppressions now have versioned, operation/scope/filter/order-bound cursors.
+  Old unbound suppression cursors cannot prove their selection and are rejected
+  with a restart instruction. The fixed presentation remains team, environment,
+  workload, image name, package key, vulnerability ID, all ASC.
+- Cursors from different operations are not interchangeable. Boundary-row
+  deletion does not invalidate an otherwise compatible cursor.
+- Existing forward clients can omit `page_direction` and ignore `page_info`.
+  Their per-row and next-token continuation remains unchanged, except the
+  documented severity-ASC order and required cursor restarts.
+
+For example, to return to the preceding finding page, keep the same filter,
+selector and order, and use the first cursor from the current page:
+
+```sh
+grpcurl -plaintext -d '{
+  "filter": {"team": "my-team"},
+  "orderBy": {"field": "FIELD_SEVERITY", "direction": "DIRECTION_DESC"},
+  "pageSize": 2,
+  "pageToken": "<first cursor from the current page>",
+  "pageDirection": "PAGE_DIRECTION_BACKWARD"
+}' localhost:50051 v0s.v1.VulnerabilityService/ListFindings
+```
+
+#### nais/api integration example
+
+nais/api currently wraps the v0s token in its selection-bound `pageCursor`.
+Continue decoding/validating that wrapper; only its `Token` drives the backend
+seek. The wrapper's `Offset` is display bookkeeping, not a database offset or
+a guaranteed rank across live requests.
+
+The following adaptation belongs in nais/api's v0s adapter, **not** its
+offset-based `pagination.ParsePage`. It illustrates `ListVulnerabilities`,
+whose current adapter keeps every returned row. `backendToken` is the decoded
+`pageCursor.Token` from after/before (empty if no boundary), and `size` has passed
+the API's existing positive-size/max-200 validation. Reject conflicting
+first/last, first/before, last/after, or simultaneous after/before.
+
+```go
+request := &protoapi.ListVulnerabilitiesRequest{
+    Filter: filter, WorkloadSelector: selector, OrderBy: order,
+}
+data, err := proto.Marshal(request)
+if err != nil {
+    return nil, fmt.Errorf("encode vulnerability selection: %w", err)
+}
+selection := selectionKey("vulnerability-overview", workloadBinding+string(data))
+
+request.PageSize = int32(size)
+request.PageToken = backendToken
+request.PageDirection = protoapi.PageDirection_PAGE_DIRECTION_FORWARD
+if last != nil || before != nil {
+    request.PageDirection = protoapi.PageDirection_PAGE_DIRECTION_BACKWARD
+}
+resp, err := client.ListVulnerabilities(ctx, request)
+if err != nil {
+    return nil, backendError("list v0s vulnerability overview", err)
+}
+if resp.GetPageInfo() == nil || len(resp.GetCursors()) != len(resp.GetVulnerabilities()) {
+    return nil, fmt.Errorf("v0s bidirectional pagination is not available")
+}
+```
+
+Compute/validate `selection` **before** adding pagination parameters: direction,
+size and token must not enter the API wrapper's selection fingerprint. Thus
+`first=n, after=edge` maps to FORWARD/size=n/token=edge.Token;
+`last=n, before=edge` maps to BACKWARD/size=n/token=the same edge.Token.
+BACKWARD without a token also supports last-page retrieval if nais/api chooses
+to expose it; global display positions cannot be inferred from keyset alone.
+
+Build edges in response order, retaining the existing GraphQL wrapper format.
+Here `displayStart` is the adapter's display bookkeeping (for before, boundary
+display offset minus the actual returned row count; not an absolute live rank):
+
+```go
+edges := make([]pagination.Edge[*protoapi.VulnerabilitySummary], 0, len(resp.GetVulnerabilities()))
+for i, row := range resp.GetVulnerabilities() {
+    token := resp.GetCursors()[i]
+    if token == "" {
+        return nil, fmt.Errorf("v0s returned an empty row cursor")
+    }
+    position := displayStart + i
+    data, err := json.Marshal(pageCursor{
+        Version: 1, Selection: selection, Token: token, Offset: position,
+    })
+    if err != nil {
+        return nil, fmt.Errorf("encode vulnerability cursor: %w", err)
+    }
+    edges = append(edges, pagination.Edge[*protoapi.VulnerabilitySummary]{
+        Node: row,
+        Cursor: pagination.Cursor{
+            Keyset: base64.RawURLEncoding.EncodeToString(data), Offset: position,
+        },
+    })
+}
+info := pagination.PageInfo{
+    HasNextPage: resp.GetPageInfo().GetHasNextPage(),
+    HasPreviousPage: resp.GetPageInfo().GetHasPreviousPage(),
+    TotalCount: int(resp.GetTotalCount()),
+}
+if len(edges) > 0 {
+    info.StartCursor = &edges[0].Cursor
+    info.EndCursor = &edges[len(edges)-1].Cursor
+}
+```
+
+No extra API-side size+1 request is needed for this unfiltered mapping: v0s
+already probes continuation. Preserve existing count loaders/full-selection
+facets for the other connections. Use the same request mapping for findings
+and suppressions, with their existing scope/filter fields.
+
+**Inventory post-filtering matters.** Today's nais/api `readPage` can discard
+findings with obsolete images and suppressions absent from inventory. Backend
+flags describe the backend selection, not this stricter API selection. A direct
+copy is correct only when every row is retained. When retaining the keep-predicate,
+the future adapter must refill bounded pages in the requested direction:
+end cursor/FORWARD for after, first cursor/BACKWARD for before. Prepend preceding
+chunks without reversing their presentation order. For exact PageInfo, probe
+both outside edges with the same predicate until a retained row is found or the
+backend boundary is exhausted; empty pages use the original request boundary.
+Such directional keyset checks are not fetching previous pages to simulate
+backward pagination. Never derive existence from the presence of after/before
+or a stored display offset. Inventory churn still follows live-data semantics.
+This adapter work and its tests belong in a separate nais/api change.
+
+Adoption requires a new generated client release. Follow the existing
+`api/v*` automatic minor-release policy after approved main integration; do not
+manually publish or merge to main without explicit permission. Then update
+nais/api's `github.com/nais/v0s/api` dependency to that published module version.
 
 ### Workload overview
 

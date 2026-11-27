@@ -33,11 +33,18 @@ func (s *Server) ListVulnerabilities(ctx context.Context, req *v0sv1.ListVulnera
 			return nil, invalidArgument("order_by.direction is required and must be valid")
 		}
 	}
-	list, err := s.db.ListVulnerabilities(ctx, filter, page(req.GetPageSize(), req.GetPageToken()), order)
+	p, err := directedPage(req.GetPageSize(), req.GetPageToken(), req.GetPageDirection())
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.db.ListVulnerabilities(ctx, filter, p, order)
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
-	resp := &v0sv1.ListVulnerabilitiesResponse{NextPageToken: list.NextPageToken, Cursors: list.Cursors, TotalCount: list.TotalCount}
+	resp := &v0sv1.ListVulnerabilitiesResponse{
+		NextPageToken: list.NextPageToken, Cursors: list.Cursors, TotalCount: list.TotalCount,
+		PageInfo: pageInfoToProto(list.PageInfo),
+	}
 	for _, v := range list.Vulnerabilities {
 		resp.Vulnerabilities = append(resp.Vulnerabilities, &v0sv1.VulnerabilitySummary{
 			VulnerabilityId: v.VulnerabilityID, Severity: severityToProto(v.Severity),
