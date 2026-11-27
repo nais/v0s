@@ -40,7 +40,7 @@ func vulnerabilityOrders() []struct {
 		want  []string
 	}{
 		{"default", database.VulnerabilityOrder{}, []string{"B", "D", "F", "E", "C", "A"}},
-		{"severity ASC", database.VulnerabilityOrder{Field: database.VulnerabilityOrderSeverity, Direction: database.FindingOrderASC}, []string{"C", "E", "D", "F", "B", "A"}},
+		{"severity ASC", database.VulnerabilityOrder{Field: database.VulnerabilityOrderSeverity, Direction: database.FindingOrderASC}, []string{"A", "C", "E", "D", "F", "B"}},
 		{"severity DESC", database.VulnerabilityOrder{Field: database.VulnerabilityOrderSeverity, Direction: database.FindingOrderDESC}, []string{"B", "D", "F", "E", "C", "A"}},
 		{"ID ASC", database.VulnerabilityOrder{Field: database.VulnerabilityOrderID, Direction: database.FindingOrderASC}, []string{"A", "B", "C", "D", "E", "F"}},
 		{"ID DESC", database.VulnerabilityOrder{Field: database.VulnerabilityOrderID, Direction: database.FindingOrderDESC}, []string{"F", "E", "D", "C", "B", "A"}},
@@ -98,6 +98,32 @@ func TestListVulnerabilitiesOrdering(t *testing.T) {
 					t.Fatalf("cursor %d: %+v", i, list)
 				}
 			}
+		})
+	}
+}
+
+func TestListVulnerabilitiesBidirectionalPagination(t *testing.T) {
+	db := newVulnerabilityFixture(t)
+	for _, tt := range vulnerabilityOrders() {
+		t.Run(tt.name, func(t *testing.T) {
+			all, err := db.ListVulnerabilities(t.Context(), database.FindingFilter{}, database.Page{}, tt.order)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertBidirectionalPages(t, all.Vulnerabilities, all.Cursors, func(page database.Page) ([]database.VulnerabilitySummary, []string, string, database.PageInfo, error) {
+				list, err := db.ListVulnerabilities(t.Context(), database.FindingFilter{}, page, tt.order)
+				if err == nil && list.TotalCount != all.TotalCount {
+					t.Fatalf("page changed total: %+v", list)
+				}
+				return list.Vulnerabilities, list.Cursors, list.NextPageToken, list.PageInfo, err
+			})
+			assertBidirectionalPages(t, []database.VulnerabilitySummary{}, nil, func(page database.Page) ([]database.VulnerabilitySummary, []string, string, database.PageInfo, error) {
+				list, err := db.ListVulnerabilities(t.Context(), database.FindingFilter{PackageType: "missing"}, page, tt.order)
+				if list.TotalCount != 0 {
+					t.Fatal("empty selection has nonzero total")
+				}
+				return list.Vulnerabilities, list.Cursors, list.NextPageToken, list.PageInfo, err
+			})
 		})
 	}
 }
@@ -177,6 +203,10 @@ func TestListVulnerabilitiesCursorDeletion(t *testing.T) {
 			if !slices.Equal(vulnerabilityIDs(list.Vulnerabilities), tt.want[3:]) || list.TotalCount != 5 {
 				t.Fatalf("after deleting %s: %+v", boundary, list)
 			}
+			before, err := db.ListVulnerabilities(t.Context(), database.FindingFilter{}, database.Page{Token: all.Cursors[2], Direction: database.PageBackward}, tt.order)
+			if err != nil || !slices.Equal(vulnerabilityIDs(before.Vulnerabilities), tt.want[:2]) || before.TotalCount != 5 {
+				t.Fatalf("before deleted %s: %+v, %v", boundary, before, err)
+			}
 		})
 	}
 }
@@ -194,8 +224,11 @@ func TestListVulnerabilitiesCursorBinding(t *testing.T) {
 		{VulnerabilityIDs: []string{"B"}}, {Severities: []v0s.Severity{v0s.SeverityCritical}},
 		{HasFix: true}, {OnlyKnownExploited: true}, {Suppressed: database.SuppressedInclude},
 	} {
-		if _, err := db.ListVulnerabilities(t.Context(), filter, page, database.VulnerabilityOrder{}); !errors.Is(err, database.ErrInvalid) || !strings.Contains(err.Error(), "filter or order") {
-			t.Errorf("changed filter %+v: %v", filter, err)
+		for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+			page.Direction = direction
+			if _, err := db.ListVulnerabilities(t.Context(), filter, page, database.VulnerabilityOrder{}); !errors.Is(err, database.ErrInvalid) || !strings.Contains(err.Error(), "filter or order") {
+				t.Errorf("changed filter %+v: %v", filter, err)
+			}
 		}
 	}
 	for _, tt := range vulnerabilityOrders()[1:] {
@@ -207,8 +240,10 @@ func TestListVulnerabilitiesCursorBinding(t *testing.T) {
 			if other.order == tt.order {
 				continue
 			}
-			if _, err := db.ListVulnerabilities(t.Context(), database.FindingFilter{}, database.Page{Token: source.Cursors[0]}, other.order); !errors.Is(err, database.ErrInvalid) {
-				t.Errorf("changed %s to %s: %v", tt.name, other.name, err)
+			for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+				if _, err := db.ListVulnerabilities(t.Context(), database.FindingFilter{}, database.Page{Token: source.Cursors[0], Direction: direction}, other.order); !errors.Is(err, database.ErrInvalid) {
+					t.Errorf("changed %s to %s: %v", tt.name, other.name, err)
+				}
 			}
 		}
 	}
@@ -258,7 +293,7 @@ func TestListVulnerabilitiesCursorBinding(t *testing.T) {
 			}
 		}
 		invalid := map[string][]any{
-			"version": {0, 2}, "operation": {"findings", ""}, "id": {""},
+			"version": {0, 99}, "operation": {"findings", ""}, "id": {""},
 		}
 		if tt.order.Field == database.VulnerabilityOrderSeverity {
 			invalid["severity"] = []any{"", "INVALID"}

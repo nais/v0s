@@ -78,12 +78,12 @@ func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter
 	if err != nil {
 		return WorkloadOverviewList{}, err
 	}
-	rank := (FindingOrder{Direction: FindingOrderDESC}).severityRank("f.severity")
+	rank := severityRank("f.severity")
 	query := `WITH selected AS (
 		SELECT w.* FROM workloads w WHERE ` + selected + `
 	), per_vulnerability AS (
 		SELECT w.environment, w.team, w.name, f.vulnerability_id,
-			count(*) AS findings, min(` + rank + `) AS severity_rank, bool_or(k.cve IS NOT NULL) AS kev
+			count(*) AS findings, max(` + rank + `) AS severity_rank, bool_or(k.cve IS NOT NULL) AS kev
 		FROM ` + findingsFrom + `
 		LEFT JOIN kev k ON k.cve = f.vulnerability_id
 		WHERE ` + and(where) + `
@@ -91,11 +91,11 @@ func (db *DB) ListWorkloadOverview(ctx context.Context, selection WorkloadFilter
 	), counts AS (
 		SELECT environment, team, name, sum(findings)::bigint AS finding_count,
 			count(*) AS unique_count, count(*) FILTER (WHERE kev) AS kev_count,
-			count(*) FILTER (WHERE severity_rank = 0) AS critical,
-			count(*) FILTER (WHERE severity_rank = 1) AS high,
+			count(*) FILTER (WHERE severity_rank = 4) AS critical,
+			count(*) FILTER (WHERE severity_rank = 3) AS high,
 			count(*) FILTER (WHERE severity_rank = 2) AS medium,
-			count(*) FILTER (WHERE severity_rank = 3) AS low,
-			count(*) FILTER (WHERE severity_rank = 4) AS unknown
+			count(*) FILTER (WHERE severity_rank = 1) AS low,
+			count(*) FILTER (WHERE severity_rank = 0) AS unknown
 		FROM per_vulnerability GROUP BY environment, team, name
 	), overview AS (
 		SELECT w.*, coalesce(c.finding_count, 0) AS finding_count,

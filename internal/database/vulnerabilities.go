@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/nais/v0s/internal/v0s"
@@ -44,6 +45,7 @@ type VulnerabilityList struct {
 	NextPageToken   string
 	Cursors         []string
 	TotalCount      int64
+	PageInfo        PageInfo
 }
 
 type vulnerabilityCursor struct {
@@ -56,7 +58,7 @@ type vulnerabilityCursor struct {
 }
 
 func (c vulnerabilityCursor) validate(binding string, order VulnerabilityOrder) error {
-	if c.Version != 1 || c.Operation != "vulnerabilities" {
+	if c.Version != order.cursorVersion() || c.Operation != "vulnerabilities" {
 		return fmt.Errorf("incompatible vulnerability cursor; restart pagination without a token: %w", ErrInvalid)
 	}
 	if c.Binding != binding {
@@ -78,44 +80,42 @@ func (c vulnerabilityCursor) validate(binding string, order VulnerabilityOrder) 
 	return nil
 }
 
-func (o VulnerabilityOrder) sql() string {
+func (o VulnerabilityOrder) cursorVersion() int {
+	if o.Field == VulnerabilityOrderSeverity && o.Direction == FindingOrderASC {
+		return 2
+	}
+	return 1
+}
+
+func (o VulnerabilityOrder) keyset() keysetOrder {
+	id := keysetTerm{column: `id COLLATE "C"`}
+	desc := o.Direction == FindingOrderDESC
 	switch o.Field {
 	case VulnerabilityOrderSeverity:
-		return (FindingOrder{Direction: o.Direction}).severityRank("severity") + `, id COLLATE "C"`
+		return keysetOrder{{severityRank("severity"), desc}, id}
 	case VulnerabilityOrderWorkloads:
-		direction := "ASC"
-		if o.Direction == FindingOrderDESC {
-			direction = "DESC"
-		}
-		return "workloads " + direction + `, id COLLATE "C"`
+		return keysetOrder{{"workloads", desc}, id}
 	default:
-		if o.Direction == FindingOrderDESC {
-			return `id COLLATE "C" DESC`
-		}
-		return `id COLLATE "C"`
+		id.desc = desc
+		return keysetOrder{id}
 	}
 }
 
-func (o VulnerabilityOrder) after(c vulnerabilityCursor, args *sqlArgs) string {
-	id := args.add(c.ID)
-	op := ">"
-	if o.Direction == FindingOrderDESC {
-		op = "<"
-	}
+func (c vulnerabilityCursor) values(o VulnerabilityOrder) []any {
 	switch o.Field {
 	case VulnerabilityOrderSeverity:
-		rank := FindingOrder{Direction: o.Direction}
-		return fmt.Sprintf(`(%s, id COLLATE "C") > (%s, %s::text COLLATE "C")`,
-			rank.severityRank("severity"), rank.severityRank(args.add(string(c.Severity))+"::text"), id)
+		return []any{severityValue(c.Severity), c.ID}
 	case VulnerabilityOrderWorkloads:
-		count := args.add(*c.Workloads)
-		return fmt.Sprintf(`(workloads %s %s OR (workloads = %s AND id COLLATE "C" > %s::text COLLATE "C"))`, op, count, count, id)
+		return []any{*c.Workloads, c.ID}
 	default:
-		return fmt.Sprintf(`id COLLATE "C" %s %s::text COLLATE "C"`, op, id)
+		return []any{c.ID}
 	}
 }
 
 func (db *DB) ListVulnerabilities(ctx context.Context, filter FindingFilter, page Page, order VulnerabilityOrder) (VulnerabilityList, error) {
+	if err := page.validate(); err != nil {
+		return VulnerabilityList{}, err
+	}
 	order, err := order.effective()
 	if err != nil {
 		return VulnerabilityList{}, err
@@ -142,16 +142,11 @@ func (db *DB) ListVulnerabilities(ctx context.Context, filter FindingFilter, pag
 	if err != nil {
 		return VulnerabilityList{}, err
 	}
-	if filter.OnlyKnownExploited {
-		if err := db.requireKEVCatalog(ctx); err != nil {
-			return VulnerabilityList{}, err
-		}
-	}
-	rank := (FindingOrder{Direction: FindingOrderDESC}).severityRank("f.severity")
+	rank := severityRank("f.severity")
 	grouped := `WITH grouped AS (
 		SELECT f.vulnerability_id AS id,
-			CASE min(` + rank + `) WHEN 0 THEN 'CRITICAL' WHEN 1 THEN 'HIGH'
-				WHEN 2 THEN 'MEDIUM' WHEN 3 THEN 'LOW' ELSE 'UNKNOWN' END AS severity,
+			CASE max(` + rank + `) WHEN 4 THEN 'CRITICAL' WHEN 3 THEN 'HIGH'
+				WHEN 2 THEN 'MEDIUM' WHEN 1 THEN 'LOW' ELSE 'UNKNOWN' END AS severity,
 			count(*) AS findings, count(DISTINCT (w.environment, w.team, w.name)) AS workloads
 		FROM ` + findingsFrom + ` WHERE ` + and(where) + `
 		GROUP BY f.vulnerability_id
@@ -161,16 +156,23 @@ func (db *DB) ListVulnerabilities(ctx context.Context, filter FindingFilter, pag
 		return VulnerabilityList{}, fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if filter.OnlyKnownExploited {
+		if err := requireKEVCatalog(ctx, tx); err != nil {
+			return VulnerabilityList{}, err
+		}
+	}
 	var result VulnerabilityList
 	if err := tx.QueryRow(ctx, grouped+`SELECT count(*) FROM grouped`, args...).Scan(&result.TotalCount); err != nil {
 		return VulnerabilityList{}, fmt.Errorf("counting vulnerabilities: %w", err)
 	}
+	countArgs := slices.Clone(args)
+	searchOrder := order.keyset()
 	seek := "true"
 	if page.Token != "" {
-		seek = order.after(cursor, &args)
+		seek = searchOrder.seek(cursor.values(order), &args, page.Direction == PageBackward, false)
 	}
 	rows, err := tx.Query(ctx, grouped+`SELECT id, severity, findings, workloads FROM grouped WHERE `+seek+
-		` ORDER BY `+order.sql()+` LIMIT `+args.add(page.limit()+1), args...)
+		` ORDER BY `+searchOrder.sql(page.Direction == PageBackward)+` LIMIT `+args.add(page.limit()+1), args...)
 	if err != nil {
 		return VulnerabilityList{}, fmt.Errorf("listing vulnerabilities: %w", err)
 	}
@@ -186,22 +188,44 @@ func (db *DB) ListVulnerabilities(ctx context.Context, filter FindingFilter, pag
 	if hasNext {
 		result.Vulnerabilities = result.Vulnerabilities[:page.limit()]
 	}
+	if page.Direction == PageBackward {
+		slices.Reverse(result.Vulnerabilities)
+	}
 	for _, v := range result.Vulnerabilities {
-		c := vulnerabilityCursor{Version: 1, Operation: "vulnerabilities", Binding: binding, ID: v.VulnerabilityID}
-		if order.Field == VulnerabilityOrderSeverity {
-			c.Severity = v.Severity
-		}
-		if order.Field == VulnerabilityOrderWorkloads {
-			c.Workloads = &v.AffectedWorkloadCount
-		}
-		token, err := encodePageToken(c)
+		token, err := encodePageToken(newVulnerabilityCursor(v, binding, order))
 		if err != nil {
 			return VulnerabilityList{}, err
 		}
 		result.Cursors = append(result.Cursors, token)
 	}
-	if hasNext {
+	var edge []any
+	if len(result.Vulnerabilities) > 0 {
+		index := 0
+		if page.Direction == PageBackward {
+			index = len(result.Vulnerabilities) - 1
+		}
+		edge = newVulnerabilityCursor(result.Vulnerabilities[index], binding, order).values(order)
+	} else if page.Token != "" {
+		edge = cursor.values(order)
+	}
+	result.PageInfo, err = keysetPageInfo(ctx, tx, grouped+"SELECT EXISTS (SELECT 1 FROM grouped WHERE ",
+		countArgs, searchOrder, page, edge, len(result.Vulnerabilities) == 0, hasNext)
+	if err != nil {
+		return VulnerabilityList{}, err
+	}
+	if result.PageInfo.HasNextPage && len(result.Cursors) > 0 {
 		result.NextPageToken = result.Cursors[len(result.Cursors)-1]
 	}
 	return result, nil
+}
+
+func newVulnerabilityCursor(v VulnerabilitySummary, binding string, order VulnerabilityOrder) vulnerabilityCursor {
+	c := vulnerabilityCursor{Version: order.cursorVersion(), Operation: "vulnerabilities", Binding: binding, ID: v.VulnerabilityID}
+	if order.Field == VulnerabilityOrderSeverity {
+		c.Severity = v.Severity
+	}
+	if order.Field == VulnerabilityOrderWorkloads {
+		c.Workloads = &v.AffectedWorkloadCount
+	}
+	return c
 }

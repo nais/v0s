@@ -129,7 +129,8 @@ remaining findings.
 
 Finding ordering and its keyset boundary are applied in SQL before LIMIT.
 Omitting `order_by` preserves environment/team/workload/vulnerability-ID/purl
-ascending order. Explicit severity ordering always places UNKNOWN last, with
+ascending order. Explicit severity ordering uses UNKNOWN=0, LOW=1, MEDIUM=2,
+HIGH=3, CRITICAL=4, ASC or DESC. UNKNOWN is first in ASC and last in DESC, with
 vulnerability ID ascending within a severity. Explicit vulnerability-ID ordering
 supports both directions. Both explicit modes use environment/team/workload/purl
 ascending to break remaining ties.
@@ -139,7 +140,9 @@ the boundary's ordering values. They require no lookup of the boundary finding,
 so deletion does not prevent continuation. They are generated once per returned
 finding, including on the last page. Legacy/incompatible versions and changed
 filters/orders are `InvalidArgument`, requiring a restart without a token.
-Page size is not bound. Filters normalize set-valued lists, package type and
+Page size and traversal direction are not bound. Old severity-ASC v1 cursors
+require restart because UNKNOWN moved to first; other v1 orders remain compatible.
+Filters normalize set-valued lists, package type and
 purl spelling; alias-to-ID substitutions remain filter changes. There is no
 cross-request snapshot: concurrent changes to sort values can move findings.
 See the [gRPC continuation example](../README.md#finding-ordering-and-pagination).
@@ -153,7 +156,8 @@ without multiplying occurrences. No advisory data is copied into summaries;
 `GetVulnerability` remains the detail endpoint.
 
 SQL applies keyset seek, sorting and LIMIT after aggregation. The default is
-severity DESC, with UNKNOWN last in either direction. Additional sorts are
+severity DESC. The single semantic rank is reversed by ASC/DESC, including
+UNKNOWN. Additional sorts are
 canonical ID and affected workload count, ASC/DESC; severity/count ties use ID
 ASC. Identifier ordering and seek use bytewise, case-sensitive `COLLATE "C"`,
 not natural numeric order. A separate count of the filtered groups, in the same
@@ -167,6 +171,35 @@ There is no snapshot across requests: group severity/count changes can move rows
 and totals may change. KEV availability is checked only when the KEV filter is
 active, since summaries do not expose KEV membership. See the
 [overview contract and example](../README.md#vulnerability-overview).
+
+All three list operations, including `ListSuppressions`, support a separate
+`page_direction`: default/FORWARD seeks exclusively after `page_token`;
+BACKWARD seeks exclusively before the same row token. Without a token they
+select the first/last page. Backward SQL reverses every ordering term and seek
+comparison, including tie-breakers; only the size-bounded result is reversed
+back to presentation order. SQL fetches at most size+1 rows.
+
+The extra row establishes existence in the search direction; a limited EXISTS
+query establishes the opposite side. Both flags are returned in an always-present
+`page_info` message. Nonempty-page flags describe rows before the first/after the
+last returned row in the full filtered selection. Empty after-pages probe rows
+on/before the supplied boundary; empty before-pages probe rows on/after it.
+Start/end are derived from the first/last row cursor and absent on empty pages.
+`next_page_token` keeps its forward meaning; backward continuation uses the first
+row cursor and has_previous_page. Counts, facets, page and probes use one
+read-only repeatable-read transaction, including suppression reads.
+
+Suppression cursors now bind operation/version, normalized scope/filter and the
+fixed ascending full suppression key. All ordering values are stored, so deleted
+boundaries still work. Old unbound cursors are rejected with a restart instruction.
+No selector or orderBy is added to suppression requests. Existing assessment
+writes and stored data are unchanged.
+
+Severity aggregation uses the maximum of the same rank: UNKNOWN only when all
+matching severities are UNKNOWN. Vulnerability summaries, workload counts and
+GetSummary retain their existing aggregate values; only severity-ASC presentation
+changes. See [bidirectional semantics and nais/api mapping](../README.md#bidirectional-pagination-and-pageinfo)
+for empty-page details, cursor compatibility and inventory post-filtering caveats.
 
 `ListWorkloads` has an additive, opt-in `overview` message rather than a parallel
 RPC. Without it, the response has no KEV dependency and the legacy read path

@@ -2,7 +2,9 @@ package database_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,7 +65,7 @@ func findingOrderCases() []struct {
 		ids   string
 	}{
 		{"default", database.FindingOrder{}, "ABCDEF"},
-		{"severity ASC", database.FindingOrder{Field: database.FindingOrderSeverity, Direction: database.FindingOrderASC}, "CEDFBA"},
+		{"severity ASC", database.FindingOrder{Field: database.FindingOrderSeverity, Direction: database.FindingOrderASC}, "ACEDFB"},
 		{"severity DESC", database.FindingOrder{Field: database.FindingOrderSeverity, Direction: database.FindingOrderDESC}, "BDFECA"},
 		{"identifier ASC", database.FindingOrder{Field: database.FindingOrderVulnerabilityID, Direction: database.FindingOrderASC}, "ABCDEF"},
 		{"identifier DESC", database.FindingOrder{Field: database.FindingOrderVulnerabilityID, Direction: database.FindingOrderDESC}, "FEDCBA"},
@@ -143,6 +145,210 @@ func TestFindingOrdering(t *testing.T) {
 	}
 }
 
+func assertBidirectionalPages[T any](t *testing.T, all []T, cursors []string,
+	fetch func(database.Page) ([]T, []string, string, database.PageInfo, error),
+) {
+	t.Helper()
+	check := func(page database.Page, start, end int) ([]T, []string) {
+		t.Helper()
+		rows, tokens, next, info, err := fetch(page)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantInfo := database.PageInfo{HasPreviousPage: start > 0, HasNextPage: end < len(all)}
+		if start == end && page.Token != "" {
+			if page.Direction == database.PageBackward {
+				wantInfo = database.PageInfo{HasNextPage: true}
+			} else {
+				wantInfo = database.PageInfo{HasPreviousPage: true}
+			}
+		}
+		if !slices.EqualFunc(rows, all[start:end], func(a, b T) bool { return reflect.DeepEqual(a, b) }) ||
+			!slices.Equal(tokens, cursors[start:end]) || info != wantInfo {
+			t.Fatalf("page %+v: rows=%v cursors=%v info=%+v; want [%d:%d] info=%+v",
+				page, rows, tokens, info, start, end, wantInfo)
+		}
+		wantNext := ""
+		if end > start && info.HasNextPage {
+			wantNext = cursors[end-1]
+		}
+		if next != wantNext {
+			t.Fatalf("next=%q, want %q", next, wantNext)
+		}
+		return rows, tokens
+	}
+	for _, size := range []int{1, 3, len(all) + 1} {
+		check(database.Page{Size: size}, 0, min(size, len(all)))
+		check(database.Page{Size: size, Direction: database.PageBackward}, max(0, len(all)-size), len(all))
+		for i, cursor := range cursors {
+			check(database.Page{Size: size, Token: cursor}, i+1, min(len(all), i+1+size))
+			check(database.Page{Size: size, Token: cursor, Direction: database.PageBackward}, max(0, i-size), i)
+		}
+	}
+	if len(all) > 6 {
+		_, first := check(database.Page{Size: 3}, 0, 3)
+		_, second := check(database.Page{Size: 3, Token: first[2]}, 3, 6)
+		check(database.Page{Size: 3, Token: second[0], Direction: database.PageBackward}, 0, 3)
+	}
+	end := len(all)
+	page := database.Page{Size: 2, Direction: database.PageBackward}
+	for end > 0 {
+		start := max(0, end-page.Size)
+		_, tokens := check(page, start, end)
+		page.Token = tokens[0]
+		end = start
+	}
+}
+
+func TestFindingBidirectionalPagination(t *testing.T) {
+	db := newOrderingFixture(t)
+	filter := database.FindingFilter{Selector: &database.WorkloadSelector{Workloads: []database.WorkloadRef{
+		{Environment: "e1", Team: "a", Name: "app"},
+		{Environment: "e1", Team: "a", Name: "worker"},
+		{Environment: "e1", Team: "b", Name: "app"},
+		{Environment: "e2", Team: "a", Name: "app"},
+	}}}
+	for _, tt := range findingOrderCases() {
+		t.Run(tt.name, func(t *testing.T) {
+			all, err := db.ListFindings(t.Context(), filter, database.Page{}, tt.order)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertBidirectionalPages(t, all.Findings, all.Cursors, func(page database.Page) ([]database.WorkloadFinding, []string, string, database.PageInfo, error) {
+				list, err := db.ListFindings(t.Context(), filter, page, tt.order)
+				if err == nil && !slices.Equal(list.PackageTypeCounts, all.PackageTypeCounts) {
+					t.Fatalf("page changed full-selection facets: %+v", list)
+				}
+				return list.Findings, list.Cursors, list.NextPageToken, list.PageInfo, err
+			})
+			emptyFilter := database.FindingFilter{Selector: &database.WorkloadSelector{}}
+			assertBidirectionalPages(t, []database.WorkloadFinding{}, nil, func(page database.Page) ([]database.WorkloadFinding, []string, string, database.PageInfo, error) {
+				list, err := db.ListFindings(t.Context(), emptyFilter, page, tt.order)
+				if len(list.PackageTypeCounts) != 0 {
+					t.Fatal("empty selection has facets")
+				}
+				return list.Findings, list.Cursors, list.NextPageToken, list.PageInfo, err
+			})
+		})
+	}
+}
+
+func TestPaginationCursorCompatibility(t *testing.T) {
+	db := newOrderingFixture(t)
+	legacyBinding := func(order any) string {
+		t.Helper()
+		data, err := json.Marshal(struct {
+			Filter database.FindingFilter
+			Order  any
+		}{database.FindingFilter{}, order})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(data)
+		return hex.EncodeToString(sum[:])
+	}
+	for _, tt := range findingOrderCases() {
+		token := encodeCursor(t, map[string]any{
+			"version": 1, "binding": legacyBinding(tt.order),
+			"e": "e1", "t": "a", "w": "app", "v": "A", "p": "pkg:maven/a@1", "s": "UNKNOWN",
+		})
+		for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+			_, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: token, Direction: direction}, tt.order)
+			changed := tt.order.Field == database.FindingOrderSeverity && tt.order.Direction == database.FindingOrderASC
+			if changed && !errors.Is(err, database.ErrInvalid) || !changed && err != nil {
+				t.Fatalf("legacy finding %s direction %v: %v", tt.name, direction, err)
+			}
+		}
+	}
+	for _, tt := range vulnerabilityOrders() {
+		order := tt.order
+		if order == (database.VulnerabilityOrder{}) {
+			order = database.VulnerabilityOrder{Field: database.VulnerabilityOrderSeverity, Direction: database.FindingOrderDESC}
+		}
+		token := encodeCursor(t, map[string]any{
+			"version": 1, "operation": "vulnerabilities", "binding": legacyBinding(order),
+			"id": "A", "severity": "UNKNOWN", "workloads": 4,
+		})
+		for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+			_, err := db.ListVulnerabilities(t.Context(), database.FindingFilter{}, database.Page{Token: token, Direction: direction}, tt.order)
+			changed := order.Field == database.VulnerabilityOrderSeverity && order.Direction == database.FindingOrderASC
+			if changed && !errors.Is(err, database.ErrInvalid) || !changed && err != nil {
+				t.Fatalf("legacy overview %s direction %v: %v", tt.name, direction, err)
+			}
+		}
+	}
+}
+
+func TestPaginationDeletedOnlyBoundary(t *testing.T) {
+	db := newOrderingFixture(t)
+	exec(t, db, `INSERT INTO suppressions (team, environment, workload, image_name, package_key, vulnerability_id, state, detail, updated_by)
+		VALUES ('a', 'e1', 'app', 'repo/app', 'pkg:maven/a', 'A', 'accepted_risk', 'assessed', 'user')`)
+	filter := database.FindingFilter{Teams: []string{"a"}, Environment: "e1", Workload: "app",
+		VulnerabilityIDs: []string{"A"}, Suppressed: database.SuppressedInclude}
+	findings, err := db.ListFindings(t.Context(), filter, database.Page{}, database.FindingOrder{})
+	if err != nil || len(findings.Cursors) != 1 {
+		t.Fatalf("finding boundary: %+v, %v", findings, err)
+	}
+	vulnerabilities, err := db.ListVulnerabilities(t.Context(), filter, database.Page{}, database.VulnerabilityOrder{})
+	if err != nil || len(vulnerabilities.Cursors) != 1 {
+		t.Fatalf("overview boundary: %+v, %v", vulnerabilities, err)
+	}
+	suppressionFilter := database.SuppressionFilter{Teams: []string{"a"}, Environment: "e1", Workload: "app"}
+	suppressions, err := db.ListSuppressions(t.Context(), suppressionFilter, database.Page{})
+	if err != nil || len(suppressions.Cursors) != 1 {
+		t.Fatalf("suppression boundary: %+v, %v", suppressions, err)
+	}
+	exec(t, db, `DELETE FROM findings WHERE vulnerability_id='A'; DELETE FROM suppressions`)
+	for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+		f, err := db.ListFindings(t.Context(), filter, database.Page{Token: findings.Cursors[0], Direction: direction}, database.FindingOrder{})
+		if err != nil || len(f.Findings) != 0 || len(f.PackageTypeCounts) != 0 || f.PageInfo != (database.PageInfo{}) {
+			t.Fatalf("deleted last finding: %+v, %v", f, err)
+		}
+		v, err := db.ListVulnerabilities(t.Context(), filter, database.Page{Token: vulnerabilities.Cursors[0], Direction: direction}, database.VulnerabilityOrder{})
+		if err != nil || len(v.Vulnerabilities) != 0 || v.TotalCount != 0 || v.PageInfo != (database.PageInfo{}) {
+			t.Fatalf("deleted last overview: %+v, %v", v, err)
+		}
+		s, err := db.ListSuppressions(t.Context(), suppressionFilter, database.Page{Token: suppressions.Cursors[0], Direction: direction})
+		if err != nil || len(s.Suppressions) != 0 || s.PageInfo != (database.PageInfo{}) {
+			t.Fatalf("deleted last suppression: %+v, %v", s, err)
+		}
+	}
+}
+
+func TestBidirectionalSelectorBinding(t *testing.T) {
+	db := newOrderingFixture(t)
+	filter := database.FindingFilter{Selector: &database.WorkloadSelector{Workloads: []database.WorkloadRef{
+		{Environment: "e1", Team: "a", Name: "app"}, {Environment: "e1", Team: "a", Name: "worker"},
+	}}}
+	f, err := db.ListFindings(t.Context(), filter, database.Page{}, database.FindingOrder{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := db.ListVulnerabilities(t.Context(), filter, database.Page{}, database.VulnerabilityOrder{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered := database.FindingFilter{Selector: &database.WorkloadSelector{Workloads: []database.WorkloadRef{
+		filter.Selector.Workloads[1], filter.Selector.Workloads[0], filter.Selector.Workloads[0],
+	}}}
+	for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+		if _, err := db.ListFindings(t.Context(), reordered, database.Page{Token: f.Cursors[1], Direction: direction}, database.FindingOrder{}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.ListVulnerabilities(t.Context(), reordered, database.Page{Token: v.Cursors[1], Direction: direction}, database.VulnerabilityOrder{}); err != nil {
+			t.Fatal(err)
+		}
+		changed := database.FindingFilter{Selector: &database.WorkloadSelector{Workloads: append(slices.Clone(filter.Selector.Workloads),
+			database.WorkloadRef{Environment: "e1", Team: "a", Name: "missing"})}}
+		if _, err := db.ListFindings(t.Context(), changed, database.Page{Token: f.Cursors[1], Direction: direction}, database.FindingOrder{}); !errors.Is(err, database.ErrInvalid) {
+			t.Fatalf("changed selector finding: %v", err)
+		}
+		if _, err := db.ListVulnerabilities(t.Context(), changed, database.Page{Token: v.Cursors[1], Direction: direction}, database.VulnerabilityOrder{}); !errors.Is(err, database.ErrInvalid) {
+			t.Fatalf("changed selector overview: %v", err)
+		}
+	}
+}
+
 func TestFindingOrderingCursorDeletion(t *testing.T) {
 	for _, tt := range findingOrderCases() {
 		t.Run(tt.name, func(t *testing.T) {
@@ -151,22 +357,33 @@ func TestFindingOrderingCursorDeletion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			boundary := all.Findings[0]
+			index := len(all.Findings) / 2
+			boundary := all.Findings[index]
 			_, err = db.Pool().Exec(t.Context(), `DELETE FROM findings WHERE image_id=$1 AND vulnerability_id=$2 AND purl=$3`,
 				boundary.Image.ID, boundary.Finding.VulnerabilityID, boundary.Finding.PURL)
 			if err != nil {
 				t.Fatal(err)
 			}
 			var want []database.WorkloadFinding
-			for _, f := range all.Findings[1:] {
+			for _, f := range all.Findings[index+1:] {
 				if f.Image.ID == boundary.Image.ID && f.Finding.VulnerabilityID == boundary.Finding.VulnerabilityID && f.Finding.PURL == boundary.Finding.PURL {
 					continue
 				}
 				want = append(want, f)
 			}
-			resumed, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: all.Cursors[0]}, tt.order)
+			resumed, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: all.Cursors[index]}, tt.order)
 			if err != nil || !slices.Equal(orderedFindingKeys(resumed.Findings), orderedFindingKeys(want)) {
 				t.Fatalf("continuation after deletion = %v, %v; want %v", orderedFindingKeys(resumed.Findings), err, orderedFindingKeys(want))
+			}
+			want = nil
+			for _, f := range all.Findings[:index] {
+				if f.Image.ID != boundary.Image.ID || f.Finding.VulnerabilityID != boundary.Finding.VulnerabilityID || f.Finding.PURL != boundary.Finding.PURL {
+					want = append(want, f)
+				}
+			}
+			before, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: all.Cursors[index], Direction: database.PageBackward}, tt.order)
+			if err != nil || !slices.Equal(orderedFindingKeys(before.Findings), orderedFindingKeys(want)) {
+				t.Fatalf("continuation before deletion = %v, %v; want %v", orderedFindingKeys(before.Findings), err, orderedFindingKeys(want))
 			}
 		})
 	}
@@ -185,9 +402,12 @@ func TestFindingCursorBinding(t *testing.T) {
 		{Package: "pkg:npm/lodash"}, {PackageType: "npm"}, {Severities: []v0s.Severity{v0s.SeverityHigh}},
 		{HasFix: true}, {OnlyKnownExploited: true}, {Suppressed: database.SuppressedInclude},
 	}
-	for _, filter := range filters {
-		if _, err := db.ListFindings(t.Context(), filter, page, database.FindingOrder{}); !errors.Is(err, database.ErrInvalid) {
-			t.Errorf("changed filter %+v: %v", filter, err)
+	for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+		page.Direction = direction
+		for _, filter := range filters {
+			if _, err := db.ListFindings(t.Context(), filter, page, database.FindingOrder{}); !errors.Is(err, database.ErrInvalid) {
+				t.Errorf("changed filter %+v direction %v: %v", filter, direction, err)
+			}
 		}
 	}
 	for _, tt := range findingOrderCases()[1:] {
@@ -199,8 +419,10 @@ func TestFindingCursorBinding(t *testing.T) {
 			if other.order == tt.order {
 				continue
 			}
-			if _, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: ordered.Cursors[0]}, other.order); !errors.Is(err, database.ErrInvalid) {
-				t.Errorf("changed order %s to %s: %v", tt.name, other.name, err)
+			for _, direction := range []database.PageDirection{database.PageForward, database.PageBackward} {
+				if _, err := db.ListFindings(t.Context(), database.FindingFilter{}, database.Page{Token: ordered.Cursors[0], Direction: direction}, other.order); !errors.Is(err, database.ErrInvalid) {
+					t.Errorf("changed order %s to %s: %v", tt.name, other.name, err)
+				}
 			}
 		}
 	}

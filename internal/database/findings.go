@@ -30,12 +30,13 @@ const (
 	maxPageSize     = 1000
 )
 
-// Page selects one page of a listing. Token is the next-page token returned
-// with the previous page, or empty for the first page. Size defaults to 100
-// and is capped at 1000.
+// Page selects one page. Bidirectional listings seek exclusively after Token
+// by default, or before it with PageBackward; an empty token selects the
+// first/last page. Size defaults to 100 and is capped at 1000.
 type Page struct {
-	Size  int
-	Token string
+	Size      int
+	Token     string
+	Direction PageDirection
 }
 
 func (p Page) limit() int {
@@ -239,11 +240,15 @@ type FindingList struct {
 	PackageTypeCounts []FindingCount
 	NextPageToken     string
 	Cursors           []string
+	PageInfo          PageInfo
 }
 
 // ListFindings lists findings in the requested order, defaulting to environment,
 // team, workload, vulnerability and purl, with package type counts before pagination.
 func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page, order FindingOrder) (FindingList, error) {
+	if err := page.validate(); err != nil {
+		return FindingList{}, err
+	}
 	if err := order.validate(); err != nil {
 		return FindingList{}, err
 	}
@@ -273,8 +278,9 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page,
 	if err := db.requireKEVCatalog(ctx); err != nil {
 		return FindingList{}, err
 	}
+	searchOrder := order.keyset()
 	if page.Token != "" {
-		where = append(where, order.after(cursor, &args)...)
+		where = append(where, searchOrder.seek(cursor.values(order), &args, page.Direction == PageBackward, false))
 	}
 	limit := page.limit()
 
@@ -294,7 +300,7 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page,
 		LEFT JOIN epss e ON e.cve = f.vulnerability_id
 		LEFT JOIN kev k ON k.cve = f.vulnerability_id
 		WHERE `+and(where)+`
-		ORDER BY `+order.sql()+`
+		ORDER BY `+searchOrder.sql(page.Direction == PageBackward)+`
 		LIMIT `+args.add(limit+1), args...)
 	if err != nil {
 		return FindingList{}, fmt.Errorf("listing findings: %w", err)
@@ -346,6 +352,9 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page,
 	if hasNext {
 		findings = findings[:limit]
 	}
+	if page.Direction == PageBackward {
+		slices.Reverse(findings)
+	}
 	cursors := make([]string, len(findings))
 	for i, f := range findings {
 		cursors[i], err = findingPageToken(f, binding, order)
@@ -353,14 +362,30 @@ func (db *DB) ListFindings(ctx context.Context, filter FindingFilter, page Page,
 			return FindingList{}, err
 		}
 	}
-	if hasNext {
+	var edge []any
+	if len(findings) > 0 {
+		index := 0
+		if page.Direction == PageBackward {
+			index = len(findings) - 1
+		}
+		edge = newFindingCursor(findings[index], binding, order).values(order)
+	} else if page.Token != "" {
+		edge = cursor.values(order)
+	}
+	info, err := keysetPageInfo(ctx, tx,
+		"SELECT EXISTS (SELECT 1 FROM "+findingsFrom+" WHERE "+and(countWhere)+" AND ",
+		countArgs, searchOrder, page, edge, len(findings) == 0, hasNext)
+	if err != nil {
+		return FindingList{}, err
+	}
+	if info.HasNextPage && len(cursors) > 0 {
 		next = cursors[len(cursors)-1]
 	}
 	counts, err := countFindings(ctx, tx, GroupByPackageType, countWhere, countArgs)
 	if err != nil {
 		return FindingList{}, err
 	}
-	return FindingList{Findings: findings, PackageTypeCounts: counts, NextPageToken: next, Cursors: cursors}, nil
+	return FindingList{Findings: findings, PackageTypeCounts: counts, NextPageToken: next, Cursors: cursors, PageInfo: info}, nil
 }
 
 // epssScan reads e.score and e.date from a LEFT JOIN.

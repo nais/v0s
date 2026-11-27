@@ -43,7 +43,7 @@ func (db *DB) GetSummary(ctx context.Context, selection WorkloadFilter, filter F
 	if err != nil {
 		return Summary{}, err
 	}
-	rank := (FindingOrder{Direction: FindingOrderDESC}).severityRank("f.severity")
+	rank := severityRank("f.severity")
 	query := `WITH selected AS (
 		SELECT CASE
 			WHEN i.id IS NULL THEN 'unresolved'
@@ -61,17 +61,17 @@ func (db *DB) GetSummary(ctx context.Context, selection WorkloadFilter, filter F
 		FROM ` + findingsFrom + ` LEFT JOIN kev k ON k.cve = f.vulnerability_id
 		WHERE ` + and(where) + `
 	), per_vulnerability AS (
-		SELECT vulnerability_id, count(*) AS findings, min(severity_rank) AS severity_rank,
+		SELECT vulnerability_id, count(*) AS findings, max(severity_rank) AS severity_rank,
 			bool_or(kev) AS kev
 		FROM matching GROUP BY vulnerability_id
 	), finding_totals AS (
 		SELECT coalesce(sum(findings), 0)::bigint AS finding_count, count(*) AS unique_count,
 			count(*) FILTER (WHERE kev) AS kev_count,
-			count(*) FILTER (WHERE severity_rank = 0) AS critical,
-			count(*) FILTER (WHERE severity_rank = 1) AS high,
+			count(*) FILTER (WHERE severity_rank = 4) AS critical,
+			count(*) FILTER (WHERE severity_rank = 3) AS high,
 			count(*) FILTER (WHERE severity_rank = 2) AS medium,
-			count(*) FILTER (WHERE severity_rank = 3) AS low,
-			count(*) FILTER (WHERE severity_rank = 4) AS unknown
+			count(*) FILTER (WHERE severity_rank = 1) AS low,
+			count(*) FILTER (WHERE severity_rank = 0) AS unknown
 		FROM per_vulnerability
 	), workload_totals AS (
 		SELECT count(DISTINCT (environment, team, name)) AS affected_count,

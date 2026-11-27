@@ -54,20 +54,17 @@ func (s *Server) ListSuppressions(ctx context.Context, req *v0sv1.ListSuppressio
 		ImageName:       req.GetImageName(),
 		VulnerabilityID: req.GetVulnerabilityId(),
 	}
-	suppressions, next, err := s.db.ListSuppressions(ctx, filter, page(req.GetPageSize(), req.GetPageToken()))
+	p, err := directedPage(req.GetPageSize(), req.GetPageToken(), req.GetPageDirection())
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.db.ListSuppressions(ctx, filter, p)
 	if err != nil {
 		return nil, s.toStatus(ctx, err)
 	}
 	resp := &v0sv1.ListSuppressionsResponse{
-		Suppressions: suppressionsToProto(suppressions), NextPageToken: next,
-		Cursors: make([]string, 0, len(suppressions)),
-	}
-	for _, suppression := range suppressions {
-		cursor, err := suppression.PageToken()
-		if err != nil {
-			return nil, s.toStatus(ctx, err)
-		}
-		resp.Cursors = append(resp.Cursors, cursor)
+		Suppressions: suppressionsToProto(list.Suppressions), NextPageToken: list.NextPageToken,
+		Cursors: list.Cursors, PageInfo: pageInfoToProto(list.PageInfo),
 	}
 	return resp, nil
 }

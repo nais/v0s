@@ -99,9 +99,9 @@ func findingBinding(filter FindingFilter, order FindingOrder) (string, error) {
 	return queryBinding(filter, order)
 }
 
-func queryBinding(filter FindingFilter, order any) (string, error) {
+func queryBinding(filter any, order any) (string, error) {
 	b, err := json.Marshal(struct {
-		Filter FindingFilter
+		Filter any
 		Order  any
 	}{filter, order})
 	if err != nil {
@@ -123,7 +123,7 @@ type findingCursor struct {
 }
 
 func (c findingCursor) validate(binding string, order FindingOrder) error {
-	if c.Version != 1 {
+	if c.Version != order.cursorVersion() {
 		return fmt.Errorf("incompatible finding cursor version; restart pagination without a token: %w", ErrInvalid)
 	}
 	if c.Binding != binding {
@@ -142,64 +142,77 @@ func (c findingCursor) validate(binding string, order FindingOrder) error {
 	return nil
 }
 
-func findingPageToken(f WorkloadFinding, binding string, order FindingOrder) (string, error) {
+func (o FindingOrder) cursorVersion() int {
+	if o.Field == FindingOrderSeverity && o.Direction == FindingOrderASC {
+		return 2
+	}
+	return 1
+}
+
+func newFindingCursor(f WorkloadFinding, binding string, order FindingOrder) findingCursor {
 	cursor := findingCursor{
-		Version: 1, Binding: binding,
+		Version: order.cursorVersion(), Binding: binding,
 		Environment: f.Workload.Environment, Team: f.Workload.Team, Workload: f.Workload.Name,
 		VulnerabilityID: f.Finding.VulnerabilityID, PURL: f.Finding.PURL,
 	}
 	if order.Field == FindingOrderSeverity {
 		cursor.Severity = f.Finding.Severity
 	}
-	return encodePageToken(cursor)
+	return cursor
 }
 
-func (o FindingOrder) severityRank(column string) string {
-	values := []string{"LOW", "MEDIUM", "HIGH", "CRITICAL"}
-	if o.Direction == FindingOrderDESC {
-		slices.Reverse(values)
-	}
+func findingPageToken(f WorkloadFinding, binding string, order FindingOrder) (string, error) {
+	return encodePageToken(newFindingCursor(f, binding, order))
+}
+
+func severityRank(column string) string {
+	values := []string{"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
 	sql := "CASE " + column
-	for rank, severity := range values {
-		sql += fmt.Sprintf(" WHEN '%s' THEN %d", severity, rank)
+	for _, severity := range values {
+		sql += fmt.Sprintf(" WHEN '%s' THEN %d", severity, severityValue(v0s.Severity(severity)))
 	}
-	return sql + " ELSE 4 END"
+	return sql + " ELSE 0 END"
 }
 
-func (o FindingOrder) sql() string {
+func (o FindingOrder) keyset() keysetOrder {
+	env := keysetTerm{column: "w.environment"}
+	team := keysetTerm{column: "w.team"}
+	workload := keysetTerm{column: "w.name"}
+	id := keysetTerm{column: "f.vulnerability_id"}
+	pkg := keysetTerm{column: "f.purl"}
 	switch o.Field {
 	case FindingOrderSeverity:
-		return o.severityRank("f.severity") + ", f.vulnerability_id, w.environment, w.team, w.name, f.purl"
+		return keysetOrder{{severityRank("f.severity"), o.Direction == FindingOrderDESC}, id, env, team, workload, pkg}
 	case FindingOrderVulnerabilityID:
-		direction := "ASC"
-		if o.Direction == FindingOrderDESC {
-			direction = "DESC"
-		}
-		return "f.vulnerability_id " + direction + ", w.environment, w.team, w.name, f.purl"
+		id.desc = o.Direction == FindingOrderDESC
+		return keysetOrder{id, env, team, workload, pkg}
 	default:
-		return "w.environment, w.team, w.name, f.vulnerability_id, f.purl"
+		return keysetOrder{env, team, workload, id, pkg}
 	}
 }
 
-func (o FindingOrder) after(c findingCursor, args *sqlArgs) []string {
-	env, team, workload := args.add(c.Environment), args.add(c.Team), args.add(c.Workload)
-	id, pkg := args.add(c.VulnerabilityID), args.add(c.PURL)
+func (c findingCursor) values(o FindingOrder) []any {
 	switch o.Field {
 	case FindingOrderSeverity:
-		return []string{fmt.Sprintf("(%s, f.vulnerability_id, w.environment, w.team, w.name, f.purl) > (%s, %s, %s, %s, %s, %s)",
-			o.severityRank("f.severity"), o.severityRank(args.add(string(c.Severity))+"::text"), id, env, team, workload, pkg)}
+		return []any{severityValue(c.Severity), c.VulnerabilityID, c.Environment, c.Team, c.Workload, c.PURL}
 	case FindingOrderVulnerabilityID:
-		op := ">"
-		if o.Direction == FindingOrderDESC {
-			op = "<"
-		}
-		return []string{fmt.Sprintf("(f.vulnerability_id %s %s OR (f.vulnerability_id = %s AND (w.environment, w.team, w.name, f.purl) > (%s, %s, %s, %s)))",
-			op, id, id, env, team, workload, pkg)}
+		return []any{c.VulnerabilityID, c.Environment, c.Team, c.Workload, c.PURL}
 	default:
-		return []string{
-			fmt.Sprintf("(w.environment, w.team, w.name) >= (%s, %s, %s)", env, team, workload),
-			fmt.Sprintf("((w.environment, w.team, w.name) <> (%s, %s, %s) OR (f.vulnerability_id, f.purl) > (%s, %s))",
-				env, team, workload, id, pkg),
-		}
+		return []any{c.Environment, c.Team, c.Workload, c.VulnerabilityID, c.PURL}
+	}
+}
+
+func severityValue(severity v0s.Severity) int {
+	switch severity {
+	case v0s.SeverityLow:
+		return 1
+	case v0s.SeverityMedium:
+		return 2
+	case v0s.SeverityHigh:
+		return 3
+	case v0s.SeverityCritical:
+		return 4
+	default:
+		return 0
 	}
 }
