@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -36,6 +37,9 @@ const (
 	retryFailed    = 30 * time.Minute
 	retryLoop      = 5 * time.Minute
 )
+
+// emailAddress matches email addresses, which verification errors can contain as the signer.
+var emailAddress = regexp.MustCompile(`[^\s\[\]@/:]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+`)
 
 // Inventory reports the workload images in each environment.
 type Inventory interface {
@@ -183,11 +187,12 @@ func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image, timeout time.D
 	switch {
 	case errors.Is(err, attest.ErrNotFound):
 		r.Metrics.fetches.WithLabelValues("not_found").Inc()
-		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMMissing, err.Error(), time.Now().Add(retryMissing))
+		r.Log.With("image", img.Ref(), "err", err).Info("no trusted SBOM attestation")
+		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMMissing, redactEmails(err), time.Now().Add(retryMissing))
 	case err != nil:
 		r.Metrics.fetches.WithLabelValues("error").Inc()
 		r.Log.With("image", img.Ref(), "err", err).Warn("fetching SBOM")
-		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMFailed, err.Error(), time.Now().Add(retryFailed))
+		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMFailed, redactEmails(err), time.Now().Add(retryFailed))
 	default:
 		r.Metrics.fetches.WithLabelValues("found").Inc()
 		err = r.DB.StoreSBOM(ctx, img.ID, doc)
@@ -196,6 +201,10 @@ func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image, timeout time.D
 		return fmt.Errorf("recording SBOM fetch of %s: %w", img.Ref(), err)
 	}
 	return nil
+}
+
+func redactEmails(err error) string {
+	return emailAddress.ReplaceAllString(err.Error(), "<email>")
 }
 
 // scan drains images not yet scanned with the loaded DB, one at a time.
