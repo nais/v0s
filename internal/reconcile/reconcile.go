@@ -32,7 +32,7 @@ const (
 	enrichInterval = 24 * time.Hour
 	fetchBatch     = 16
 	fetchTimeout   = 2 * time.Minute
-	retryMissing   = 6 * time.Hour
+	retryMissing   = 30 * time.Minute
 	retryFailed    = 30 * time.Minute
 	retryLoop      = 5 * time.Minute
 

@@ -159,7 +159,7 @@ func TestFetchFailureRetryPolicy(t *testing.T) {
 	}{
 		{
 			"missing", fmt.Errorf("%w: got subjects [ola.nordmann@nav.no]", attest.ErrNotFound),
-			v0s.SBOMMissing, retryMissing, missingMessage,
+			v0s.SBOMMissing, 30 * time.Minute, missingMessage,
 		},
 		{"transport", errors.New("registry unavailable"), v0s.SBOMFailed, retryFailed, "registry unavailable"},
 	} {
@@ -195,6 +195,13 @@ func TestFetchFailureRetryPolicy(t *testing.T) {
 			}
 			if msg != tc.msg {
 				t.Errorf("error = %q, want %q", msg, tc.msg)
+			}
+			due, err := db.DueSBOMFetches(ctx, 10)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(due) != 0 {
+				t.Fatalf("images due immediately after failure: %v", due)
 			}
 		})
 	}
