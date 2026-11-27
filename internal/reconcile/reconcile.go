@@ -39,7 +39,7 @@ const (
 )
 
 // emailAddress matches email addresses, which verification errors can contain as the signer.
-var emailAddress = regexp.MustCompile(`[^\s\[\]@/:]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+`)
+var emailAddress = regexp.MustCompile(`[^\s\[\]@:]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)+`)
 
 // Inventory reports the workload images in each environment.
 type Inventory interface {

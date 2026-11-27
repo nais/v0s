@@ -205,8 +205,9 @@ func TestFetchFailureRetryPolicy(t *testing.T) {
 func TestRedactEmails(t *testing.T) {
 	for in, want := range map[string]string{
 		"got subjects [ola.nordmann@nav.no] with issuer https://accounts.google.com": "got subjects [<email>] with issuer https://accounts.google.com",
+		"got subjects [ola.nordmann/sbom@nav.no]":                                    "got subjects [<email>]",
 		"https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main":    "https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main",
-		"registry/app@sha256:abc": "registry/app@sha256:abc",
+		"registry/app@sha256:abc":                                                    "registry/app@sha256:abc",
 	} {
 		if got := redactEmails(errors.New(in)); got != want {
 			t.Errorf("redactEmails(%q) = %q, want %q", in, got, want)
