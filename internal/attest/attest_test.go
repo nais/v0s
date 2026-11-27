@@ -203,8 +203,6 @@ func TestEmailSignersIdentity(t *testing.T) {
 	}
 }
 
-// TestNewFetcherTrustsEmailSignersOnlyWithDomains checks that email signers are optional: without
-// domains, an invalid issuer is ignored and only the GitHub identity is trusted.
 func TestNewFetcherTrustsEmailSignersOnlyWithDomains(t *testing.T) {
 	f, err := NewFetcher(t.Context(), []string{"nais"}, EmailSigners{Issuer: "not a URL"}, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -222,10 +220,6 @@ type signedStatement struct {
 	subject, issuer, statement string
 }
 
-// TestFetchBundleIdentities verifies real bundle-format attestations from a virtual Sigstore
-// instance, stored as OCI referrers in an in-memory registry, as cosign v3 attaches them. Cosign
-// verifies bundles against one identity at a time, so this covers each configured identity alone
-// and SBOM and provenance signed by different identities.
 func TestFetchBundleIdentities(t *testing.T) {
 	vs, err := ca.NewVirtualSigstore()
 	if err != nil {
@@ -298,7 +292,6 @@ func TestFetchBundleIdentities(t *testing.T) {
 	}
 }
 
-// pushImage pushes a random image to a new in-memory registry and returns its digest.
 func pushImage(t *testing.T) name.Digest {
 	t.Helper()
 	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
@@ -321,8 +314,6 @@ func pushImage(t *testing.T) name.Digest {
 	return tag.Context().Digest(h.String())
 }
 
-// attachBundle signs the statement in testdata/<s.statement>-statement.json, with its subject
-// rewritten to digest, and attaches it to digest as a Sigstore bundle referrer.
 func attachBundle(t *testing.T, vs *ca.VirtualSigstore, digest name.Digest, s signedStatement) {
 	t.Helper()
 	statement, err := os.ReadFile("testdata/" + s.statement + "-statement.json")
@@ -404,8 +395,6 @@ func attachBundle(t *testing.T, vs *ca.VirtualSigstore, digest name.Digest, s si
 	}
 }
 
-// legacyCheckOpts returns the options for verifying legacy-format attestations signed by a
-// virtual Sigstore instance, whose certificates have no SCTs.
 func legacyCheckOpts(t *testing.T, vs *ca.VirtualSigstore, identities ...cosign.Identity) *cosign.CheckOpts {
 	t.Helper()
 	f := &Fetcher{keychain: authn.DefaultKeychain, trustedRoot: vs, identities: identities, ignoreSCT: true}
@@ -414,9 +403,6 @@ func legacyCheckOpts(t *testing.T, vs *ca.VirtualSigstore, identities ...cosign.
 	return co
 }
 
-// TestCheckOptsAcceptLegacyEmailSigner verifies real legacy-format signatures from a virtual
-// Sigstore instance against the identities of a fetcher trusting GitHub organization nais and
-// email domain nav.no.
 func TestCheckOptsAcceptLegacyEmailSigner(t *testing.T) {
 	vs, err := ca.NewVirtualSigstore()
 	if err != nil {
