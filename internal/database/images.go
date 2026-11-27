@@ -12,7 +12,7 @@ import (
 )
 
 // imageColumns are the images columns scanned by imageScan, qualified with the alias i.
-const imageColumns = `i.id, i.name, i.digest, i.sbom_state, i.error, i.scanned_at, i.scanned_db_version`
+const imageColumns = `i.id, i.name, i.digest, i.sbom_state, i.error, i.error_code, i.scanned_at, i.scanned_db_version`
 
 // DueSBOMFetches returns up to limit images that are in use (referenced by workloads), not
 // fetched, and due (sbom_next_attempt_at <= now()), oldest due first. Only one caller at a time
@@ -56,7 +56,7 @@ func (db *DB) StoreSBOM(ctx context.Context, imageID int64, document []byte) err
 	}
 
 	if _, err := db.pool.Exec(ctx, `
-		UPDATE images SET sbom = $2, sbom_state = 'fetched', error = ''
+		UPDATE images SET sbom = $2, sbom_state = 'fetched', error = '', error_code = ''
 		WHERE id = $1 AND sbom IS NULL`,
 		imageID, buf.Bytes(),
 	); err != nil {
@@ -68,14 +68,18 @@ func (db *DB) StoreSBOM(ctx context.Context, imageID int64, document []byte) err
 // RecordSBOMFailure marks the image missing or failed with a message and the next attempt time.
 // An image whose SBOM has been fetched in the meantime is left alone.
 func (db *DB) RecordSBOMFailure(ctx context.Context, imageID int64, state v0s.SBOMState, msg string, retryAt time.Time) error {
+	return db.RecordSBOMFailureWithCode(ctx, imageID, state, msg, v0s.ImageErrorCodeUnspecified, retryAt)
+}
+
+func (db *DB) RecordSBOMFailureWithCode(ctx context.Context, imageID int64, state v0s.SBOMState, msg string, code v0s.ImageErrorCode, retryAt time.Time) error {
 	if state != v0s.SBOMMissing && state != v0s.SBOMFailed {
 		return fmt.Errorf("recording sbom failure: invalid state %q", state)
 	}
 	if _, err := db.pool.Exec(ctx, `
 		UPDATE images
-		SET sbom_state = $2, error = $3, sbom_next_attempt_at = $4
+		SET sbom_state = $2, error = $3, sbom_next_attempt_at = $4, error_code = $5
 		WHERE id = $1 AND sbom_state <> 'fetched'`,
-		imageID, string(state), msg, retryAt,
+		imageID, string(state), msg, retryAt, string(code),
 	); err != nil {
 		return fmt.Errorf("recording sbom failure: %w", err)
 	}

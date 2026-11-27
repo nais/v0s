@@ -107,7 +107,7 @@ func gunzip(b []byte) ([]byte, error) {
 // deleted, is left alone.
 func (db *DB) RecordScanFailure(ctx context.Context, imageID int64, dbVersion time.Time, msg string) error {
 	if _, err := db.pool.Exec(ctx, `
-		UPDATE images SET error = $3, scan_failed_db_version = $2, scan_attempts = 0
+		UPDATE images SET error = $3, error_code = '', scan_failed_db_version = $2, scan_attempts = 0
 		WHERE id = $1
 			AND (scanned_db_version IS NULL OR scanned_db_version < $2)
 			AND (scan_failed_db_version IS NULL OR scan_failed_db_version <= $2)`,
@@ -151,7 +151,7 @@ func (db *DB) StoreScan(ctx context.Context, imageID int64, dbVersion time.Time,
 
 		if _, err := tx.Exec(ctx, `
 			UPDATE images
-			SET scanned_db_version = $2, scanned_at = now(), error = '', scan_failed_db_version = NULL, scan_attempts = 0
+			SET scanned_db_version = $2, scanned_at = now(), error = '', error_code = '', scan_failed_db_version = NULL, scan_attempts = 0
 			WHERE id = $1`,
 			imageID, dbVersion,
 		); err != nil {

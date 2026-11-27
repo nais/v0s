@@ -79,13 +79,13 @@ func (a *sqlArgs) add(v any) string {
 
 // imageScan scans imageColumns. All are NULL when a LEFT JOIN found no image.
 type imageScan struct {
-	id                              pgtype.Int8
-	name, digest, sbomState, errMsg pgtype.Text
-	scannedAt, scannedDBVersion     pgtype.Timestamptz
+	id                                       pgtype.Int8
+	name, digest, sbomState, errMsg, errCode pgtype.Text
+	scannedAt, scannedDBVersion              pgtype.Timestamptz
 }
 
 func (s *imageScan) dest() []any {
-	return []any{&s.id, &s.name, &s.digest, &s.sbomState, &s.errMsg, &s.scannedAt, &s.scannedDBVersion}
+	return []any{&s.id, &s.name, &s.digest, &s.sbomState, &s.errMsg, &s.errCode, &s.scannedAt, &s.scannedDBVersion}
 }
 
 func (s *imageScan) found() bool { return s.id.Valid }
@@ -97,6 +97,7 @@ func (s *imageScan) image() v0s.Image {
 		Digest:           s.digest.String,
 		SBOMState:        v0s.SBOMState(s.sbomState.String),
 		Error:            s.errMsg.String,
+		ErrorCode:        v0s.ImageErrorCode(s.errCode.String),
 		ScannedAt:        s.scannedAt.Time,
 		ScannedDBVersion: s.scannedDBVersion.Time,
 	}

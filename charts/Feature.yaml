@@ -68,6 +68,12 @@ values:
     config:
       type: string_array
 
+  attestationIdentityRules:
+    displayName: Additional scoped attestation identities
+    description: Optional JSON array of exact issuer, subjectRegExp and non-empty repositories rules. Each rule grants signing trust within its repository paths. Empty by default.
+    config:
+      type: string
+
   networkPolicy.httpsHosts:
     displayName: Allowed HTTPS hosts
     description: Registries, redirects, Sigstore trust roots and vulnerability data sources used by v0s.

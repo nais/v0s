@@ -70,6 +70,11 @@ enum ImageStatus {
   IMAGE_STATUS_FAILED = 4;
 }
 
+enum ImageErrorCode {
+  IMAGE_ERROR_CODE_UNSPECIFIED = 0;
+  IMAGE_ERROR_CODE_ATTESTATION_REJECTED = 1;
+}
+
 enum SuppressionState {
   SUPPRESSION_STATE_UNSPECIFIED = 0;
   SUPPRESSION_STATE_NOT_AFFECTED = 1;
@@ -87,6 +92,8 @@ message Image {
   // vulnerability DB failed; its findings are still those of the last successful scan.
   string error = 9;
   google.protobuf.Timestamp scanned_at = 5;
+  // Safe classification of the last failure; unspecified for unclassified failures or no error.
+  ImageErrorCode error_code = 10;
 }
 
 message Workload {

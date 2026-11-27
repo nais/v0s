@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/nais/v0s/internal/attest"
+	"github.com/nais/v0s/internal/database"
 	"github.com/nais/v0s/internal/database/databasetest"
 	"github.com/nais/v0s/internal/v0s"
 	"github.com/prometheus/client_golang/prometheus"
@@ -73,8 +73,8 @@ func TestFetchTimeoutAllowsLaterBatches(t *testing.T) {
 	if err := conn.QueryRow(ctx, `SELECT sbom_state, error, sbom_next_attempt_at FROM images WHERE id = $1`, slow.ID).Scan(&state, &message, &retryAt); err != nil {
 		t.Fatal(err)
 	}
-	if state != string(v0s.SBOMFailed) || !strings.Contains(message, context.DeadlineExceeded.Error()) {
-		t.Errorf("timed-out image: state=%s, error=%q; want failed with deadline exceeded", state, message)
+	if state != string(v0s.SBOMFailed) || message != "Fetching SBOM failed" {
+		t.Errorf("timed-out image: state=%s, error=%q; want failed with safe fetch message", state, message)
 	}
 	if retryAt.Before(start.Add(retryFailed)) || retryAt.After(end.Add(retryFailed)) {
 		t.Errorf("retry at %s, want 30 minutes after failure", retryAt)
@@ -155,9 +155,13 @@ func TestFetchFailureRetryPolicy(t *testing.T) {
 		err   error
 		state v0s.SBOMState
 		retry time.Duration
+		code  v0s.ImageErrorCode
+		msg   string
 	}{
-		{"missing", attest.ErrNotFound, v0s.SBOMMissing, retryMissing},
-		{"transport", errors.New("registry unavailable"), v0s.SBOMFailed, retryFailed},
+		{"missing", fmt.Errorf("certificate-bearing details: %w", attest.ErrNotFound), v0s.SBOMMissing, retryMissing, v0s.ImageErrorCodeUnspecified, "No SBOM attestation was found"},
+		{"transport", errors.New("registry unavailable: -----BEGIN CERTIFICATE----- private diagnostic"), v0s.SBOMFailed, retryFailed, v0s.ImageErrorCodeUnspecified, "Fetching SBOM failed"},
+		{"rejected", fmt.Errorf("-----BEGIN CERTIFICATE----- private diagnostic: %w", attest.ErrRejected), v0s.SBOMFailed, retryFailed, v0s.ImageErrorCodeAttestationRejected, "SBOM attestation was rejected"},
+		{"rejected and missing", errors.Join(attest.ErrNotFound, attest.ErrRejected), v0s.SBOMFailed, retryFailed, v0s.ImageErrorCodeAttestationRejected, "SBOM attestation was rejected"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db, url := databasetest.NewWithURL(t)
@@ -181,13 +185,35 @@ func TestFetchFailureRetryPolicy(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer conn.Close(ctx)
-			var state string
+			var state, message string
+			var code v0s.ImageErrorCode
 			var retryAt time.Time
-			if err := conn.QueryRow(ctx, `SELECT sbom_state, sbom_next_attempt_at FROM images`).Scan(&state, &retryAt); err != nil {
+			if err := conn.QueryRow(ctx, `SELECT sbom_state, error, error_code, sbom_next_attempt_at FROM images`).Scan(&state, &message, &code, &retryAt); err != nil {
 				t.Fatal(err)
 			}
 			if state != string(tc.state) || retryAt.Before(start.Add(tc.retry)) || retryAt.After(end.Add(tc.retry)) {
 				t.Errorf("state=%s, retry=%s; want %s and retry after %s", state, retryAt, tc.state, tc.retry)
+			}
+			if message != tc.msg || code != tc.code {
+				t.Errorf("error=%q, code=%q; want safe message %q, code %q", message, code, tc.msg, tc.code)
+			}
+			if due, err := db.DueSBOMFetches(ctx, 10); err != nil || len(due) != 0 {
+				t.Fatalf("after failure due=%+v, err=%v; want backoff", due, err)
+			}
+			if _, err := conn.Exec(ctx, `UPDATE images SET sbom_next_attempt_at = now()`); err != nil {
+				t.Fatal(err)
+			}
+			r.Fetcher = fetcherFunc(func(context.Context, string) ([]byte, error) { return []byte("verified sbom"), nil })
+			if err := r.fetch(ctx); err != nil {
+				t.Fatal(err)
+			}
+			workloads, _, err := db.ListWorkloads(ctx, database.WorkloadFilter{}, database.Page{})
+			if err != nil || len(workloads) != 1 {
+				t.Fatalf("retried workloads=%+v, err=%v", workloads, err)
+			}
+			img := workloads[0].Image
+			if img == nil || img.SBOMState != v0s.SBOMFetched || img.Error != "" || img.ErrorCode != v0s.ImageErrorCodeUnspecified {
+				t.Errorf("retried image=%+v; want fetched without error or code", img)
 			}
 		})
 	}

@@ -19,13 +19,19 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
+	registryempty "github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/google"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	registrystatic "github.com/google/go-containerregistry/pkg/v1/static"
+	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/sigstore/cosign/v3/pkg/cosign"
 	cbundle "github.com/sigstore/cosign/v3/pkg/cosign/bundle"
 	"github.com/sigstore/cosign/v3/pkg/oci"
 	"github.com/sigstore/cosign/v3/pkg/oci/empty"
 	"github.com/sigstore/cosign/v3/pkg/oci/mutate"
+	ociremote "github.com/sigstore/cosign/v3/pkg/oci/remote"
 	"github.com/sigstore/cosign/v3/pkg/oci/static"
 	"github.com/sigstore/sigstore-go/pkg/testing/ca"
 	"github.com/sigstore/sigstore-go/pkg/tlog"
@@ -244,6 +250,317 @@ func TestCheckOptsBindLegacyAttestationToImage(t *testing.T) {
 				t.Fatalf("VerifyImageAttestation(): %v", err)
 			}
 		})
+	}
+}
+
+func TestScopedIdentityVerification(t *testing.T) {
+	vs, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement, err := os.ReadFile("testdata/cyclonedx-statement.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rules, err := ParseIdentityRules(`[{"issuer":"https://accounts.google.com","subjectRegExp":"[a-zA-Z0-9._%+-]+@nav\\.no","repositories":["ghcr.io/navikt"]}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, format := range []string{"bundle", "legacy"} {
+		t.Run(format, func(t *testing.T) {
+			for _, tc := range []struct {
+				name, subject, issuer, repo, digest string
+				noRules                             bool
+				want                                error
+			}{
+				{name: "NAV", subject: "person@nav.no", issuer: "https://accounts.google.com"},
+				{name: "wrong issuer", subject: "person@nav.no", issuer: githubIssuer, want: ErrRejected},
+				{name: "wrong domain", subject: "person@example.com", issuer: "https://accounts.google.com", want: ErrRejected},
+				{name: "domain suffix", subject: "person@nav.no.evil", issuer: "https://accounts.google.com", want: ErrRejected},
+				{name: "wrong scope", subject: "person@nav.no", issuer: "https://accounts.google.com", repo: "ghcr.io/naviktx/app", want: ErrRejected},
+				{name: "other instance", subject: "person@nav.no", issuer: "https://accounts.google.com", noRules: true, want: ErrRejected},
+				{name: "wrong digest", subject: "person@nav.no", issuer: "https://accounts.google.com", digest: strings.Repeat("b", 64), want: ErrRejected},
+				{name: "CI unchanged", subject: "https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main", issuer: githubIssuer, noRules: true},
+				{name: "CI outside scope", subject: "https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main", issuer: githubIssuer, repo: "ghcr.io/other/app"},
+				{name: "no issuer subject cross product", subject: "https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main", issuer: "https://accounts.google.com", want: ErrRejected},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					entity, err := vs.Attest(tc.subject, tc.issuer, statement)
+					if err != nil {
+						t.Fatal(err)
+					}
+					c := candidate{bundle: entity}
+					if format == "legacy" {
+						sigs, err := legacyAttestations(t, vs, entity).Get()
+						if err != nil {
+							t.Fatal(err)
+						}
+						c = candidate{legacy: sigs[0]}
+					}
+					f := &Fetcher{log: slog.New(slog.DiscardHandler), trustedRoot: vs, identity: githubIdentity([]string{"nais"}), rules: rules}
+					if tc.noRules {
+						f.rules = nil
+					}
+					repo, digest := tc.repo, tc.digest
+					if repo == "" {
+						repo = "ghcr.io/navikt/app"
+					}
+					if digest == "" {
+						digest = strings.Repeat("a", 64)
+					}
+					ref, err := name.NewDigest(repo + "@sha256:" + digest)
+					if err != nil {
+						t.Fatal(err)
+					}
+					co := f.checkOpts(t.Context())
+					co.IgnoreSCT = true
+					doc, err := f.verifyCandidates(t.Context(), ref, []candidate{c}, co, nil)
+					if !errors.Is(err, tc.want) {
+						t.Fatalf("error=%v, want %v", err, tc.want)
+					}
+					if tc.want == nil && !bytes.Contains(doc, []byte(`"bomFormat"`)) {
+						t.Fatalf("not a CycloneDX predicate: %s", doc)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestCandidateOutcomes(t *testing.T) {
+	vs, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	readCandidate := func(file, subject string) candidate {
+		t.Helper()
+		statement, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		entity, err := vs.Attest(subject, githubIssuer, statement)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return candidate{bundle: entity}
+	}
+	ci := "https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main"
+	sbom := readCandidate("testdata/cyclonedx-statement.json", ci)
+	rejected := readCandidate("testdata/cyclonedx-statement.json", "person@nav.no")
+	slsa := readCandidate("testdata/slsa-statement.json", ci)
+	statement, err := os.ReadFile("testdata/cyclonedx-statement.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	navEntity, err := vs.Attest("person@nav.no", "https://accounts.google.com", statement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedSigs, err := legacyAttestations(t, vs, navEntity).Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rejectedLegacy := candidate{legacy: rejectedSigs[0]}
+	ref, err := name.NewDigest("ghcr.io/navikt/app@sha256:" + strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &Fetcher{log: slog.New(slog.DiscardHandler), trustedRoot: vs, identity: githubIdentity([]string{"nais"})}
+	co := f.checkOpts(t.Context())
+	co.IgnoreSCT = true
+	discoveryErr := errors.New("registry unavailable")
+	for _, tc := range []struct {
+		name       string
+		candidates []candidate
+		discovery  error
+		want       error
+	}{
+		{"empty both formats", nil, nil, ErrNotFound},
+		{"only other predicate", []candidate{slsa}, nil, ErrNotFound},
+		{"rejected bundle empty legacy", []candidate{rejected}, nil, ErrRejected},
+		{"rejected legacy empty bundle", []candidate{rejectedLegacy}, nil, ErrRejected},
+		{"both rejected", []candidate{rejected, rejectedLegacy}, nil, ErrRejected},
+		{"rejected with other predicate", []candidate{rejected, slsa}, nil, ErrRejected},
+		{"valid among rejected", []candidate{rejected, sbom}, nil, nil},
+		{"incomplete discovery", nil, discoveryErr, discoveryErr},
+		{"valid despite incomplete discovery", []candidate{sbom}, discoveryErr, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := f.verifyCandidates(t.Context(), ref, tc.candidates, co, tc.discovery)
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("error=%v, want %v", err, tc.want)
+			}
+		})
+	}
+	rules, err := ParseIdentityRules(`[{"issuer":"https://accounts.google.com","subjectRegExp":"[a-zA-Z0-9._%+-]+@nav\\.no","repositories":["ghcr.io/navikt"]}]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.rules = rules
+	if _, err := f.verifyCandidates(t.Context(), ref, []candidate{slsa, {bundle: navEntity}}, co, nil); err != nil {
+		t.Fatalf("CI other predicate hid NAV SBOM: %v", err)
+	}
+}
+
+func TestRejectedLegacyIsNotMissing(t *testing.T) {
+	vs, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement, err := os.ReadFile("testdata/cyclonedx-statement.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity, err := vs.Attest("person@nav.no", "https://accounts.google.com", statement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(registry.New())
+	defer srv.Close()
+	ref, err := name.NewDigest(strings.TrimPrefix(srv.URL, "http://") + "/app@sha256:" + strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag, err := ociremote.AttestationTag(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Write(tag, legacyAttestations(t, vs, entity), remote.WithAuth(authn.Anonymous), remote.WithContext(t.Context())); err != nil {
+		t.Fatal(err)
+	}
+	f := &Fetcher{log: slog.New(slog.DiscardHandler), keychain: authn.NewMultiKeychain(), trustedRoot: vs, identity: githubIdentity([]string{"nais"})}
+	_, err = f.Fetch(t.Context(), ref.String())
+	if !errors.Is(err, ErrRejected) || errors.Is(err, ErrNotFound) {
+		t.Fatalf("Fetch: %v; want rejected, not missing", err)
+	}
+}
+
+func TestDiscoveryDoesNotHideUnreadableBundles(t *testing.T) {
+	vs, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, artifactType string
+		wantErr            bool
+	}{
+		{name: "absent"},
+		{name: "unrelated", artifactType: "application/example"},
+		{name: "malformed bundle", artifactType: "application/vnd.dev.sigstore.bundle.v0.3+json", wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(registry.New())
+			defer srv.Close()
+			ref, err := name.NewDigest(strings.TrimPrefix(srv.URL, "http://") + "/app@sha256:" + strings.Repeat("a", 64))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.artifactType != "" {
+				image := registryempty.Image
+				hash, err := image.Digest()
+				if err != nil {
+					t.Fatal(err)
+				}
+				ref = ref.Context().Digest(hash.String())
+				if err := remote.Write(ref, image, remote.WithAuth(authn.Anonymous), remote.WithContext(t.Context())); err != nil {
+					t.Fatal(err)
+				}
+				layer := registrystatic.NewLayer([]byte("not a bundle"), types.MediaType(tc.artifactType))
+				if err := ociremote.WriteReferrer(ref, tc.artifactType, []v1.Layer{layer}, nil,
+					ociremote.WithRemoteOptions(remote.WithAuth(authn.Anonymous), remote.WithContext(t.Context()))); err != nil {
+					t.Fatal(err)
+				}
+			}
+			f := &Fetcher{log: slog.New(slog.DiscardHandler), keychain: authn.NewMultiKeychain(), trustedRoot: vs, identity: githubIdentity([]string{"nais"})}
+			candidates, err := f.discover(t.Context(), ref)
+			if len(candidates) != 0 || (err != nil) != tc.wantErr {
+				t.Fatalf("candidates=%d, err=%v, want error=%v", len(candidates), err, tc.wantErr)
+			}
+			_, fetchErr := f.Fetch(t.Context(), ref.String())
+			if tc.wantErr {
+				if fetchErr == nil || errors.Is(fetchErr, ErrNotFound) {
+					t.Fatalf("unreadable bundle reported as absent: %v", fetchErr)
+				}
+			} else if !errors.Is(fetchErr, ErrNotFound) {
+				t.Fatalf("Fetch: %v, want missing", fetchErr)
+			}
+		})
+	}
+}
+
+func TestCandidateRetainsTrustAndSignatureChecks(t *testing.T) {
+	vs, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement, err := os.ReadFile("testdata/cyclonedx-statement.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entity, err := vs.Attest("https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main", githubIssuer, statement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigs, err := legacyAttestations(t, vs, entity).Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := v1.NewHash("sha256:" + strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := &Fetcher{trustedRoot: vs, identity: githubIdentity([]string{"nais"})}
+	co := f.checkOpts(t.Context())
+	co.IgnoreSCT = true
+	payload, err := sigs[0].Payload()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		PayloadType string          `json:"payloadType"`
+		Payload     []byte          `json:"payload"`
+		Signatures  json.RawMessage `json:"signatures"`
+	}
+	if err := json.Unmarshal(payload, &env); err != nil {
+		t.Fatal(err)
+	}
+	env.Payload = bytes.ReplaceAll(env.Payload, []byte("CycloneDX"), []byte("CycloneDY"))
+	tampered, err := json.Marshal(env)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert, err := sigs[0].Cert()
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM, err := cryptoutils.MarshalCertificateToPEM(cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rekor, err := sigs[0].Bundle()
+	if err != nil {
+		t.Fatal(err)
+	}
+	att, err := static.NewAttestation(tampered, static.WithCertChain(certPEM, nil), static.WithBundle(rekor))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (candidate{legacy: att}).verify(t.Context(), hash, co); err == nil {
+		t.Fatal("tampered payload was accepted")
+	}
+	co.TrustedMaterial = other
+	for _, c := range []candidate{{legacy: sigs[0]}, {bundle: entity}} {
+		if _, err := c.verify(t.Context(), hash, co); err == nil {
+			t.Fatal("untrusted certificate was accepted")
+		}
+	}
+	co = f.checkOpts(t.Context())
+	if co.IgnoreSCT || co.IgnoreTlog || co.ClaimVerifier == nil {
+		t.Fatal("production verification requirements were weakened")
 	}
 }
 

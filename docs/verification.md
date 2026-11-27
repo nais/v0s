@@ -60,6 +60,9 @@ inventories and detailed results in access-controlled storage, not in Git.
 | Delete a workload | Its unused image, SBOM, components and findings are removed at the next sync |
 | Nais API is unavailable or omits an environment | Previous inventory is retained; reads and stored-SBOM rescans remain available, and inventory sync retries |
 | Image has no attestation | `NO_SBOM`; retry after backoff, no retry storm |
+| Attestation candidates fail verification and no SBOM is accepted | `FAILED` with `IMAGE_ERROR_CODE_ATTESTATION_REJECTED`; safe message, no raw certificate details |
+| A bundle is rejected and legacy attestations are absent | Rejection remains visible, not `NO_SBOM` |
+| Registry/auth/bundle reads fail | Fetch failure, not proof of missing SBOM |
 | Newer Trivy DB loads | In-use images become due for rescanning without any client action |
 | Scan fails | Error is visible; previous findings remain; retry on a newer DB |
 | Two replicas | Both serve reads; each worker loop is serialized across replicas |
@@ -70,6 +73,14 @@ Check scan counts during a stable-inventory, successful rescan: already processe
 images should not be repeatedly scanned with the same DB. During a failure test,
 repeated attempts are expected. `/healthz` reflects database connectivity only;
 check loop logs, coverage and metrics separately.
+
+For additional identity rules, verify both bundle and legacy formats with the
+tenant's confirmed repository scopes: matching identity/issuer/digest succeeds;
+wrong issuer, domain, repository, another instance without the rule, and a
+statement copied from another digest fail. Prefix-lookalike paths must not
+match. Test a valid CI SBOM outside the extra rule's scope and an accepted SBOM
+among rejected candidates. Confirm Nais API/Console forward `Image.error_code`
+and distinguish rejection from absence without displaying raw verifier errors.
 
 ## Scale and deployment boundary
 

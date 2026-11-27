@@ -17,6 +17,34 @@ import (
 
 func TestMain(m *testing.M) { databasetest.Main(m) }
 
+func TestImageErrorCode(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		sql  string
+		code v0sv1.ImageErrorCode
+		msg  string
+	}{
+		{"unspecified", "", v0sv1.ImageErrorCode_IMAGE_ERROR_CODE_UNSPECIFIED, ""},
+		{"rejected", `UPDATE images SET sbom_state = 'failed', error = 'SBOM attestation was rejected', error_code = 'attestation_rejected'`, v0sv1.ImageErrorCode_IMAGE_ERROR_CODE_ATTESTATION_REJECTED, "SBOM attestation was rejected"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := serveVulnerabilities(t, newServer(t, tc.sql))
+			for _, overview := range []*v0sv1.WorkloadOverviewOptions{nil, {}} {
+				resp, err := client.ListWorkloads(t.Context(), &v0sv1.ListWorkloadsRequest{Overview: overview})
+				if err != nil || len(resp.GetWorkloads()) != 4 {
+					t.Fatalf("workloads=%v, err=%v", resp, err)
+				}
+				for _, workload := range resp.GetWorkloads() {
+					img := workload.GetImage()
+					if img.GetErrorCode() != tc.code || img.GetError() != tc.msg {
+						t.Errorf("image=%v; want code=%s, safe message=%q", img, tc.code, tc.msg)
+					}
+				}
+			}
+		})
+	}
+}
+
 func newServer(t *testing.T, statements ...string) *grpcapi.Server {
 	t.Helper()
 	db, url := databasetest.NewWithURL(t)

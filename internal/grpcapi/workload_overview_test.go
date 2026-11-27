@@ -82,7 +82,7 @@ func TestWorkloadOverviewContract(t *testing.T) {
 						t.Fatal(w)
 					}
 				case "failed":
-					if w.GetImage().GetStatus() != v0sv1.ImageStatus_IMAGE_STATUS_FAILED || w.GetImage().GetError() != "fetch failed" {
+					if w.GetImage().GetStatus() != v0sv1.ImageStatus_IMAGE_STATUS_FAILED || w.GetImage().GetError() != "Fetching SBOM failed" {
 						t.Fatal(w)
 					}
 				case "missing":

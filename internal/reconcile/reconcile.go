@@ -181,13 +181,17 @@ func (r *Reconciler) fetchOne(ctx context.Context, img v0s.Image, timeout time.D
 		return nil // the image stays due
 	}
 	switch {
+	case errors.Is(err, attest.ErrRejected):
+		r.Metrics.fetches.WithLabelValues("error").Inc()
+		r.Log.With("image", img.Ref(), "err", err).Warn("fetching SBOM")
+		err = r.DB.RecordSBOMFailureWithCode(ctx, img.ID, v0s.SBOMFailed, "SBOM attestation was rejected", v0s.ImageErrorCodeAttestationRejected, time.Now().Add(retryFailed))
 	case errors.Is(err, attest.ErrNotFound):
 		r.Metrics.fetches.WithLabelValues("not_found").Inc()
-		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMMissing, err.Error(), time.Now().Add(retryMissing))
+		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMMissing, "No SBOM attestation was found", time.Now().Add(retryMissing))
 	case err != nil:
 		r.Metrics.fetches.WithLabelValues("error").Inc()
 		r.Log.With("image", img.Ref(), "err", err).Warn("fetching SBOM")
-		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMFailed, err.Error(), time.Now().Add(retryFailed))
+		err = r.DB.RecordSBOMFailure(ctx, img.ID, v0s.SBOMFailed, "Fetching SBOM failed", time.Now().Add(retryFailed))
 	default:
 		r.Metrics.fetches.WithLabelValues("found").Inc()
 		err = r.DB.StoreSBOM(ctx, img.ID, doc)

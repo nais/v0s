@@ -319,11 +319,22 @@ func findingFilter(f *v0sv1.FindingFilter, selector *v0sv1.WorkloadSelector) (da
 }
 
 func imageToProto(img v0s.Image) *v0sv1.Image {
+	message := img.Error
+	switch img.SBOMState {
+	case v0s.SBOMMissing:
+		message = "No SBOM attestation was found"
+	case v0s.SBOMFailed:
+		message = "Fetching SBOM failed"
+		if img.ErrorCode == v0s.ImageErrorCodeAttestationRejected {
+			message = "SBOM attestation was rejected"
+		}
+	}
 	return &v0sv1.Image{
 		Name:      img.Name,
 		Digest:    img.Digest,
 		Status:    v0sv1.ImageStatus(v0sv1.ImageStatus_value["IMAGE_STATUS_"+strings.ToUpper(string(img.Status()))]),
-		Error:     img.Error,
+		Error:     message,
+		ErrorCode: v0sv1.ImageErrorCode(v0sv1.ImageErrorCode_value["IMAGE_ERROR_CODE_"+strings.ToUpper(string(img.ErrorCode))]),
 		ScannedAt: timestamp(img.ScannedAt),
 	}
 }

@@ -28,6 +28,13 @@ const (
 	SBOMFailed  SBOMState = "failed"
 )
 
+type ImageErrorCode string
+
+const (
+	ImageErrorCodeUnspecified         ImageErrorCode = ""
+	ImageErrorCodeAttestationRejected ImageErrorCode = "attestation_rejected"
+)
+
 // Image is a container image identified by repository name and manifest digest.
 type Image struct {
 	ID               int64
@@ -37,7 +44,8 @@ type Image struct {
 	ScannedAt        time.Time // zero if never scanned
 	ScannedDBVersion time.Time // zero if never scanned
 	// Error says why the last fetch or, once fetched, the last scan failed.
-	Error string
+	Error     string
+	ErrorCode ImageErrorCode
 }
 
 // Ref returns the image reference by digest, e.g. "repo/name@sha256:…".

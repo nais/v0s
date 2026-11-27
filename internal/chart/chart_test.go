@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"encoding/json"
 	"errors"
 	"io"
 	"maps"
@@ -18,6 +19,42 @@ import (
 )
 
 const chartDir = "../../charts"
+
+func TestDeploymentScopedIdentityConfiguration(t *testing.T) {
+	for _, rules := range []string{"[]", `[{"issuer":"https://accounts.google.com","subjectRegExp":"[a-z]+@nav\\.no","repositories":["ghcr.io/navikt"]}]`} {
+		t.Run(rules, func(t *testing.T) {
+			file := filepath.Join(t.TempDir(), "identities.yaml")
+			data, err := yaml.Marshal(map[string]string{"attestationIdentityRules": rules})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			resources := render(t, chartDir, "-f", file)
+			var deployment struct {
+				Spec struct {
+					Template struct {
+						Spec struct{ Containers []containerSpec }
+					}
+				}
+			}
+			decode(t, resources["Deployment"], &deployment)
+			found := false
+			for _, env := range deployment.Spec.Template.Spec.Containers[0].Env {
+				if env.Name == "ATTESTATION_IDENTITY_RULES" {
+					found = true
+					if env.Value != rules || !json.Valid([]byte(env.Value)) {
+						t.Fatalf("rendered rules=%q, want %q", env.Value, rules)
+					}
+				}
+			}
+			if !found {
+				t.Fatal("missing attestation identity configuration")
+			}
+		})
+	}
+}
 
 type containerSpec struct {
 	Name, Image string

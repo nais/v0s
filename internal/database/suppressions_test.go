@@ -353,6 +353,7 @@ func TestMigrateWorkloadSuppressions(t *testing.T) {
 	// Reconstruct the deployed v1 schema, then exercise the migration command's database path.
 	_, err = conn.Exec(ctx, fixture+`
 			ALTER TABLE vulnerabilities ADD COLUMN cvss jsonb NOT NULL DEFAULT '{}';
+			ALTER TABLE images DROP COLUMN error_code;
 			UPDATE vulnerabilities SET cvss = '{"nvd":{"v3_score":7.5}}' WHERE id = 'CVE-1';
 			DROP TABLE suppressions;
 			ALTER TABLE legacy_suppressions RENAME TO suppressions;

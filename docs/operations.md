@@ -117,6 +117,7 @@ rollback; scaling only the live Deployment is insufficient. Follow the
 | `DATABASE_URL` | Required: PostgreSQL connection URL |
 | `NAIS_API_GRPC_ADDRESS` | Required: Nais API's internal gRPC address |
 | `GITHUB_ORGANIZATIONS` | Required: comma-separated organizations whose workflow signatures are accepted |
+| `ATTESTATION_IDENTITY_RULES` | Optional JSON array of additional scoped identity rules; empty/unset keeps GitHub-only trust |
 | `LISTEN_ADDR` | `:50051` (plaintext gRPC, with reflection) |
 | `PROBE_ADDR` | `:8080` (HTTP probes and metrics) |
 | `TRIVY_DB_DIR` | `/var/cache/v0s/trivy-db` |
@@ -131,6 +132,46 @@ under `$HOME/.sigstore`. Registry credentials use the default, Google and GitHub
 keychains. Egress must cover the workload registries and their authentication and
 redirect hosts, the configured Trivy DB registries, Sigstore, FIRST EPSS and CISA
 KEV. A blocked attestation lookup is an error, not evidence that no SBOM exists.
+
+### Additional attestation identities
+
+Each tenant runs a separate v0s instance. Additional keyless signing trust is
+opt-in in that instance, with no tenant-specific defaults. Each rule requires
+an exact HTTPS OIDC `issuer`, a `subjectRegExp` and a non-empty `repositories`
+list. Unknown fields, malformed expressions and non-canonical repository paths
+prevent startup. Subjects are matched in full, even if the configured expression
+has no anchors.
+
+Repository scopes include the exact canonical `registry/path` and its
+slash-delimited descendants. Tags, digests, wildcards and relative path segments
+are not allowed. `ghcr.io/example/images` does not include
+`ghcr.io/example/images-other`. These scopes restrict only the additional rule;
+the existing GitHub-organizations policy is unchanged for all images.
+Issuer and subject are always checked as a pair, never as independent allowlists.
+
+For example, a NAV deployment could separately authorize Google-issued
+email identities with subject expression `[a-zA-Z0-9._%+-]+@nav\.no` and
+issuer `https://accounts.google.com`. Configure only confirmed NAV-owned
+repository paths; this release supplies none. This authorizes every matching
+verified identity to attest any image within those paths. It does not check
+team/repository membership or prove CI build provenance.
+
+All rules retain signature, certificate trust, SCT/transparency-log checks and
+the exact image-digest claim check. Bundles and legacy `.att` attestations are
+discovered independently; a missing format cannot hide rejection in another.
+A verified CycloneDX SBOM wins over rejected or unreadable alternatives.
+Otherwise an incomplete lookup is a fetch failure, rejected candidates are
+`FAILED` with `IMAGE_ERROR_CODE_ATTESTATION_REJECTED`, and absence of candidates
+or only verified non-CycloneDX statements is `NO_SBOM`.
+
+Fetch failures are persisted with safe messages rather than raw certificate
+details. The API also replaces historical missing/failed fetch messages with
+safe messages, without changing scan-error messages. Diagnostic logs may contain
+detailed verifier errors and should remain access-controlled. Consumers should use `Image.error_code`, not parse
+`Image.error`, to show an attestation-rejected message. Console/Nais API must
+forward and map the new field separately; they are not changed by this release.
+Migration `0004_image_error_code.sql` adds the field without reclassifying
+historical missing rows; the next due fetch classifies those again.
 
 ## Simplified public contract
 
@@ -255,6 +296,8 @@ OOMs, database replication and recovery.
 - Missing attestations are retried after 6 hours; failed fetches, including local
   timeouts, after 30 minutes. Shutdown cancellation leaves the image due without
   recording a failure.
+- Rejected attestations use the failed-fetch backoff, not the missing-SBOM
+  backoff. Stored verified SBOMs remain write-once and are not refetched.
 - Failed loops retry after the shorter of their normal interval and 5 minutes.
 - A recorded scan failure is not retried until a newer DB is loaded. Previous
   findings are kept; an already scanned image stays `SCANNED` with an error.

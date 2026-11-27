@@ -140,6 +140,52 @@ func (ImageStatus) EnumDescriptor() ([]byte, []int) {
 	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{1}
 }
 
+type ImageErrorCode int32
+
+const (
+	ImageErrorCode_IMAGE_ERROR_CODE_UNSPECIFIED          ImageErrorCode = 0
+	ImageErrorCode_IMAGE_ERROR_CODE_ATTESTATION_REJECTED ImageErrorCode = 1
+)
+
+// Enum value maps for ImageErrorCode.
+var (
+	ImageErrorCode_name = map[int32]string{
+		0: "IMAGE_ERROR_CODE_UNSPECIFIED",
+		1: "IMAGE_ERROR_CODE_ATTESTATION_REJECTED",
+	}
+	ImageErrorCode_value = map[string]int32{
+		"IMAGE_ERROR_CODE_UNSPECIFIED":          0,
+		"IMAGE_ERROR_CODE_ATTESTATION_REJECTED": 1,
+	}
+)
+
+func (x ImageErrorCode) Enum() *ImageErrorCode {
+	p := new(ImageErrorCode)
+	*p = x
+	return p
+}
+
+func (x ImageErrorCode) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ImageErrorCode) Descriptor() protoreflect.EnumDescriptor {
+	return file_v0s_v1_v0s_proto_enumTypes[2].Descriptor()
+}
+
+func (ImageErrorCode) Type() protoreflect.EnumType {
+	return &file_v0s_v1_v0s_proto_enumTypes[2]
+}
+
+func (x ImageErrorCode) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ImageErrorCode.Descriptor instead.
+func (ImageErrorCode) EnumDescriptor() ([]byte, []int) {
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{2}
+}
+
 type SuppressionState int32
 
 const (
@@ -176,11 +222,11 @@ func (x SuppressionState) String() string {
 }
 
 func (SuppressionState) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[2].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[3].Descriptor()
 }
 
 func (SuppressionState) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[2]
+	return &file_v0s_v1_v0s_proto_enumTypes[3]
 }
 
 func (x SuppressionState) Number() protoreflect.EnumNumber {
@@ -189,7 +235,7 @@ func (x SuppressionState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SuppressionState.Descriptor instead.
 func (SuppressionState) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{2}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{3}
 }
 
 type SuppressedFilter int32
@@ -229,11 +275,11 @@ func (x SuppressedFilter) String() string {
 }
 
 func (SuppressedFilter) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[3].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[4].Descriptor()
 }
 
 func (SuppressedFilter) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[3]
+	return &file_v0s_v1_v0s_proto_enumTypes[4]
 }
 
 func (x SuppressedFilter) Number() protoreflect.EnumNumber {
@@ -242,7 +288,7 @@ func (x SuppressedFilter) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use SuppressedFilter.Descriptor instead.
 func (SuppressedFilter) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{3}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{4}
 }
 
 type ForwardOutcome int32
@@ -284,11 +330,11 @@ func (x ForwardOutcome) String() string {
 }
 
 func (ForwardOutcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[4].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[5].Descriptor()
 }
 
 func (ForwardOutcome) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[4]
+	return &file_v0s_v1_v0s_proto_enumTypes[5]
 }
 
 func (x ForwardOutcome) Number() protoreflect.EnumNumber {
@@ -297,7 +343,7 @@ func (x ForwardOutcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ForwardOutcome.Descriptor instead.
 func (ForwardOutcome) EnumDescriptor() ([]byte, []int) {
-	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{4}
+	return file_v0s_v1_v0s_proto_rawDescGZIP(), []int{5}
 }
 
 type WorkloadOrderBy_Field int32
@@ -327,11 +373,11 @@ func (x WorkloadOrderBy_Field) String() string {
 }
 
 func (WorkloadOrderBy_Field) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[5].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[6].Descriptor()
 }
 
 func (WorkloadOrderBy_Field) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[5]
+	return &file_v0s_v1_v0s_proto_enumTypes[6]
 }
 
 func (x WorkloadOrderBy_Field) Number() protoreflect.EnumNumber {
@@ -370,11 +416,11 @@ func (x WorkloadOrderBy_Direction) String() string {
 }
 
 func (WorkloadOrderBy_Direction) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[6].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[7].Descriptor()
 }
 
 func (WorkloadOrderBy_Direction) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[6]
+	return &file_v0s_v1_v0s_proto_enumTypes[7]
 }
 
 func (x WorkloadOrderBy_Direction) Number() protoreflect.EnumNumber {
@@ -423,11 +469,11 @@ func (x FindingOrderBy_Field) String() string {
 }
 
 func (FindingOrderBy_Field) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[7].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[8].Descriptor()
 }
 
 func (FindingOrderBy_Field) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[7]
+	return &file_v0s_v1_v0s_proto_enumTypes[8]
 }
 
 func (x FindingOrderBy_Field) Number() protoreflect.EnumNumber {
@@ -472,11 +518,11 @@ func (x FindingOrderBy_Direction) String() string {
 }
 
 func (FindingOrderBy_Direction) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[8].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[9].Descriptor()
 }
 
 func (FindingOrderBy_Direction) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[8]
+	return &file_v0s_v1_v0s_proto_enumTypes[9]
 }
 
 func (x FindingOrderBy_Direction) Number() protoreflect.EnumNumber {
@@ -527,11 +573,11 @@ func (x VulnerabilityOrderBy_Field) String() string {
 }
 
 func (VulnerabilityOrderBy_Field) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[9].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[10].Descriptor()
 }
 
 func (VulnerabilityOrderBy_Field) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[9]
+	return &file_v0s_v1_v0s_proto_enumTypes[10]
 }
 
 func (x VulnerabilityOrderBy_Field) Number() protoreflect.EnumNumber {
@@ -576,11 +622,11 @@ func (x VulnerabilityOrderBy_Direction) String() string {
 }
 
 func (VulnerabilityOrderBy_Direction) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[10].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[11].Descriptor()
 }
 
 func (VulnerabilityOrderBy_Direction) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[10]
+	return &file_v0s_v1_v0s_proto_enumTypes[11]
 }
 
 func (x VulnerabilityOrderBy_Direction) Number() protoreflect.EnumNumber {
@@ -634,11 +680,11 @@ func (x CountFindingsRequest_GroupBy) String() string {
 }
 
 func (CountFindingsRequest_GroupBy) Descriptor() protoreflect.EnumDescriptor {
-	return file_v0s_v1_v0s_proto_enumTypes[11].Descriptor()
+	return file_v0s_v1_v0s_proto_enumTypes[12].Descriptor()
 }
 
 func (CountFindingsRequest_GroupBy) Type() protoreflect.EnumType {
-	return &file_v0s_v1_v0s_proto_enumTypes[11]
+	return &file_v0s_v1_v0s_proto_enumTypes[12]
 }
 
 func (x CountFindingsRequest_GroupBy) Number() protoreflect.EnumNumber {
@@ -657,8 +703,10 @@ type Image struct {
 	Status ImageStatus            `protobuf:"varint,8,opt,name=status,proto3,enum=v0s.v1.ImageStatus" json:"status,omitempty"`
 	// Why the last fetch or scan failed. Also set on a SCANNED image whose rescan with a newer
 	// vulnerability DB failed; its findings are still those of the last successful scan.
-	Error         string                 `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
-	ScannedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=scanned_at,json=scannedAt,proto3" json:"scanned_at,omitempty"`
+	Error     string                 `protobuf:"bytes,9,opt,name=error,proto3" json:"error,omitempty"`
+	ScannedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=scanned_at,json=scannedAt,proto3" json:"scanned_at,omitempty"`
+	// Safe classification of the last failure; unspecified for unclassified failures or no error.
+	ErrorCode     ImageErrorCode `protobuf:"varint,10,opt,name=error_code,json=errorCode,proto3,enum=v0s.v1.ImageErrorCode" json:"error_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -726,6 +774,13 @@ func (x *Image) GetScannedAt() *timestamppb.Timestamp {
 		return x.ScannedAt
 	}
 	return nil
+}
+
+func (x *Image) GetErrorCode() ImageErrorCode {
+	if x != nil {
+		return x.ErrorCode
+	}
+	return ImageErrorCode_IMAGE_ERROR_CODE_UNSPECIFIED
 }
 
 type Workload struct {
@@ -3832,14 +3887,17 @@ var File_v0s_v1_v0s_proto protoreflect.FileDescriptor
 
 const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\n" +
-	"\x10v0s/v1/v0s.proto\x12\x06v0s.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xdd\x01\n" +
+	"\x10v0s/v1/v0s.proto\x12\x06v0s.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\x94\x02\n" +
 	"\x05Image\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
 	"\x06digest\x18\x02 \x01(\tR\x06digest\x12+\n" +
 	"\x06status\x18\b \x01(\x0e2\x13.v0s.v1.ImageStatusR\x06status\x12\x14\n" +
 	"\x05error\x18\t \x01(\tR\x05error\x129\n" +
 	"\n" +
-	"scanned_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tscannedAtJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x12scanned_db_version\"\x8d\x02\n" +
+	"scanned_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tscannedAt\x125\n" +
+	"\n" +
+	"error_code\x18\n" +
+	" \x01(\x0e2\x16.v0s.v1.ImageErrorCodeR\terrorCodeJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05J\x04\b\x06\x10\aJ\x04\b\a\x10\bR\x12scanned_db_version\"\x8d\x02\n" +
 	"\bWorkload\x12 \n" +
 	"\venvironment\x18\x01 \x01(\tR\venvironment\x12\x12\n" +
 	"\x04team\x18\x02 \x01(\tR\x04team\x12\x12\n" +
@@ -4137,7 +4195,10 @@ const file_v0s_v1_v0s_proto_rawDesc = "" +
 	"\x14IMAGE_STATUS_PENDING\x10\x01\x12\x18\n" +
 	"\x14IMAGE_STATUS_SCANNED\x10\x02\x12\x18\n" +
 	"\x14IMAGE_STATUS_NO_SBOM\x10\x03\x12\x17\n" +
-	"\x13IMAGE_STATUS_FAILED\x10\x04*\xa4\x01\n" +
+	"\x13IMAGE_STATUS_FAILED\x10\x04*]\n" +
+	"\x0eImageErrorCode\x12 \n" +
+	"\x1cIMAGE_ERROR_CODE_UNSPECIFIED\x10\x00\x12)\n" +
+	"%IMAGE_ERROR_CODE_ATTESTATION_REJECTED\x10\x01*\xa4\x01\n" +
 	"\x10SuppressionState\x12!\n" +
 	"\x1dSUPPRESSION_STATE_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eSUPPRESSION_STATE_NOT_AFFECTED\x10\x01\x12$\n" +
@@ -4181,153 +4242,155 @@ func file_v0s_v1_v0s_proto_rawDescGZIP() []byte {
 	return file_v0s_v1_v0s_proto_rawDescData
 }
 
-var file_v0s_v1_v0s_proto_enumTypes = make([]protoimpl.EnumInfo, 12)
+var file_v0s_v1_v0s_proto_enumTypes = make([]protoimpl.EnumInfo, 13)
 var file_v0s_v1_v0s_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
 var file_v0s_v1_v0s_proto_goTypes = []any{
 	(Severity)(0),                          // 0: v0s.v1.Severity
 	(ImageStatus)(0),                       // 1: v0s.v1.ImageStatus
-	(SuppressionState)(0),                  // 2: v0s.v1.SuppressionState
-	(SuppressedFilter)(0),                  // 3: v0s.v1.SuppressedFilter
-	(ForwardOutcome)(0),                    // 4: v0s.v1.ForwardOutcome
-	(WorkloadOrderBy_Field)(0),             // 5: v0s.v1.WorkloadOrderBy.Field
-	(WorkloadOrderBy_Direction)(0),         // 6: v0s.v1.WorkloadOrderBy.Direction
-	(FindingOrderBy_Field)(0),              // 7: v0s.v1.FindingOrderBy.Field
-	(FindingOrderBy_Direction)(0),          // 8: v0s.v1.FindingOrderBy.Direction
-	(VulnerabilityOrderBy_Field)(0),        // 9: v0s.v1.VulnerabilityOrderBy.Field
-	(VulnerabilityOrderBy_Direction)(0),    // 10: v0s.v1.VulnerabilityOrderBy.Direction
-	(CountFindingsRequest_GroupBy)(0),      // 11: v0s.v1.CountFindingsRequest.GroupBy
-	(*Image)(nil),                          // 12: v0s.v1.Image
-	(*Workload)(nil),                       // 13: v0s.v1.Workload
-	(*FindingFilter)(nil),                  // 14: v0s.v1.FindingFilter
-	(*Finding)(nil),                        // 15: v0s.v1.Finding
-	(*Epss)(nil),                           // 16: v0s.v1.Epss
-	(*ListWorkloadsRequest)(nil),           // 17: v0s.v1.ListWorkloadsRequest
-	(*ListWorkloadsResponse)(nil),          // 18: v0s.v1.ListWorkloadsResponse
-	(*WorkloadOverviewOptions)(nil),        // 19: v0s.v1.WorkloadOverviewOptions
-	(*WorkloadOrderBy)(nil),                // 20: v0s.v1.WorkloadOrderBy
-	(*WorkloadFindingCounts)(nil),          // 21: v0s.v1.WorkloadFindingCounts
-	(*VulnerabilitySeverityCounts)(nil),    // 22: v0s.v1.VulnerabilitySeverityCounts
-	(*GetSummaryRequest)(nil),              // 23: v0s.v1.GetSummaryRequest
-	(*GetSummaryResponse)(nil),             // 24: v0s.v1.GetSummaryResponse
-	(*WorkloadCoverage)(nil),               // 25: v0s.v1.WorkloadCoverage
-	(*ListFindingsRequest)(nil),            // 26: v0s.v1.ListFindingsRequest
-	(*FindingOrderBy)(nil),                 // 27: v0s.v1.FindingOrderBy
-	(*ListFindingsResponse)(nil),           // 28: v0s.v1.ListFindingsResponse
-	(*PackageTypeCount)(nil),               // 29: v0s.v1.PackageTypeCount
-	(*ListVulnerabilitiesRequest)(nil),     // 30: v0s.v1.ListVulnerabilitiesRequest
-	(*VulnerabilityOrderBy)(nil),           // 31: v0s.v1.VulnerabilityOrderBy
-	(*VulnerabilitySummary)(nil),           // 32: v0s.v1.VulnerabilitySummary
-	(*ListVulnerabilitiesResponse)(nil),    // 33: v0s.v1.ListVulnerabilitiesResponse
-	(*CountFindingsRequest)(nil),           // 34: v0s.v1.CountFindingsRequest
-	(*CountFindingsResponse)(nil),          // 35: v0s.v1.CountFindingsResponse
-	(*GetVulnerabilityRequest)(nil),        // 36: v0s.v1.GetVulnerabilityRequest
-	(*GetVulnerabilityResponse)(nil),       // 37: v0s.v1.GetVulnerabilityResponse
-	(*Vulnerability)(nil),                  // 38: v0s.v1.Vulnerability
-	(*SearchComponentsRequest)(nil),        // 39: v0s.v1.SearchComponentsRequest
-	(*SearchComponentsResponse)(nil),       // 40: v0s.v1.SearchComponentsResponse
-	(*ComponentMatch)(nil),                 // 41: v0s.v1.ComponentMatch
-	(*WorkloadRef)(nil),                    // 42: v0s.v1.WorkloadRef
-	(*WorkloadSelector)(nil),               // 43: v0s.v1.WorkloadSelector
-	(*SuppressionKey)(nil),                 // 44: v0s.v1.SuppressionKey
-	(*Suppression)(nil),                    // 45: v0s.v1.Suppression
-	(*NewSuppression)(nil),                 // 46: v0s.v1.NewSuppression
-	(*SetSuppressionsRequest)(nil),         // 47: v0s.v1.SetSuppressionsRequest
-	(*SetSuppressionsResponse)(nil),        // 48: v0s.v1.SetSuppressionsResponse
-	(*DeleteSuppressionsRequest)(nil),      // 49: v0s.v1.DeleteSuppressionsRequest
-	(*DeleteSuppressionsResponse)(nil),     // 50: v0s.v1.DeleteSuppressionsResponse
-	(*ListSuppressionsRequest)(nil),        // 51: v0s.v1.ListSuppressionsRequest
-	(*ListSuppressionsResponse)(nil),       // 52: v0s.v1.ListSuppressionsResponse
-	(*ForwardV13SSuppressionRequest)(nil),  // 53: v0s.v1.ForwardV13sSuppressionRequest
-	(*V13SAssessment)(nil),                 // 54: v0s.v1.V13sAssessment
-	(*ForwardV13SSuppressionResponse)(nil), // 55: v0s.v1.ForwardV13sSuppressionResponse
-	(*CountFindingsResponse_Bucket)(nil),   // 56: v0s.v1.CountFindingsResponse.Bucket
-	(*timestamppb.Timestamp)(nil),          // 57: google.protobuf.Timestamp
+	(ImageErrorCode)(0),                    // 2: v0s.v1.ImageErrorCode
+	(SuppressionState)(0),                  // 3: v0s.v1.SuppressionState
+	(SuppressedFilter)(0),                  // 4: v0s.v1.SuppressedFilter
+	(ForwardOutcome)(0),                    // 5: v0s.v1.ForwardOutcome
+	(WorkloadOrderBy_Field)(0),             // 6: v0s.v1.WorkloadOrderBy.Field
+	(WorkloadOrderBy_Direction)(0),         // 7: v0s.v1.WorkloadOrderBy.Direction
+	(FindingOrderBy_Field)(0),              // 8: v0s.v1.FindingOrderBy.Field
+	(FindingOrderBy_Direction)(0),          // 9: v0s.v1.FindingOrderBy.Direction
+	(VulnerabilityOrderBy_Field)(0),        // 10: v0s.v1.VulnerabilityOrderBy.Field
+	(VulnerabilityOrderBy_Direction)(0),    // 11: v0s.v1.VulnerabilityOrderBy.Direction
+	(CountFindingsRequest_GroupBy)(0),      // 12: v0s.v1.CountFindingsRequest.GroupBy
+	(*Image)(nil),                          // 13: v0s.v1.Image
+	(*Workload)(nil),                       // 14: v0s.v1.Workload
+	(*FindingFilter)(nil),                  // 15: v0s.v1.FindingFilter
+	(*Finding)(nil),                        // 16: v0s.v1.Finding
+	(*Epss)(nil),                           // 17: v0s.v1.Epss
+	(*ListWorkloadsRequest)(nil),           // 18: v0s.v1.ListWorkloadsRequest
+	(*ListWorkloadsResponse)(nil),          // 19: v0s.v1.ListWorkloadsResponse
+	(*WorkloadOverviewOptions)(nil),        // 20: v0s.v1.WorkloadOverviewOptions
+	(*WorkloadOrderBy)(nil),                // 21: v0s.v1.WorkloadOrderBy
+	(*WorkloadFindingCounts)(nil),          // 22: v0s.v1.WorkloadFindingCounts
+	(*VulnerabilitySeverityCounts)(nil),    // 23: v0s.v1.VulnerabilitySeverityCounts
+	(*GetSummaryRequest)(nil),              // 24: v0s.v1.GetSummaryRequest
+	(*GetSummaryResponse)(nil),             // 25: v0s.v1.GetSummaryResponse
+	(*WorkloadCoverage)(nil),               // 26: v0s.v1.WorkloadCoverage
+	(*ListFindingsRequest)(nil),            // 27: v0s.v1.ListFindingsRequest
+	(*FindingOrderBy)(nil),                 // 28: v0s.v1.FindingOrderBy
+	(*ListFindingsResponse)(nil),           // 29: v0s.v1.ListFindingsResponse
+	(*PackageTypeCount)(nil),               // 30: v0s.v1.PackageTypeCount
+	(*ListVulnerabilitiesRequest)(nil),     // 31: v0s.v1.ListVulnerabilitiesRequest
+	(*VulnerabilityOrderBy)(nil),           // 32: v0s.v1.VulnerabilityOrderBy
+	(*VulnerabilitySummary)(nil),           // 33: v0s.v1.VulnerabilitySummary
+	(*ListVulnerabilitiesResponse)(nil),    // 34: v0s.v1.ListVulnerabilitiesResponse
+	(*CountFindingsRequest)(nil),           // 35: v0s.v1.CountFindingsRequest
+	(*CountFindingsResponse)(nil),          // 36: v0s.v1.CountFindingsResponse
+	(*GetVulnerabilityRequest)(nil),        // 37: v0s.v1.GetVulnerabilityRequest
+	(*GetVulnerabilityResponse)(nil),       // 38: v0s.v1.GetVulnerabilityResponse
+	(*Vulnerability)(nil),                  // 39: v0s.v1.Vulnerability
+	(*SearchComponentsRequest)(nil),        // 40: v0s.v1.SearchComponentsRequest
+	(*SearchComponentsResponse)(nil),       // 41: v0s.v1.SearchComponentsResponse
+	(*ComponentMatch)(nil),                 // 42: v0s.v1.ComponentMatch
+	(*WorkloadRef)(nil),                    // 43: v0s.v1.WorkloadRef
+	(*WorkloadSelector)(nil),               // 44: v0s.v1.WorkloadSelector
+	(*SuppressionKey)(nil),                 // 45: v0s.v1.SuppressionKey
+	(*Suppression)(nil),                    // 46: v0s.v1.Suppression
+	(*NewSuppression)(nil),                 // 47: v0s.v1.NewSuppression
+	(*SetSuppressionsRequest)(nil),         // 48: v0s.v1.SetSuppressionsRequest
+	(*SetSuppressionsResponse)(nil),        // 49: v0s.v1.SetSuppressionsResponse
+	(*DeleteSuppressionsRequest)(nil),      // 50: v0s.v1.DeleteSuppressionsRequest
+	(*DeleteSuppressionsResponse)(nil),     // 51: v0s.v1.DeleteSuppressionsResponse
+	(*ListSuppressionsRequest)(nil),        // 52: v0s.v1.ListSuppressionsRequest
+	(*ListSuppressionsResponse)(nil),       // 53: v0s.v1.ListSuppressionsResponse
+	(*ForwardV13SSuppressionRequest)(nil),  // 54: v0s.v1.ForwardV13sSuppressionRequest
+	(*V13SAssessment)(nil),                 // 55: v0s.v1.V13sAssessment
+	(*ForwardV13SSuppressionResponse)(nil), // 56: v0s.v1.ForwardV13sSuppressionResponse
+	(*CountFindingsResponse_Bucket)(nil),   // 57: v0s.v1.CountFindingsResponse.Bucket
+	(*timestamppb.Timestamp)(nil),          // 58: google.protobuf.Timestamp
 }
 var file_v0s_v1_v0s_proto_depIdxs = []int32{
 	1,  // 0: v0s.v1.Image.status:type_name -> v0s.v1.ImageStatus
-	57, // 1: v0s.v1.Image.scanned_at:type_name -> google.protobuf.Timestamp
-	12, // 2: v0s.v1.Workload.image:type_name -> v0s.v1.Image
-	21, // 3: v0s.v1.Workload.finding_counts:type_name -> v0s.v1.WorkloadFindingCounts
-	0,  // 4: v0s.v1.FindingFilter.severities:type_name -> v0s.v1.Severity
-	3,  // 5: v0s.v1.FindingFilter.suppressed:type_name -> v0s.v1.SuppressedFilter
-	42, // 6: v0s.v1.Finding.workload:type_name -> v0s.v1.WorkloadRef
-	12, // 7: v0s.v1.Finding.image:type_name -> v0s.v1.Image
-	0,  // 8: v0s.v1.Finding.severity:type_name -> v0s.v1.Severity
-	16, // 9: v0s.v1.Finding.epss:type_name -> v0s.v1.Epss
-	45, // 10: v0s.v1.Finding.suppression:type_name -> v0s.v1.Suppression
-	19, // 11: v0s.v1.ListWorkloadsRequest.overview:type_name -> v0s.v1.WorkloadOverviewOptions
-	43, // 12: v0s.v1.ListWorkloadsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	13, // 13: v0s.v1.ListWorkloadsResponse.workloads:type_name -> v0s.v1.Workload
-	14, // 14: v0s.v1.WorkloadOverviewOptions.finding_filter:type_name -> v0s.v1.FindingFilter
-	22, // 15: v0s.v1.WorkloadFindingCounts.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
-	43, // 16: v0s.v1.GetSummaryRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	14, // 17: v0s.v1.GetSummaryRequest.finding_filter:type_name -> v0s.v1.FindingFilter
-	22, // 18: v0s.v1.GetSummaryResponse.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
-	25, // 19: v0s.v1.GetSummaryResponse.coverage:type_name -> v0s.v1.WorkloadCoverage
-	14, // 20: v0s.v1.ListFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
-	27, // 21: v0s.v1.ListFindingsRequest.order_by:type_name -> v0s.v1.FindingOrderBy
-	43, // 22: v0s.v1.ListFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	7,  // 23: v0s.v1.FindingOrderBy.field:type_name -> v0s.v1.FindingOrderBy.Field
-	8,  // 24: v0s.v1.FindingOrderBy.direction:type_name -> v0s.v1.FindingOrderBy.Direction
-	15, // 25: v0s.v1.ListFindingsResponse.findings:type_name -> v0s.v1.Finding
-	29, // 26: v0s.v1.ListFindingsResponse.package_type_counts:type_name -> v0s.v1.PackageTypeCount
-	14, // 27: v0s.v1.ListVulnerabilitiesRequest.filter:type_name -> v0s.v1.FindingFilter
-	31, // 28: v0s.v1.ListVulnerabilitiesRequest.order_by:type_name -> v0s.v1.VulnerabilityOrderBy
-	43, // 29: v0s.v1.ListVulnerabilitiesRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	9,  // 30: v0s.v1.VulnerabilityOrderBy.field:type_name -> v0s.v1.VulnerabilityOrderBy.Field
-	10, // 31: v0s.v1.VulnerabilityOrderBy.direction:type_name -> v0s.v1.VulnerabilityOrderBy.Direction
-	0,  // 32: v0s.v1.VulnerabilitySummary.severity:type_name -> v0s.v1.Severity
-	32, // 33: v0s.v1.ListVulnerabilitiesResponse.vulnerabilities:type_name -> v0s.v1.VulnerabilitySummary
-	14, // 34: v0s.v1.CountFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
-	11, // 35: v0s.v1.CountFindingsRequest.group_by:type_name -> v0s.v1.CountFindingsRequest.GroupBy
-	43, // 36: v0s.v1.CountFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
-	56, // 37: v0s.v1.CountFindingsResponse.buckets:type_name -> v0s.v1.CountFindingsResponse.Bucket
-	38, // 38: v0s.v1.GetVulnerabilityResponse.vulnerability:type_name -> v0s.v1.Vulnerability
-	16, // 39: v0s.v1.Vulnerability.epss:type_name -> v0s.v1.Epss
-	41, // 40: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
-	12, // 41: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
-	42, // 42: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
-	42, // 43: v0s.v1.WorkloadSelector.workloads:type_name -> v0s.v1.WorkloadRef
-	2,  // 44: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
-	57, // 45: v0s.v1.Suppression.updated_at:type_name -> google.protobuf.Timestamp
-	44, // 46: v0s.v1.NewSuppression.key:type_name -> v0s.v1.SuppressionKey
-	2,  // 47: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
-	46, // 48: v0s.v1.SetSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
-	45, // 49: v0s.v1.SetSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
-	44, // 50: v0s.v1.DeleteSuppressionsRequest.keys:type_name -> v0s.v1.SuppressionKey
-	45, // 51: v0s.v1.DeleteSuppressionsResponse.deleted:type_name -> v0s.v1.Suppression
-	45, // 52: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
-	54, // 53: v0s.v1.ForwardV13sSuppressionRequest.assessment:type_name -> v0s.v1.V13sAssessment
-	2,  // 54: v0s.v1.V13sAssessment.state:type_name -> v0s.v1.SuppressionState
-	57, // 55: v0s.v1.V13sAssessment.updated_at:type_name -> google.protobuf.Timestamp
-	4,  // 56: v0s.v1.ForwardV13sSuppressionResponse.outcome:type_name -> v0s.v1.ForwardOutcome
-	17, // 57: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
-	26, // 58: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
-	30, // 59: v0s.v1.VulnerabilityService.ListVulnerabilities:input_type -> v0s.v1.ListVulnerabilitiesRequest
-	34, // 60: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
-	23, // 61: v0s.v1.VulnerabilityService.GetSummary:input_type -> v0s.v1.GetSummaryRequest
-	36, // 62: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
-	39, // 63: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
-	47, // 64: v0s.v1.SuppressionService.SetSuppressions:input_type -> v0s.v1.SetSuppressionsRequest
-	49, // 65: v0s.v1.SuppressionService.DeleteSuppressions:input_type -> v0s.v1.DeleteSuppressionsRequest
-	51, // 66: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
-	53, // 67: v0s.v1.SuppressionService.ForwardV13sSuppression:input_type -> v0s.v1.ForwardV13sSuppressionRequest
-	18, // 68: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
-	28, // 69: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
-	33, // 70: v0s.v1.VulnerabilityService.ListVulnerabilities:output_type -> v0s.v1.ListVulnerabilitiesResponse
-	35, // 71: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
-	24, // 72: v0s.v1.VulnerabilityService.GetSummary:output_type -> v0s.v1.GetSummaryResponse
-	37, // 73: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
-	40, // 74: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
-	48, // 75: v0s.v1.SuppressionService.SetSuppressions:output_type -> v0s.v1.SetSuppressionsResponse
-	50, // 76: v0s.v1.SuppressionService.DeleteSuppressions:output_type -> v0s.v1.DeleteSuppressionsResponse
-	52, // 77: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
-	55, // 78: v0s.v1.SuppressionService.ForwardV13sSuppression:output_type -> v0s.v1.ForwardV13sSuppressionResponse
-	68, // [68:79] is the sub-list for method output_type
-	57, // [57:68] is the sub-list for method input_type
-	57, // [57:57] is the sub-list for extension type_name
-	57, // [57:57] is the sub-list for extension extendee
-	0,  // [0:57] is the sub-list for field type_name
+	58, // 1: v0s.v1.Image.scanned_at:type_name -> google.protobuf.Timestamp
+	2,  // 2: v0s.v1.Image.error_code:type_name -> v0s.v1.ImageErrorCode
+	13, // 3: v0s.v1.Workload.image:type_name -> v0s.v1.Image
+	22, // 4: v0s.v1.Workload.finding_counts:type_name -> v0s.v1.WorkloadFindingCounts
+	0,  // 5: v0s.v1.FindingFilter.severities:type_name -> v0s.v1.Severity
+	4,  // 6: v0s.v1.FindingFilter.suppressed:type_name -> v0s.v1.SuppressedFilter
+	43, // 7: v0s.v1.Finding.workload:type_name -> v0s.v1.WorkloadRef
+	13, // 8: v0s.v1.Finding.image:type_name -> v0s.v1.Image
+	0,  // 9: v0s.v1.Finding.severity:type_name -> v0s.v1.Severity
+	17, // 10: v0s.v1.Finding.epss:type_name -> v0s.v1.Epss
+	46, // 11: v0s.v1.Finding.suppression:type_name -> v0s.v1.Suppression
+	20, // 12: v0s.v1.ListWorkloadsRequest.overview:type_name -> v0s.v1.WorkloadOverviewOptions
+	44, // 13: v0s.v1.ListWorkloadsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	14, // 14: v0s.v1.ListWorkloadsResponse.workloads:type_name -> v0s.v1.Workload
+	15, // 15: v0s.v1.WorkloadOverviewOptions.finding_filter:type_name -> v0s.v1.FindingFilter
+	23, // 16: v0s.v1.WorkloadFindingCounts.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
+	44, // 17: v0s.v1.GetSummaryRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	15, // 18: v0s.v1.GetSummaryRequest.finding_filter:type_name -> v0s.v1.FindingFilter
+	23, // 19: v0s.v1.GetSummaryResponse.severity_counts:type_name -> v0s.v1.VulnerabilitySeverityCounts
+	26, // 20: v0s.v1.GetSummaryResponse.coverage:type_name -> v0s.v1.WorkloadCoverage
+	15, // 21: v0s.v1.ListFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
+	28, // 22: v0s.v1.ListFindingsRequest.order_by:type_name -> v0s.v1.FindingOrderBy
+	44, // 23: v0s.v1.ListFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	8,  // 24: v0s.v1.FindingOrderBy.field:type_name -> v0s.v1.FindingOrderBy.Field
+	9,  // 25: v0s.v1.FindingOrderBy.direction:type_name -> v0s.v1.FindingOrderBy.Direction
+	16, // 26: v0s.v1.ListFindingsResponse.findings:type_name -> v0s.v1.Finding
+	30, // 27: v0s.v1.ListFindingsResponse.package_type_counts:type_name -> v0s.v1.PackageTypeCount
+	15, // 28: v0s.v1.ListVulnerabilitiesRequest.filter:type_name -> v0s.v1.FindingFilter
+	32, // 29: v0s.v1.ListVulnerabilitiesRequest.order_by:type_name -> v0s.v1.VulnerabilityOrderBy
+	44, // 30: v0s.v1.ListVulnerabilitiesRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	10, // 31: v0s.v1.VulnerabilityOrderBy.field:type_name -> v0s.v1.VulnerabilityOrderBy.Field
+	11, // 32: v0s.v1.VulnerabilityOrderBy.direction:type_name -> v0s.v1.VulnerabilityOrderBy.Direction
+	0,  // 33: v0s.v1.VulnerabilitySummary.severity:type_name -> v0s.v1.Severity
+	33, // 34: v0s.v1.ListVulnerabilitiesResponse.vulnerabilities:type_name -> v0s.v1.VulnerabilitySummary
+	15, // 35: v0s.v1.CountFindingsRequest.filter:type_name -> v0s.v1.FindingFilter
+	12, // 36: v0s.v1.CountFindingsRequest.group_by:type_name -> v0s.v1.CountFindingsRequest.GroupBy
+	44, // 37: v0s.v1.CountFindingsRequest.workload_selector:type_name -> v0s.v1.WorkloadSelector
+	57, // 38: v0s.v1.CountFindingsResponse.buckets:type_name -> v0s.v1.CountFindingsResponse.Bucket
+	39, // 39: v0s.v1.GetVulnerabilityResponse.vulnerability:type_name -> v0s.v1.Vulnerability
+	17, // 40: v0s.v1.Vulnerability.epss:type_name -> v0s.v1.Epss
+	42, // 41: v0s.v1.SearchComponentsResponse.matches:type_name -> v0s.v1.ComponentMatch
+	13, // 42: v0s.v1.ComponentMatch.image:type_name -> v0s.v1.Image
+	43, // 43: v0s.v1.ComponentMatch.workloads:type_name -> v0s.v1.WorkloadRef
+	43, // 44: v0s.v1.WorkloadSelector.workloads:type_name -> v0s.v1.WorkloadRef
+	3,  // 45: v0s.v1.Suppression.state:type_name -> v0s.v1.SuppressionState
+	58, // 46: v0s.v1.Suppression.updated_at:type_name -> google.protobuf.Timestamp
+	45, // 47: v0s.v1.NewSuppression.key:type_name -> v0s.v1.SuppressionKey
+	3,  // 48: v0s.v1.NewSuppression.state:type_name -> v0s.v1.SuppressionState
+	47, // 49: v0s.v1.SetSuppressionsRequest.suppressions:type_name -> v0s.v1.NewSuppression
+	46, // 50: v0s.v1.SetSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	45, // 51: v0s.v1.DeleteSuppressionsRequest.keys:type_name -> v0s.v1.SuppressionKey
+	46, // 52: v0s.v1.DeleteSuppressionsResponse.deleted:type_name -> v0s.v1.Suppression
+	46, // 53: v0s.v1.ListSuppressionsResponse.suppressions:type_name -> v0s.v1.Suppression
+	55, // 54: v0s.v1.ForwardV13sSuppressionRequest.assessment:type_name -> v0s.v1.V13sAssessment
+	3,  // 55: v0s.v1.V13sAssessment.state:type_name -> v0s.v1.SuppressionState
+	58, // 56: v0s.v1.V13sAssessment.updated_at:type_name -> google.protobuf.Timestamp
+	5,  // 57: v0s.v1.ForwardV13sSuppressionResponse.outcome:type_name -> v0s.v1.ForwardOutcome
+	18, // 58: v0s.v1.VulnerabilityService.ListWorkloads:input_type -> v0s.v1.ListWorkloadsRequest
+	27, // 59: v0s.v1.VulnerabilityService.ListFindings:input_type -> v0s.v1.ListFindingsRequest
+	31, // 60: v0s.v1.VulnerabilityService.ListVulnerabilities:input_type -> v0s.v1.ListVulnerabilitiesRequest
+	35, // 61: v0s.v1.VulnerabilityService.CountFindings:input_type -> v0s.v1.CountFindingsRequest
+	24, // 62: v0s.v1.VulnerabilityService.GetSummary:input_type -> v0s.v1.GetSummaryRequest
+	37, // 63: v0s.v1.VulnerabilityService.GetVulnerability:input_type -> v0s.v1.GetVulnerabilityRequest
+	40, // 64: v0s.v1.VulnerabilityService.SearchComponents:input_type -> v0s.v1.SearchComponentsRequest
+	48, // 65: v0s.v1.SuppressionService.SetSuppressions:input_type -> v0s.v1.SetSuppressionsRequest
+	50, // 66: v0s.v1.SuppressionService.DeleteSuppressions:input_type -> v0s.v1.DeleteSuppressionsRequest
+	52, // 67: v0s.v1.SuppressionService.ListSuppressions:input_type -> v0s.v1.ListSuppressionsRequest
+	54, // 68: v0s.v1.SuppressionService.ForwardV13sSuppression:input_type -> v0s.v1.ForwardV13sSuppressionRequest
+	19, // 69: v0s.v1.VulnerabilityService.ListWorkloads:output_type -> v0s.v1.ListWorkloadsResponse
+	29, // 70: v0s.v1.VulnerabilityService.ListFindings:output_type -> v0s.v1.ListFindingsResponse
+	34, // 71: v0s.v1.VulnerabilityService.ListVulnerabilities:output_type -> v0s.v1.ListVulnerabilitiesResponse
+	36, // 72: v0s.v1.VulnerabilityService.CountFindings:output_type -> v0s.v1.CountFindingsResponse
+	25, // 73: v0s.v1.VulnerabilityService.GetSummary:output_type -> v0s.v1.GetSummaryResponse
+	38, // 74: v0s.v1.VulnerabilityService.GetVulnerability:output_type -> v0s.v1.GetVulnerabilityResponse
+	41, // 75: v0s.v1.VulnerabilityService.SearchComponents:output_type -> v0s.v1.SearchComponentsResponse
+	49, // 76: v0s.v1.SuppressionService.SetSuppressions:output_type -> v0s.v1.SetSuppressionsResponse
+	51, // 77: v0s.v1.SuppressionService.DeleteSuppressions:output_type -> v0s.v1.DeleteSuppressionsResponse
+	53, // 78: v0s.v1.SuppressionService.ListSuppressions:output_type -> v0s.v1.ListSuppressionsResponse
+	56, // 79: v0s.v1.SuppressionService.ForwardV13sSuppression:output_type -> v0s.v1.ForwardV13sSuppressionResponse
+	69, // [69:80] is the sub-list for method output_type
+	58, // [58:69] is the sub-list for method input_type
+	58, // [58:58] is the sub-list for extension type_name
+	58, // [58:58] is the sub-list for extension extendee
+	0,  // [0:58] is the sub-list for field type_name
 }
 
 func init() { file_v0s_v1_v0s_proto_init() }
@@ -4341,7 +4404,7 @@ func file_v0s_v1_v0s_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_v0s_v1_v0s_proto_rawDesc), len(file_v0s_v1_v0s_proto_rawDesc)),
-			NumEnums:      12,
+			NumEnums:      13,
 			NumMessages:   45,
 			NumExtensions: 0,
 			NumServices:   2,

@@ -62,6 +62,101 @@ func TestStoreSBOMKeepsFirst(t *testing.T) {
 	}
 }
 
+func TestImageErrorCode(t *testing.T) {
+	ctx := t.Context()
+	db := databasetest.New(t)
+	id := runImages(t, db, "dev", "img")["img"]
+	rejected := v0s.ImageErrorCodeAttestationRejected
+	check := func(state v0s.SBOMState, message string, code v0s.ImageErrorCode) {
+		t.Helper()
+		workloads, _, err := db.ListWorkloads(ctx, database.WorkloadFilter{}, database.Page{})
+		if err != nil || len(workloads) != 1 || workloads[0].Image == nil {
+			t.Fatalf("workloads=%+v, err=%v", workloads, err)
+		}
+		img := workloads[0].Image
+		if img.SBOMState != state || img.Error != message || img.ErrorCode != code {
+			t.Errorf("image=%+v; want state=%s, error=%q, code=%q", img, state, message, code)
+		}
+	}
+	fail := func() {
+		t.Helper()
+		if err := db.RecordSBOMFailureWithCode(ctx, id, v0s.SBOMFailed, "SBOM attestation was rejected", rejected, time.Now().Add(-time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fail()
+	check(v0s.SBOMFailed, "SBOM attestation was rejected", rejected)
+	due, err := db.DueSBOMFetches(ctx, 10)
+	if err != nil || len(due) != 1 || due[0].ErrorCode != rejected {
+		t.Fatalf("due=%+v, err=%v; want rejected code", due, err)
+	}
+	if err := db.RecordSBOMFailure(ctx, id, v0s.SBOMMissing, "No SBOM attestation was found", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	check(v0s.SBOMMissing, "No SBOM attestation was found", v0s.ImageErrorCodeUnspecified)
+	if err := db.RecordSBOMFailureWithCode(ctx, id, v0s.SBOMFailed, "invalid", v0s.ImageErrorCode("unknown"), time.Now()); err == nil {
+		t.Fatal("unknown error code must violate the database constraint")
+	}
+	fail()
+	if err := db.StoreSBOM(ctx, id, []byte("{}")); err != nil {
+		t.Fatal(err)
+	}
+	check(v0s.SBOMFetched, "", v0s.ImageErrorCodeUnspecified)
+	fail()
+	check(v0s.SBOMFetched, "", v0s.ImageErrorCodeUnspecified)
+	job, ok, err := db.NextScan(ctx, time.Now())
+	if err != nil || !ok || job.Image.ErrorCode != v0s.ImageErrorCodeUnspecified {
+		t.Fatalf("NextScan=%+v, %t, %v; want cleared code", job, ok, err)
+	}
+	version := time.Now()
+	exec(t, db, `UPDATE images SET error_code = 'attestation_rejected' WHERE id = $1`, id)
+	if err := db.RecordScanFailure(ctx, id, version, "scan failed"); err != nil {
+		t.Fatal(err)
+	}
+	check(v0s.SBOMFetched, "scan failed", v0s.ImageErrorCodeUnspecified)
+	exec(t, db, `UPDATE images SET error_code = 'attestation_rejected' WHERE id = $1`, id)
+	if err := db.StoreScan(ctx, id, version.Add(time.Hour), v0s.ScanResult{}); err != nil {
+		t.Fatal(err)
+	}
+	check(v0s.SBOMFetched, "", v0s.ImageErrorCodeUnspecified)
+}
+
+func TestMigrateImageErrorCode(t *testing.T) {
+	ctx := t.Context()
+	db, url := databasetest.NewWithURL(t)
+	id := runImages(t, db, "dev", "img")["img"]
+	exec(t, db, `
+		ALTER TABLE images DROP COLUMN error_code;
+		DELETE FROM schema_migrations WHERE version = 4;
+		UPDATE images SET sbom_state = 'failed', error = 'previous failure';`)
+	db.Close()
+	if err := database.Migrate(ctx, url); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := database.Open(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer migrated.Close()
+	workloads, _, err := migrated.ListWorkloads(ctx, database.WorkloadFilter{}, database.Page{})
+	if err != nil || len(workloads) != 1 || workloads[0].Image == nil {
+		t.Fatalf("migrated workloads=%+v, err=%v", workloads, err)
+	}
+	img := workloads[0].Image
+	if img.Error != "previous failure" || img.ErrorCode != v0s.ImageErrorCodeUnspecified {
+		t.Errorf("migrated image=%+v; want preserved failure with unspecified code", img)
+	}
+	if err := migrated.RecordSBOMFailureWithCode(ctx, id, v0s.SBOMFailed, "SBOM attestation was rejected", v0s.ImageErrorCodeAttestationRejected, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Migrate(ctx, url); err != nil {
+		t.Fatal(err)
+	}
+	if got := queryStrings(t, migrated, `SELECT error_code FROM images WHERE id = $1`, id); !slices.Equal(got, []string{"attestation_rejected"}) {
+		t.Errorf("repeated migration changed recorded code: %q", got)
+	}
+}
+
 func TestDeleteUnusedImages(t *testing.T) {
 	ctx := context.Background()
 	db := databasetest.New(t)

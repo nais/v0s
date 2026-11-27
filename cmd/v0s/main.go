@@ -41,6 +41,7 @@ type config struct {
 	databaseURL    string
 	naisAPIAddress string
 	githubOrgs     []string
+	identityRules  []attest.IdentityRule
 	trivyDBDir     string
 	trivyDBRepos   []string
 }
@@ -68,6 +69,11 @@ func loadConfig() (config, error) {
 	if len(missing) > 0 {
 		return config{}, fmt.Errorf("missing configuration: %s", strings.Join(missing, ", "))
 	}
+	rules, err := attest.ParseIdentityRules(env("ATTESTATION_IDENTITY_RULES", ""))
+	if err != nil {
+		return config{}, fmt.Errorf("ATTESTATION_IDENTITY_RULES: %w", err)
+	}
+	c.identityRules = rules
 	return c, nil
 }
 
@@ -132,7 +138,7 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	if err != nil {
 		return fmt.Errorf("opening vulnerability DB: %w", err)
 	}
-	fetcher, err := attest.NewFetcher(ctx, cfg.githubOrgs, log)
+	fetcher, err := attest.NewFetcher(ctx, cfg.githubOrgs, cfg.identityRules, log)
 	if err != nil {
 		return fmt.Errorf("creating attestation fetcher: %w", err)
 	}

@@ -26,8 +26,10 @@ reason, so that it shows as a coverage gap instead of disappearing.
 Platform sidecars (texas, wonderwall, Cloud SQL proxy) are not part of it.
 
 **SBOM**
-: The CycloneDX document attested to an image with cosign, signed by the
-team's GitHub Actions workflow. v0s stores the verified SBOM so that it can
+: The CycloneDX document attested to an image with cosign, signed by a
+trusted GitHub Actions workflow or an explicitly configured identity within
+its allowed image-repository scope. Identity rules grant signing trust, not
+team membership or build provenance. v0s stores the verified SBOM so that it can
 rescan without fetching it again, until no workload uses the image.
 
 **Component**

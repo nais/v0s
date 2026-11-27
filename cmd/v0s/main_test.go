@@ -43,6 +43,34 @@ func TestCommandRejectsInvalidConfiguration(t *testing.T) {
 	}
 }
 
+func TestAttestationIdentityConfiguration(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://localhost/v0s")
+	t.Setenv("NAIS_API_GRPC_ADDRESS", "nais-api:3001")
+	t.Setenv("GITHUB_ORGANIZATIONS", "nais")
+	for _, tc := range []struct {
+		value string
+		want  int
+		valid bool
+	}{
+		{"", 0, true},
+		{"[]", 0, true},
+		{`[{"issuer":"https://accounts.google.com","subjectRegExp":"[a-zA-Z0-9._%+-]+@nav\\.no","repositories":["ghcr.io/navikt"]}]`, 1, true},
+		{`[{"issuer":"https://accounts.google.com","subjectRegExp":".+"}]`, 0, false},
+		{"not JSON", 0, false},
+	} {
+		t.Run(tc.value, func(t *testing.T) {
+			t.Setenv("ATTESTATION_IDENTITY_RULES", tc.value)
+			cfg, err := loadConfig()
+			if (err == nil) != tc.valid {
+				t.Fatalf("loadConfig: %v, valid=%v", err, tc.valid)
+			}
+			if len(cfg.identityRules) != tc.want {
+				t.Fatalf("rules=%v, want count %d", cfg.identityRules, tc.want)
+			}
+		})
+	}
+}
+
 type fakeScanner struct{}
 
 func (fakeScanner) Update(context.Context) (bool, error) { return false, nil }

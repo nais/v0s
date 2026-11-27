@@ -156,6 +156,36 @@ volumes for the read-only scratch container. Platform policies are additive;
 verify effective access before adding consumers. Do not install in an untrusted
 application namespace.
 
+### Scoped attestation identity rules
+
+`attestationIdentityRules` is a JSON-array **string**, exposed as a string in
+Fasit and passed through as `ATTESTATION_IDENTITY_RULES`. Its default is `"[]"`;
+no tenant receives additional signing trust automatically. Existing
+`github.organizations` remains required and unchanged.
+
+Illustrative Helm values, not a NAV production policy:
+
+```yaml
+attestationIdentityRules: |
+  [
+    {
+      "issuer": "https://accounts.google.com",
+      "subjectRegExp": "[a-zA-Z0-9._%+-]+@example\\.com",
+      "repositories": ["ghcr.io/example/images"]
+    }
+  ]
+```
+
+Each rule requires an exact issuer, a full-subject expression and at least one
+canonical image-repository path. A path includes itself and slash-delimited
+descendants; tags, digests and wildcards are unsupported. Invalid configuration
+prevents application startup. Scope is signing authorization, not egress:
+review registry IAM and `networkPolicy.httpsHosts` separately.
+For NAV, confirm the actual repository paths before configuring
+`https://accounts.google.com` and a full `@nav.no` email matcher. Matching
+identities need no additional team membership check. See
+[Operations](../docs/operations.md#additional-attestation-identities).
+
 ## Local verification and release
 
 `mise run check` fetches the locked Helm dependency, lints both database modes,
