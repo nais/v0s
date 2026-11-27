@@ -44,6 +44,10 @@ github:
   organizations:
     - nais
 
+attestation:
+  emailIssuer: https://accounts.google.com
+  allowedEmailDomains: []
+
 trivyDBRepositories:
   - europe-north1-docker.pkg.dev/nais-io/github-ptc/aquasecurity/trivy-db:2
   - ghcr.io/aquasecurity/trivy-db:2

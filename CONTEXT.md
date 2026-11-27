@@ -27,7 +27,8 @@ Platform sidecars (texas, wonderwall, Cloud SQL proxy) are not part of it.
 
 **SBOM**
 : The CycloneDX document attested to an image with cosign, signed by the
-team's GitHub Actions workflow. v0s stores the verified SBOM so that it can
+team's GitHub Actions workflow or, when the operator trusts their email domain,
+by a person with their own keyless email identity. v0s stores the verified SBOM so that it can
 rescan without fetching it again, until no workload uses the image.
 
 **Component**

@@ -146,8 +146,10 @@ environment with no backups is not production-ready merely because pods run.
 
 Use a release chart whose `appVersion` identifies its published image, or set
 `image.tag`. Set `github.organizations` to the accepted signer organizations
-(e.g. `nais` and `navikt`), and review `networkPolicy.httpsHosts` for registry
-redirects and data sources. Adding a Trivy repository does not open egress.
+(e.g. `nais` and `navikt`). To also accept SBOMs that people sign with their
+own keyless identity, set `attestation.allowedEmailDomains` (e.g. `nav.no`);
+`attestation.emailIssuer` defaults to `https://accounts.google.com`. Review
+`networkPolicy.httpsHosts` for registry redirects and data sources. Adding a Trivy repository does not open egress.
 
 The API trusts same-namespace callers; team filters are not authorization. The
 chart restricts gRPC/HTTP ingress to that namespace and allows Nais API, CNPG,

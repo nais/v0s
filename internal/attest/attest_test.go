@@ -3,10 +3,13 @@ package attest
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -19,17 +22,27 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/registry"
 	v1 "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/google"
+	"github.com/google/go-containerregistry/pkg/v1/random"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/sigstore/cosign/v3/pkg/cosign"
 	cbundle "github.com/sigstore/cosign/v3/pkg/cosign/bundle"
 	"github.com/sigstore/cosign/v3/pkg/oci"
 	"github.com/sigstore/cosign/v3/pkg/oci/empty"
 	"github.com/sigstore/cosign/v3/pkg/oci/mutate"
+	ociremote "github.com/sigstore/cosign/v3/pkg/oci/remote"
 	"github.com/sigstore/cosign/v3/pkg/oci/static"
+	protobundle "github.com/sigstore/protobuf-specs/gen/pb-go/bundle/v1"
+	protocommon "github.com/sigstore/protobuf-specs/gen/pb-go/common/v1"
+	protodsse "github.com/sigstore/protobuf-specs/gen/pb-go/dsse"
+	protorekor "github.com/sigstore/protobuf-specs/gen/pb-go/rekor/v1"
+	sgbundle "github.com/sigstore/sigstore-go/pkg/bundle"
 	"github.com/sigstore/sigstore-go/pkg/testing/ca"
 	"github.com/sigstore/sigstore-go/pkg/tlog"
 	"github.com/sigstore/sigstore/pkg/cryptoutils"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // TestFetchRegistryDeadline exercises the real cosign/registry path against a
@@ -55,7 +68,7 @@ func TestFetchRegistryDeadline(t *testing.T) {
 	defer srv.Close()
 	f := &Fetcher{
 		log: slog.New(slog.DiscardHandler), keychain: authn.NewMultiKeychain(),
-		trustedRoot: vs, identity: githubIdentity([]string{"nais"}),
+		trustedRoot: vs, identities: []cosign.Identity{githubIdentity([]string{"nais"})},
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 250*time.Millisecond)
 	defer cancel()
@@ -148,6 +161,291 @@ func TestGitHubIdentity(t *testing.T) {
 	}
 }
 
+func TestEmailSignersIdentity(t *testing.T) {
+	identity, err := EmailSigners{Issuer: " " + GoogleIssuer + " ", Domains: []string{"nav.no", " Example.COM"}}.identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.Issuer != GoogleIssuer {
+		t.Errorf("Issuer = %q", identity.Issuer)
+	}
+	subject := regexp.MustCompile(identity.SubjectRegExp)
+	for _, tt := range []struct {
+		email string
+		want  bool
+	}{
+		{"ola.nordmann@nav.no", true},
+		{"kari@example.com", true},
+		{"ola@navXno", false},
+		{"ola@nav.no.evil.com", false},
+		{"ola@evil.nav.no", false},
+		{"ola@evilnav.no", false},
+		{"ola@nav.no@evil.com", false},
+	} {
+		if got := subject.MatchString(tt.email); got != tt.want {
+			t.Errorf("subject regexp matches %q = %v, want %v", tt.email, got, tt.want)
+		}
+	}
+
+	for _, tt := range []struct {
+		name, issuer, domain string
+	}{
+		{"plain HTTP issuer", "http://accounts.google.com", "nav.no"},
+		{"GitHub issuer", githubIssuer, "nav.no"},
+		{"single label", GoogleIssuer, "no"},
+		{"wildcard domain", GoogleIssuer, "*.nav.no"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := (EmailSigners{Issuer: tt.issuer, Domains: []string{tt.domain}}).identity(); err == nil {
+				t.Error("identity() succeeded, want error")
+			}
+		})
+	}
+}
+
+func TestNewFetcherTrustsEmailSignersOnlyWithDomains(t *testing.T) {
+	f, err := NewFetcher(t.Context(), []string{"nais"}, EmailSigners{Issuer: "not a URL"}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.identities) != 1 || f.identities[0].Issuer != githubIssuer {
+		t.Errorf("identities = %v, want only GitHub", f.identities)
+	}
+	if _, err := NewFetcher(t.Context(), []string{"nais"}, EmailSigners{Issuer: "not a URL", Domains: []string{"nav.no"}}, slog.New(slog.DiscardHandler)); err == nil {
+		t.Error("NewFetcher() accepted an invalid email issuer with domains")
+	}
+}
+
+type signedStatement struct {
+	subject, issuer, statement string
+}
+
+func TestFetchBundleIdentities(t *testing.T) {
+	vs, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	predicate, err := os.ReadFile("testdata/cyclonedx-predicate.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	predicate = bytes.TrimSpace(predicate)
+	email, err := EmailSigners{Issuer: GoogleIssuer, Domains: []string{"nav.no"}}.identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	github := githubIdentity([]string{"nais"})
+	const workflow = "https://github.com/nais/app/.github/workflows/build.yml@refs/heads/main"
+
+	tests := []struct {
+		name       string
+		identities []cosign.Identity
+		signed     []signedStatement
+		wantErr    error
+	}{
+		{
+			name:       "GitHub signer with email signers trusted",
+			identities: []cosign.Identity{github, email},
+			signed:     []signedStatement{{workflow, githubIssuer, "cyclonedx"}},
+		},
+		{
+			name:       "email signer",
+			identities: []cosign.Identity{github, email},
+			signed:     []signedStatement{{"ola.nordmann@nav.no", GoogleIssuer, "cyclonedx"}},
+		},
+		{
+			name:       "provenance and SBOM by different signers",
+			identities: []cosign.Identity{github, email},
+			signed:     []signedStatement{{workflow, githubIssuer, "slsa"}, {"ola.nordmann@nav.no", GoogleIssuer, "cyclonedx"}},
+		},
+		{
+			name:       "email signer on untrusted domain",
+			identities: []cosign.Identity{github, email},
+			signed:     []signedStatement{{"ola@evil.com", GoogleIssuer, "cyclonedx"}},
+			wantErr:    ErrNotFound,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			digest := pushImage(t)
+			for _, s := range tt.signed {
+				attachBundle(t, vs, digest, s)
+			}
+			f := &Fetcher{
+				log: slog.New(slog.DiscardHandler), keychain: authn.DefaultKeychain,
+				trustedRoot: vs, identities: tt.identities, ignoreSCT: true,
+			}
+			got, err := f.Fetch(t.Context(), digest.String())
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Fetch() error = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Fetch(): %v", err)
+			}
+			if !bytes.Equal(got, predicate) {
+				t.Errorf("Fetch() = %s, want the attested predicate", got)
+			}
+		})
+	}
+}
+
+func pushImage(t *testing.T) name.Digest {
+	t.Helper()
+	srv := httptest.NewServer(registry.New(registry.Logger(log.New(io.Discard, "", 0))))
+	t.Cleanup(srv.Close)
+	img, err := random.Image(64, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag, err := name.NewTag(strings.TrimPrefix(srv.URL, "http://") + "/nais/app:latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := remote.Write(tag, img); err != nil {
+		t.Fatal(err)
+	}
+	h, err := img.Digest()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tag.Context().Digest(h.String())
+}
+
+func attachBundle(t *testing.T, vs *ca.VirtualSigstore, digest name.Digest, s signedStatement) {
+	t.Helper()
+	statement, err := os.ReadFile("testdata/" + s.statement + "-statement.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := v1.NewHash(digest.DigestStr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement = bytes.ReplaceAll(statement, []byte(strings.Repeat("a", 64)), []byte(h.Hex))
+	entity, err := vs.AttestAtTime(s.subject, s.issuer, statement, time.Now(), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	verification, err := entity.VerificationContent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigContent, err := entity.SignatureContent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := sigContent.EnvelopeContent().RawEnvelope()
+	envelope := &protodsse.Envelope{PayloadType: raw.PayloadType}
+	if envelope.Payload, err = base64.StdEncoding.DecodeString(raw.Payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, sig := range raw.Signatures {
+		decoded, err := base64.StdEncoding.DecodeString(sig.Sig)
+		if err != nil {
+			t.Fatal(err)
+		}
+		envelope.Signatures = append(envelope.Signatures, &protodsse.Signature{Sig: decoded, Keyid: sig.KeyID})
+	}
+	entries, err := entity.TlogEntries()
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := entries[0]
+	// The entry does not expose its signed entry timestamp, so sign the same payload again.
+	set, err := vs.RekorSignPayload(tlog.RekorPayload{
+		Body:           entry.Body(),
+		IntegratedTime: entry.IntegratedTime().Unix(),
+		LogIndex:       entry.LogIndex(),
+		LogID:          hex.EncodeToString([]byte(entry.LogKeyID())),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tle := entry.TransparencyLogEntry()
+	tle.KindVersion = &protorekor.KindVersion{Kind: "dsse", Version: "0.0.1"}
+	tle.InclusionPromise = &protorekor.InclusionPromise{SignedEntryTimestamp: set}
+	mediaType, err := sgbundle.MediaTypeString("0.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := protojson.Marshal(&protobundle.Bundle{
+		MediaType: mediaType,
+		VerificationMaterial: &protobundle.VerificationMaterial{
+			Content: &protobundle.VerificationMaterial_Certificate{
+				Certificate: &protocommon.X509Certificate{RawBytes: verification.Certificate().Raw},
+			},
+			TlogEntries: []*protorekor.TransparencyLogEntry{tle},
+		},
+		Content: &protobundle.Bundle_DsseEnvelope{DsseEnvelope: envelope},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var predicateType struct {
+		PredicateType string `json:"predicateType"`
+	}
+	if err := json.Unmarshal(statement, &predicateType); err != nil {
+		t.Fatal(err)
+	}
+	if err := ociremote.WriteAttestationNewBundleFormat(digest, b, predicateType.PredicateType); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func legacyCheckOpts(t *testing.T, vs *ca.VirtualSigstore, identities ...cosign.Identity) *cosign.CheckOpts {
+	t.Helper()
+	f := &Fetcher{keychain: authn.DefaultKeychain, trustedRoot: vs, identities: identities, ignoreSCT: true}
+	co := f.checkOpts(t.Context())
+	co.NewBundleFormat = false
+	return co
+}
+
+func TestCheckOptsAcceptLegacyEmailSigner(t *testing.T) {
+	vs, err := ca.NewVirtualSigstore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	statement, err := os.ReadFile("testdata/cyclonedx-statement.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	email, err := EmailSigners{Issuer: GoogleIssuer, Domains: []string{"nav.no"}}.identity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	co := legacyCheckOpts(t, vs, githubIdentity([]string{"nais"}), email)
+	h, err := v1.NewHash("sha256:" + strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name, subject, issuer string
+		wantErr               bool
+	}{
+		{name: "trusted domain", subject: "ola.nordmann@nav.no", issuer: GoogleIssuer},
+		{name: "untrusted domain", subject: "ola@evil.com", issuer: GoogleIssuer, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			entity, err := vs.Attest(tt.subject, tt.issuer, statement)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, err = cosign.VerifyImageAttestation(t.Context(), legacyAttestations(t, vs, entity), h, co)
+			if tt.wantErr && err == nil {
+				t.Fatal("VerifyImageAttestation() succeeded, want error")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("VerifyImageAttestation(): %v", err)
+			}
+		})
+	}
+}
+
 func TestSelectCycloneDX(t *testing.T) {
 	cyclonedx := envelope(t, "testdata/cyclonedx-statement.json")
 	slsa := envelope(t, "testdata/slsa-statement.json")
@@ -217,10 +515,7 @@ func TestCheckOptsBindLegacyAttestationToImage(t *testing.T) {
 	}
 	atts := legacyAttestations(t, vs, entity)
 
-	f := &Fetcher{keychain: authn.DefaultKeychain, trustedRoot: vs, identity: githubIdentity([]string{"nais"})}
-	co := f.checkOpts(t.Context())
-	co.NewBundleFormat = false
-	co.IgnoreSCT = true
+	co := legacyCheckOpts(t, vs, githubIdentity([]string{"nais"}))
 
 	tests := []struct {
 		name    string

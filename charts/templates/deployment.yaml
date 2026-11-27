@@ -63,6 +63,10 @@ spec:
               value: nais-api:3001
             - name: GITHUB_ORGANIZATIONS
               value: {{ required "Set github.organizations to at least one trusted organization" .Values.github.organizations | join "," | quote }}
+            - name: ATTESTATION_EMAIL_ISSUER
+              value: {{ .Values.attestation.emailIssuer | quote }}
+            - name: ATTESTATION_ALLOWED_EMAIL_DOMAINS
+              value: {{ .Values.attestation.allowedEmailDomains | join "," | quote }}
             - name: TRIVY_DB_REPOSITORIES
               value: {{ required "Set trivyDBRepositories to at least one OCI repository" .Values.trivyDBRepositories | join "," | quote }}
             - name: HOME
