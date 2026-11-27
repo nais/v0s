@@ -1,5 +1,6 @@
 // Package attest fetches CycloneDX SBOMs attested to images with cosign, and verifies that a
-// GitHub Actions workflow in a trusted organization signed them.
+// GitHub Actions workflow in a trusted organization, or optionally a person with an email address
+// on a trusted domain, signed them.
 package attest
 
 import (
@@ -9,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 
@@ -27,9 +29,14 @@ import (
 // ErrNotFound is returned when an image has no verified CycloneDX attestation.
 var ErrNotFound = errors.New("attestation not found")
 
+// emailDomainPattern matches a lowercase DNS name with at least two labels.
+var emailDomainPattern = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
 const (
 	// githubIssuer is the OIDC issuer of GitHub Actions workflow identities.
 	githubIssuer = "https://token.actions.githubusercontent.com"
+	// GoogleIssuer is the OIDC issuer of Google accounts, the default issuer of EmailSigners.
+	GoogleIssuer = "https://accounts.google.com"
 	// predicateCycloneDX is the in-toto predicate type of a CycloneDX SBOM.
 	predicateCycloneDX = "https://cyclonedx.org/bom"
 )
@@ -39,14 +46,32 @@ type Fetcher struct {
 	log         *slog.Logger
 	keychain    authn.Keychain
 	trustedRoot root.TrustedMaterial
-	identity    cosign.Identity
+	identities  []cosign.Identity
+	// ignoreSCT is set only by tests: virtual Sigstore certificates have no embedded SCTs.
+	ignoreSCT bool
 }
 
-// NewFetcher verifies attestations signed by GitHub Actions workflows in the given GitHub organizations.
-// ctx must live for the service lifetime, since cached credentials reuse it for token refresh.
-func NewFetcher(ctx context.Context, organizations []string, log *slog.Logger) (*Fetcher, error) {
+// EmailSigners are people who sign keylessly with an email address on one of Domains, verified by
+// Issuer. With no Domains, no email signer is trusted.
+type EmailSigners struct {
+	Issuer  string
+	Domains []string
+}
+
+// NewFetcher verifies attestations signed by GitHub Actions workflows in the given GitHub
+// organizations, or by email. ctx must live for the service lifetime, since cached credentials
+// reuse it for token refresh.
+func NewFetcher(ctx context.Context, organizations []string, email EmailSigners, log *slog.Logger) (*Fetcher, error) {
 	if len(organizations) == 0 {
 		return nil, errors.New("no GitHub organizations to trust")
+	}
+	identities := []cosign.Identity{githubIdentity(organizations)}
+	if len(email.Domains) > 0 {
+		identity, err := email.identity()
+		if err != nil {
+			return nil, err
+		}
+		identities = append(identities, identity)
 	}
 	trustedRoot, err := cosign.TrustedRoot()
 	if err != nil {
@@ -59,7 +84,7 @@ func NewFetcher(ctx context.Context, organizations []string, log *slog.Logger) (
 			keychain: authn.NewMultiKeychain(authn.DefaultKeychain, google.Keychain, github.Keychain),
 		},
 		trustedRoot: trustedRoot,
-		identity:    githubIdentity(organizations),
+		identities:  identities,
 	}, nil
 }
 
@@ -94,6 +119,40 @@ func githubIdentity(organizations []string) cosign.Identity {
 	return cosign.Identity{Issuer: githubIssuer, SubjectRegExp: subject}
 }
 
+// identity accepts certificates issued by s.Issuer to any email address on one of s.Domains.
+// Sigstore's Fulcio only issues email certificates after the issuer verified the address, but
+// owning an address does not imply membership of a team or current employment.
+func (s EmailSigners) identity() (cosign.Identity, error) {
+	issuer := strings.TrimSpace(s.Issuer)
+	if err := validateEmailIssuer(issuer); err != nil {
+		return cosign.Identity{}, err
+	}
+	quoted := make([]string, len(s.Domains))
+	for i, domain := range s.Domains {
+		domain = strings.ToLower(strings.TrimSpace(domain))
+		if !emailDomainPattern.MatchString(domain) {
+			return cosign.Identity{}, fmt.Errorf("invalid attestation email domain %q", domain)
+		}
+		quoted[i] = regexp.QuoteMeta(domain)
+	}
+	return cosign.Identity{Issuer: issuer, SubjectRegExp: `^[^@\s:]+@(` + strings.Join(quoted, "|") + `)$`}, nil
+}
+
+// validateEmailIssuer requires an exact HTTPS issuer URL. Cosign compares it to the certificate's
+// issuer verbatim, so credentials, a query or a fragment could only cause confusion.
+func validateEmailIssuer(issuer string) error {
+	u, err := url.Parse(issuer)
+	switch {
+	case err != nil || u.Scheme != "https" || u.Host == "":
+		return fmt.Errorf("attestation email issuer %q must be an HTTPS URL", issuer)
+	case u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "":
+		return fmt.Errorf("attestation email issuer %q must not have credentials, a query or a fragment", issuer)
+	case issuer == githubIssuer:
+		return fmt.Errorf("attestation email issuer must not be the GitHub Actions issuer")
+	}
+	return nil
+}
+
 // Fetch returns the verified CycloneDX JSON SBOM attested to ref ("repo@sha256:..."). It returns
 // ErrNotFound if the image has no matching attestation.
 func (f *Fetcher) Fetch(ctx context.Context, ref string) ([]byte, error) {
@@ -121,14 +180,31 @@ func (f *Fetcher) Fetch(ctx context.Context, ref string) ([]byte, error) {
 
 func (f *Fetcher) verify(ctx context.Context, ref name.Reference) ([]oci.Signature, error) {
 	co := f.checkOpts(ctx)
-	sigs, _, err := cosign.VerifyImageAttestations(ctx, ref, co)
-	if _, ok := errors.AsType[*cosign.ErrNoMatchingAttestations](err); !ok {
-		return sigs, err
+	// Cosign verifies bundles against at most one identity, so verify them once per identity and
+	// keep every match: one identity may have signed the SBOM, and another only provenance.
+	var sigs []oci.Signature
+	var noMatch []error
+	for _, identity := range f.identities {
+		co.Identities = []cosign.Identity{identity}
+		matched, _, err := cosign.VerifyImageAttestations(ctx, ref, co)
+		if _, ok := errors.AsType[*cosign.ErrNoMatchingAttestations](err); ok {
+			noMatch = append(noMatch, err)
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		sigs = append(sigs, matched...)
 	}
-	// Images attested with cosign before v3 only have attestations in the legacy .att tag format.
-	f.log.With("ref", ref.String()).Debug("no attestations in bundle format, trying legacy format")
+	if len(sigs) > 0 {
+		return sigs, nil
+	}
+	// Images attested with cosign before v3 only have attestations in the legacy .att tag format,
+	// which cosign verifies against all identities at once.
+	f.log.With("ref", ref.String(), "err", errors.Join(noMatch...)).Debug("no attestations in bundle format, trying legacy format")
+	co.Identities = f.identities
 	co.NewBundleFormat = false
-	sigs, _, err = cosign.VerifyImageAttestations(ctx, ref, co)
+	sigs, _, err := cosign.VerifyImageAttestations(ctx, ref, co)
 	return sigs, err
 }
 
@@ -141,9 +217,10 @@ func (f *Fetcher) checkOpts(ctx context.Context) *cosign.CheckOpts {
 			ociremote.WithRemoteOptions(remote.WithAuthFromKeychain(f.keychain), remote.WithContext(ctx)),
 		},
 		TrustedMaterial: f.trustedRoot,
-		Identities:      []cosign.Identity{f.identity},
+		Identities:      f.identities,
 		ClaimVerifier:   cosign.IntotoSubjectClaimVerifier,
 		NewBundleFormat: true,
+		IgnoreSCT:       f.ignoreSCT,
 	}
 }
 

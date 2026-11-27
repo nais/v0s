@@ -117,6 +117,8 @@ rollback; scaling only the live Deployment is insufficient. Follow the
 | `DATABASE_URL` | Required: PostgreSQL connection URL |
 | `NAIS_API_GRPC_ADDRESS` | Required: Nais API's internal gRPC address |
 | `GITHUB_ORGANIZATIONS` | Required: comma-separated organizations whose workflow signatures are accepted |
+| `ATTESTATION_ALLOWED_EMAIL_DOMAINS` | Empty: comma-separated email domains whose personal keyless signatures are also accepted |
+| `ATTESTATION_EMAIL_ISSUER` | `https://accounts.google.com`: OIDC issuer of those email identities |
 | `LISTEN_ADDR` | `:50051` (plaintext gRPC, with reflection) |
 | `PROBE_ADDR` | `:8080` (HTTP probes and metrics) |
 | `TRIVY_DB_DIR` | `/var/cache/v0s/trivy-db` |
@@ -302,6 +304,10 @@ Known integration/security follow-ups:
 - Attestation identity checks match the workflow certificate SAN, not the source
   repository owner. A public reusable workflow can make these differ; see the
   TODO in [`internal/attest`](../internal/attest/attest.go).
+- Allowed email domains accept any address on the domain that the issuer has
+  verified, such as a developer signing locally. This proves neither team
+  membership nor current employment, and says nothing about how the image was
+  built.
 - Console assessment states still need mapping to v0s's three suppression states.
 - Missing packages in source SBOMs limit coverage; a successful scan is not proof
   that every package or runtime binary was represented.

@@ -41,6 +41,7 @@ type config struct {
 	databaseURL    string
 	naisAPIAddress string
 	githubOrgs     []string
+	emailSigners   attest.EmailSigners
 	trivyDBDir     string
 	trivyDBRepos   []string
 }
@@ -52,8 +53,12 @@ func loadConfig() (config, error) {
 		databaseURL:    env("DATABASE_URL", ""),
 		naisAPIAddress: env("NAIS_API_GRPC_ADDRESS", ""),
 		githubOrgs:     list(env("GITHUB_ORGANIZATIONS", "")),
-		trivyDBDir:     env("TRIVY_DB_DIR", "/var/cache/v0s/trivy-db"),
-		trivyDBRepos:   list(env("TRIVY_DB_REPOSITORIES", "mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2")),
+		emailSigners: attest.EmailSigners{
+			Issuer:  env("ATTESTATION_EMAIL_ISSUER", attest.GoogleIssuer),
+			Domains: list(env("ATTESTATION_ALLOWED_EMAIL_DOMAINS", "")),
+		},
+		trivyDBDir:   env("TRIVY_DB_DIR", "/var/cache/v0s/trivy-db"),
+		trivyDBRepos: list(env("TRIVY_DB_REPOSITORIES", "mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2")),
 	}
 	var missing []string
 	for name, v := range map[string]bool{
@@ -132,7 +137,7 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	if err != nil {
 		return fmt.Errorf("opening vulnerability DB: %w", err)
 	}
-	fetcher, err := attest.NewFetcher(ctx, cfg.githubOrgs, log)
+	fetcher, err := attest.NewFetcher(ctx, cfg.githubOrgs, cfg.emailSigners, log)
 	if err != nil {
 		return fmt.Errorf("creating attestation fetcher: %w", err)
 	}

@@ -68,6 +68,18 @@ values:
     config:
       type: string_array
 
+  attestation.emailIssuer:
+    displayName: Attestation email issuer
+    description: Exact OIDC issuer of email signing identities. Defaults to https://accounts.google.com.
+    config:
+      type: string
+
+  attestation.allowedEmailDomains:
+    displayName: Allowed attestation email domains
+    description: Also accept SBOM attestations signed by any email address on these exact domains. Email ownership does not prove team membership or current employment.
+    config:
+      type: string_array
+
   networkPolicy.httpsHosts:
     displayName: Allowed HTTPS hosts
     description: Registries, redirects, Sigstore trust roots and vulnerability data sources used by v0s.

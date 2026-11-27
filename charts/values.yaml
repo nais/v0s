@@ -44,6 +44,12 @@ github:
   organizations:
     - nais
 
+# Also trust SBOMs signed by people, with keyless email identities on these exact domains.
+# Owning an address proves neither team membership nor current employment.
+attestation:
+  emailIssuer: https://accounts.google.com
+  allowedEmailDomains: []
+
 trivyDBRepositories:
   - europe-north1-docker.pkg.dev/nais-io/github-ptc/aquasecurity/trivy-db:2
   - ghcr.io/aquasecurity/trivy-db:2

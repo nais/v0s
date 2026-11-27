@@ -166,6 +166,48 @@ func TestDeploymentUsesNaisAPIAndExistingDatabase(t *testing.T) {
 	}
 }
 
+func TestDeploymentConfiguresEmailAttestationIdentities(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name      string
+		overrides []string
+		issuer    string
+		domains   string
+	}{
+		{name: "default", issuer: "https://accounts.google.com"},
+		{
+			name:      "configured",
+			overrides: []string{"--set", "attestation.emailIssuer=https://issuer.example", "--set", "attestation.allowedEmailDomains={nav.no,example.com}"},
+			issuer:    "https://issuer.example",
+			domains:   "nav.no,example.com",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var deployment struct {
+				Spec struct {
+					Template struct {
+						Spec struct{ Containers []containerSpec }
+					}
+				}
+			}
+			decode(t, render(t, chartDir, tt.overrides...)["Deployment"], &deployment)
+			env := map[string]string{}
+			for _, e := range deployment.Spec.Template.Spec.Containers[0].Env {
+				env[e.Name] = e.Value
+			}
+			issuer, ok := env["ATTESTATION_EMAIL_ISSUER"]
+			if !ok || issuer != tt.issuer {
+				t.Errorf("ATTESTATION_EMAIL_ISSUER = %q, want %q", issuer, tt.issuer)
+			}
+			domains, ok := env["ATTESTATION_ALLOWED_EMAIL_DOMAINS"]
+			if !ok || domains != tt.domains {
+				t.Errorf("ATTESTATION_ALLOWED_EMAIL_DOMAINS = %q, want %q", domains, tt.domains)
+			}
+		})
+	}
+}
+
 func TestNetworkPolicyRestrictsCallersAndPermitsInventory(t *testing.T) {
 	t.Parallel()
 	resources := render(t, chartDir, "--set", "database.clusterName=durable-db")
